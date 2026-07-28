@@ -411,7 +411,7 @@ export default function AccountsPage() {
               )}
 
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1.5 ml-1">Proxy (opcional)</label>
+                <label className="block text-xs font-medium text-gray-400 mb-1.5 ml-1">Proxy residencial (opcional, recomendado na Vercel)</label>
                 <div className="relative">
                   <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                   <input

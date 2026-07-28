@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -7,6 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 import os
 import socket
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -43,7 +45,7 @@ DOWNLOAD_TIMEOUT = (10, 120)
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=30)
     password: str = Field(min_length=1)
-    verification_code: str | None = None
+    verification_code: str = ""
     proxy: str | None = None
     challenge_state: dict[str, Any] | None = None
 
@@ -107,7 +109,43 @@ def normalize_proxy(proxy: str | None) -> str | None:
     return f"http://{value}"
 
 
+BRAZIL_DEVICE = {
+    "android_version": 34,
+    "android_release": "14",
+    "dpi": "420dpi",
+    "resolution": "1080x2400",
+    "manufacturer": "samsung",
+    "device": "a54x",
+    "model": "SM-A546E",
+    "cpu": "exynos1380",
+}
+
+
+def stable_uuid(username: str, name: str) -> str:
+    secret = (
+        os.getenv("INSTAGRAM_SESSION_SECRET")
+        or os.getenv("INSTAGRAPI_WORKER_API_KEY")
+        or "instagram-saas"
+    )
+    digest = hashlib.sha256(f"{secret}:{username}:{name}".encode("utf-8")).hexdigest()
+    return str(uuid.UUID(digest[:32]))
+
+
+def stable_uuids(username: str) -> dict[str, str]:
+    device_hash = hashlib.sha256(
+        f"{username}:{stable_uuid(username, 'device')}".encode("utf-8")
+    ).hexdigest()[:16]
+    return {
+        "phone_id": stable_uuid(username, "phone"),
+        "uuid": stable_uuid(username, "uuid"),
+        "client_session_id": stable_uuid(username, "session"),
+        "advertising_id": stable_uuid(username, "advertising"),
+        "device_id": f"android-{device_hash}",
+    }
+
+
 def create_login_client(
+    username: str,
     proxy: str | None = None,
     challenge_state: dict[str, Any] | None = None,
 ) -> Client:
@@ -116,8 +154,16 @@ def create_login_client(
 
     if challenge_state:
         client.set_settings(challenge_state)
+    else:
+        client.set_uuids(stable_uuids(username))
+        client.set_device(BRAZIL_DEVICE)
 
-    normalized_proxy = normalize_proxy(proxy)
+    client.set_country("BR")
+    client.set_country_code(55)
+    client.set_locale("pt_BR")
+    client.set_timezone_offset(-3 * 60 * 60)
+
+    normalized_proxy = normalize_proxy(proxy or os.getenv("INSTAGRAM_DEFAULT_PROXY"))
     if normalized_proxy:
         client.set_proxy(normalized_proxy)
 
@@ -231,6 +277,7 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     client = create_login_client(
+        username,
         login_request.proxy,
         login_request.challenge_state,
     )
@@ -274,10 +321,25 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
             challenge_state=get_challenge_state(client),
         )
     except BadPassword:
+        last_json = getattr(client, "last_json", {}) or {}
+        error_type = str(last_json.get("error_type") or "").lower()
+        message = str(last_json.get("message") or "").lower()
+
+        if not normalize_proxy(login_request.proxy or os.getenv("INSTAGRAM_DEFAULT_PROXY")):
+            api_error(
+                409,
+                "NETWORK_TRUST_REJECTED",
+                "O Instagram recusou o login vindo do IP da Vercel. Confirme que a senha funciona no aplicativo e tente novamente após o novo deploy em São Paulo. Se continuar, informe um proxy residencial brasileiro estável para esta conta.",
+                instagram_error_type=error_type or None,
+                instagram_message=message or None,
+            )
+
         api_error(
             401,
             "BAD_PASSWORD",
-            "O Instagram recusou o usuário ou a senha. Se a senha estiver correta no aplicativo, confirme o alerta de login e tente novamente na mesma rede.",
+            "O Instagram recusou o usuário ou a senha através do proxy informado. Confirme as credenciais e verifique se o proxy é residencial, brasileiro e exclusivo para esta conta.",
+            instagram_error_type=error_type or None,
+            instagram_message=message or None,
         )
     except PleaseWaitFewMinutes:
         api_error(
