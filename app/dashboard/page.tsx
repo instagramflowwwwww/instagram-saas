@@ -50,7 +50,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-white">
             Olá, {session?.user?.name?.split(" ")[0] || "usuário"} 👋
           </h1>
-          <p className="text-gray-500 mt-1">Bem-vindo ao seu painel de controle</p>
+          <p className="text-gray-500 mt-1">Bem-vindo ao seu painel de controle teste</p>
         </div>
 
         {/* Filtro de data */}
