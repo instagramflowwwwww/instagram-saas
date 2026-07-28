@@ -18,10 +18,11 @@ from instagrapi import Client
 from instagrapi.exceptions import (
     BadPassword,
     ChallengeRequired,
+    ClientConnectionError,
     FeedbackRequired,
     LoginRequired,
     PleaseWaitFewMinutes,
-    ProxyError,
+    ProxyAddressIsBlocked,
     TwoFactorRequired,
 )
 from PIL import Image
@@ -290,8 +291,18 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
             "FEEDBACK_REQUIRED",
             "O Instagram restringiu este login temporariamente. Verifique a conta no aplicativo oficial antes de tentar novamente.",
         )
-    except ProxyError:
-        api_error(400, "PROXY_ERROR", "Não foi possível conectar usando o proxy informado")
+    except ProxyAddressIsBlocked:
+        api_error(
+            403,
+            "PROXY_BLOCKED",
+            "O Instagram bloqueou o endereço IP ou proxy utilizado.",
+        )
+    except ClientConnectionError:
+        api_error(
+            502,
+            "CONNECTION_ERROR",
+            "Não foi possível conectar ao Instagram. Verifique a rede ou o proxy informado.",
+        )
     except Exception as error:
         if looks_like_two_factor_error(client, error, verification_code):
             two_factor_error(client, verification_code)
@@ -466,8 +477,18 @@ def publish_instagram_post(payload: dict[str, Any]) -> dict[str, Any]:
             "FEEDBACK_REQUIRED",
             "O Instagram bloqueou temporariamente a publicação desta conta.",
         )
-    except ProxyError:
-        api_error(400, "PROXY_ERROR", "Não foi possível publicar usando o proxy configurado")
+    except ProxyAddressIsBlocked:
+        api_error(
+            403,
+            "PROXY_BLOCKED",
+            "O Instagram bloqueou o endereço IP ou proxy utilizado.",
+        )
+    except ClientConnectionError:
+        api_error(
+            502,
+            "CONNECTION_ERROR",
+            "Não foi possível conectar ao Instagram. Verifique a rede ou o proxy informado.",
+        )
     except ValueError as error:
         api_error(400, "INVALID_MEDIA", str(error))
     except Exception as error:
