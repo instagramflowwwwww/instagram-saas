@@ -164,7 +164,7 @@ export async function POST(request: Request) {
           action: "login",
           username,
           password,
-          verification_code: verificationCode || null,
+          verification_code: verificationCode,
           proxy,
           challenge_state: challengeState,
         }),

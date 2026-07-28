@@ -220,7 +220,7 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
         api_error(400, "INVALID_LOGIN", "Informe o usuário e a senha do Instagram")
 
     username = login_request.username.strip().lstrip("@").lower()
-    verification_code = (login_request.verification_code or "").strip() or None
+    verification_code = (login_request.verification_code or "").strip()
 
     if verification_code and len(verification_code) not in (6, 8):
         api_error(
