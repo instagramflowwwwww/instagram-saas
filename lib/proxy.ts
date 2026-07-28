@@ -1,36 +1,76 @@
 import { HttpsProxyAgent } from "https-proxy-agent"
 
-export function parseProxyUrl(proxy: string): string {
-  let p = proxy.trim()
+const SUPPORTED_SCHEMES = [
+  "http://",
+  "https://",
+  "socks4://",
+  "socks5://",
+  "socks5h://",
+]
 
-  if (p.startsWith("http://") || p.startsWith("https://")) {
-    return p
+function validatePort(port: string) {
+  if (!/^\d+$/.test(port)) {
+    throw new Error("A porta do proxy precisa ser numérica")
   }
 
-  const parts = p.split(":")
+  const value = Number(port)
+  if (value < 1 || value > 65535) {
+    throw new Error("A porta do proxy é inválida")
+  }
+
+  return value
+}
+
+export function parseProxyUrl(proxy: string): string {
+  const value = proxy.trim()
+
+  if (!value) {
+    throw new Error("Informe uma proxy válida")
+  }
+
+  if (SUPPORTED_SCHEMES.some((scheme) => value.startsWith(scheme))) {
+    const parsed = new URL(value)
+
+    if (!parsed.hostname || !parsed.port) {
+      throw new Error("Proxy inválida. Informe host e porta")
+    }
+
+    validatePort(parsed.port)
+    return parsed.toString()
+  }
+
+  const parts = value.split(":", 4)
 
   if (parts.length === 4) {
-    const [ip, port, user, pass] = parts
-    return `http://${user}:${pass}@${ip}:${port}`
+    const [host, port, username, password] = parts.map((part) => part.trim())
+
+    if (!host || !username || !password) {
+      throw new Error("Proxy inválida. Use host:porta:usuario:senha")
+    }
+
+    const normalizedPort = validatePort(port)
+    return `http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${normalizedPort}`
   }
 
   if (parts.length === 2) {
-    const [ip, port] = parts
-    return `http://${ip}:${port}`
+    const [host, port] = parts.map((part) => part.trim())
+
+    if (!host) {
+      throw new Error("Proxy inválida. Use host:porta")
+    }
+
+    const normalizedPort = validatePort(port)
+    return `http://${host}:${normalizedPort}`
   }
 
-  if (p.includes("@")) {
-    return `http://${p}`
-  }
-
-  return `http://${p}`
+  throw new Error("Proxy inválida. Use host:porta:usuario:senha")
 }
 
 export function getProxyAgent(proxy?: string | null) {
   if (!proxy) return undefined
+
   try {
-    const url = parseProxyUrl(proxy)
-    return new HttpsProxyAgent(url)
+    return new HttpsProxyAgent(parseProxyUrl(proxy))
   } catch {
     return undefined
   }

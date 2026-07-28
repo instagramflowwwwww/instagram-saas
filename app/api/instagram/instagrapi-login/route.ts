@@ -90,7 +90,18 @@ export async function POST(request: Request) {
       .replace(/\D/g, "")
       .slice(0, 8)
     const challengeToken = String(body.challengeToken || "").trim()
-    const proxy = body.proxy ? parseProxyUrl(String(body.proxy)) : null
+    let proxy: string | null = null
+
+    if (body.proxy) {
+      try {
+        proxy = parseProxyUrl(String(body.proxy))
+      } catch (error: any) {
+        return NextResponse.json(
+          { error: error?.message || "Proxy inválida" },
+          { status: 400 }
+        )
+      }
+    }
 
     if (!username || !password) {
       return NextResponse.json(

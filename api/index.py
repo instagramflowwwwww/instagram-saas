@@ -8,10 +8,11 @@ from importlib.metadata import PackageNotFoundError, version
 import os
 import socket
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -94,19 +95,36 @@ def normalize_proxy(proxy: str | None) -> str | None:
     if not value:
         return None
 
-    if value.startswith(("http://", "https://", "socks4://", "socks5://", "socks5h://")):
+    supported_schemes = ("http://", "https://", "socks4://", "socks5://", "socks5h://")
+
+    if value.startswith(supported_schemes):
+        parsed = urlparse(value)
+        if not parsed.hostname or not parsed.port:
+            raise ValueError("Proxy inválido. Informe host, porta, usuário e senha corretos.")
         return value
 
-    parts = value.split(":")
+    parts = value.split(":", 3)
     if len(parts) == 4:
-        host, port, username, password = parts
-        return f"http://{username}:{password}@{host}:{port}"
-    if len(parts) == 2:
-        return f"http://{value}"
-    if "@" in value:
-        return f"http://{value}"
+        host, port, username, password = (part.strip() for part in parts)
+        if not host or not port.isdigit() or not username or not password:
+            raise ValueError("Proxy inválido. Use host:porta:usuario:senha.")
+        port_number = int(port)
+        if port_number < 1 or port_number > 65535:
+            raise ValueError("A porta do proxy é inválida.")
+        encoded_username = quote(username, safe="")
+        encoded_password = quote(password, safe="")
+        return f"http://{encoded_username}:{encoded_password}@{host}:{port_number}"
 
-    return f"http://{value}"
+    if len(parts) == 2:
+        host, port = (part.strip() for part in parts)
+        if not host or not port.isdigit():
+            raise ValueError("Proxy inválido. Use host:porta ou host:porta:usuario:senha.")
+        port_number = int(port)
+        if port_number < 1 or port_number > 65535:
+            raise ValueError("A porta do proxy é inválida.")
+        return f"http://{host}:{port_number}"
+
+    raise ValueError("Proxy inválido. Use host:porta:usuario:senha.")
 
 
 BRAZIL_DEVICE = {
@@ -153,7 +171,12 @@ def create_login_client(
     client.request_timeout = 30
 
     if challenge_state:
-        client.set_settings(challenge_state)
+        client_settings = {
+            key: value
+            for key, value in challenge_state.items()
+            if not key.startswith("_instagram_")
+        }
+        client.set_settings(client_settings)
     else:
         client.set_uuids(stable_uuids(username))
         client.set_device(BRAZIL_DEVICE)
@@ -196,12 +219,28 @@ def create_session_client(
     return client
 
 
-def get_challenge_state(client: Client) -> dict[str, Any]:
+def get_challenge_state(
+    client: Client,
+    two_step_verification_context: str | None = None,
+) -> dict[str, Any]:
     try:
-        settings = client.get_settings()
-        return json.loads(json.dumps(settings, default=str))
+        settings = json.loads(json.dumps(client.get_settings(), default=str))
     except Exception:
-        return {}
+        settings = {}
+
+    if two_step_verification_context:
+        settings["_instagram_two_step_verification_context"] = (
+            two_step_verification_context
+        )
+
+    return settings
+
+
+def get_saved_two_step_context(challenge_state: dict[str, Any] | None) -> str:
+    if not challenge_state:
+        return ""
+    value = challenge_state.get("_instagram_two_step_verification_context")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def looks_like_two_factor_error(
@@ -240,8 +279,12 @@ def looks_like_two_factor_error(
     )
 
 
-def two_factor_error(client: Client, verification_code: str | None) -> None:
-    state = get_challenge_state(client)
+def two_factor_error(
+    client: Client,
+    verification_code: str | None,
+    two_step_verification_context: str | None = None,
+) -> None:
+    state = get_challenge_state(client, two_step_verification_context)
 
     if verification_code:
         api_error(
@@ -259,6 +302,112 @@ def two_factor_error(client: Client, verification_code: str | None) -> None:
     )
 
 
+def extract_bloks_text(value: Any) -> str:
+    parts: list[str] = []
+
+    def visit(current: Any) -> None:
+        if len(parts) >= 80:
+            return
+        if isinstance(current, dict):
+            for key, item in current.items():
+                if key in {"password", "enc_password", "authorization", "sessionid"}:
+                    continue
+                visit(item)
+        elif isinstance(current, list):
+            for item in current[:40]:
+                visit(item)
+        elif isinstance(current, str) and len(current) <= 600:
+            parts.append(current)
+
+    visit(value)
+    return " ".join(parts).lower()
+
+
+def complete_bloks_two_factor(
+    client: Client,
+    context: str,
+    verification_code: str,
+) -> bool:
+    challenge = "backup_codes" if len(verification_code) == 8 else "totp"
+
+    client.bloks_two_step_verification_entrypoint(context)
+    client.bloks_two_step_verification_method_picker(context)
+    client.bloks_two_step_verification_select_method(
+        context,
+        selected_method=challenge,
+    )
+
+    if challenge == "backup_codes":
+        client.bloks_two_step_verification_enter_backup_code(context)
+    else:
+        client.bloks_two_step_verification_enter_totp_code(context)
+
+    result = client.bloks_two_step_verification_verify_code(
+        context,
+        verification_code,
+        challenge=challenge,
+    )
+    return bool(client.bloks_apply_login_response(result))
+
+
+def try_caa_bloks_login(
+    client: Client,
+    username: str,
+    password: str,
+    verification_code: str,
+) -> tuple[bool, str]:
+    client.username = username
+    client.password = password
+
+    result = client.bloks_caa_login_send_request(
+        password,
+        username=username,
+        login_attempt_count=1,
+    )
+
+    if client.bloks_apply_login_response(result):
+        return True, ""
+
+    context = client.bloks_extract_two_step_verification_context(result)
+    if context:
+        if verification_code:
+            return complete_bloks_two_factor(
+                client,
+                context,
+                verification_code,
+            ), context
+        return False, context
+
+    text = extract_bloks_text(result)
+    if any(
+        marker in text
+        for marker in (
+            "incorrect password",
+            "senha incorreta",
+            "bad_password",
+            "wrong password",
+        )
+    ):
+        raise BadPassword("Instagram rejected the supplied credentials")
+
+    if any(
+        marker in text
+        for marker in (
+            "challenge_required",
+            "checkpoint",
+            "confirm it was you",
+            "confirme que foi você",
+            "suspicious login",
+        )
+    ):
+        raise ChallengeRequired("Instagram requested account confirmation")
+
+    if any(marker in text for marker in ("please wait", "aguarde alguns minutos")):
+        raise PleaseWaitFewMinutes("Instagram requested a login cooldown")
+
+    return False, ""
+
+
 def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         login_request = LoginRequest.model_validate(payload)
@@ -267,6 +416,9 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
 
     username = login_request.username.strip().lstrip("@").lower()
     verification_code = (login_request.verification_code or "").strip()
+    saved_two_step_context = get_saved_two_step_context(
+        login_request.challenge_state
+    )
 
     if verification_code and len(verification_code) not in (6, 8):
         api_error(
@@ -276,18 +428,54 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
             challenge_state=login_request.challenge_state or {},
         )
 
+    try:
+        effective_proxy = normalize_proxy(
+            login_request.proxy or os.getenv("INSTAGRAM_DEFAULT_PROXY")
+        )
+    except ValueError as error:
+        api_error(400, "INVALID_PROXY", str(error))
+
     client = create_login_client(
         username,
-        login_request.proxy,
+        effective_proxy,
         login_request.challenge_state,
     )
 
     try:
-        logged = client.login(
-            username,
-            login_request.password,
-            verification_code=verification_code,
-        )
+        if verification_code and saved_two_step_context:
+            client.username = username
+            client.password = login_request.password
+            logged = complete_bloks_two_factor(
+                client,
+                saved_two_step_context,
+                verification_code,
+            )
+            if not logged:
+                two_factor_error(
+                    client,
+                    verification_code,
+                    saved_two_step_context,
+                )
+        else:
+            try:
+                logged = client.login(
+                    username,
+                    login_request.password,
+                    verification_code=verification_code,
+                )
+            except BadPassword as legacy_error:
+                logged, caa_context = try_caa_bloks_login(
+                    client,
+                    username,
+                    login_request.password,
+                    verification_code,
+                )
+
+                if caa_context and not verification_code:
+                    two_factor_error(client, "", caa_context)
+
+                if not logged:
+                    raise legacy_error
 
         if not logged:
             api_error(
@@ -296,6 +484,7 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
                 "O Instagram recusou o login. Confirme o acesso no aplicativo oficial e tente novamente.",
             )
 
+        client.last_login = time.time()
         account = client.account_info()
 
         return {
@@ -312,24 +501,31 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
             "session": client.get_settings(),
         }
     except TwoFactorRequired:
-        two_factor_error(client, verification_code)
+        two_factor_error(
+            client,
+            verification_code,
+            saved_two_step_context or None,
+        )
     except ChallengeRequired:
         api_error(
             409,
             "CHALLENGE_REQUIRED",
-            "O Instagram pediu uma verificação adicional. Abra o aplicativo oficial, confirme que foi você e tente novamente sem trocar de rede ou proxy.",
-            challenge_state=get_challenge_state(client),
+            "O Instagram pediu uma confirmação de segurança. Abra o aplicativo oficial, confirme que foi você e tente novamente usando a mesma proxy.",
+            challenge_state=get_challenge_state(
+                client,
+                saved_two_step_context or None,
+            ),
         )
     except BadPassword:
         last_json = getattr(client, "last_json", {}) or {}
         error_type = str(last_json.get("error_type") or "").lower()
         message = str(last_json.get("message") or "").lower()
 
-        if not normalize_proxy(login_request.proxy or os.getenv("INSTAGRAM_DEFAULT_PROXY")):
+        if not effective_proxy:
             api_error(
                 409,
                 "NETWORK_TRUST_REJECTED",
-                "O Instagram recusou o login vindo do IP da Vercel. Confirme que a senha funciona no aplicativo e tente novamente após o novo deploy em São Paulo. Se continuar, informe um proxy residencial brasileiro estável para esta conta.",
+                "O Instagram recusou o login vindo do IP da Vercel. Use uma proxy residencial brasileira fixa para esta conta.",
                 instagram_error_type=error_type or None,
                 instagram_message=message or None,
             )
@@ -337,7 +533,7 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
         api_error(
             401,
             "BAD_PASSWORD",
-            "O Instagram recusou o usuário ou a senha através do proxy informado. Confirme as credenciais e verifique se o proxy é residencial, brasileiro e exclusivo para esta conta.",
+            "O Instagram recusou o login mesmo após tentar os fluxos Mobile e CAA/Bloks. Confirme a senha no aplicativo oficial usando esta mesma rede/proxy e verifique se existe um alerta de segurança pendente.",
             instagram_error_type=error_type or None,
             instagram_message=message or None,
         )
@@ -345,7 +541,7 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
         api_error(
             429,
             "PLEASE_WAIT",
-            "O Instagram bloqueou novas tentativas temporariamente. Aguarde alguns minutos antes de tentar novamente.",
+            "O Instagram bloqueou novas tentativas temporariamente. Aguarde antes de tentar novamente com a mesma proxy.",
         )
     except FeedbackRequired:
         api_error(
@@ -357,17 +553,21 @@ def login_instagram_account(payload: dict[str, Any]) -> dict[str, Any]:
         api_error(
             403,
             "PROXY_BLOCKED",
-            "O Instagram bloqueou o endereço IP ou proxy utilizado.",
+            "O Instagram bloqueou o endereço IP da proxy utilizada.",
         )
     except ClientConnectionError:
         api_error(
             502,
             "CONNECTION_ERROR",
-            "Não foi possível conectar ao Instagram. Verifique a rede ou o proxy informado.",
+            "Não foi possível conectar usando a proxy informada. Gere uma nova sessão fixa e tente novamente.",
         )
     except Exception as error:
         if looks_like_two_factor_error(client, error, verification_code):
-            two_factor_error(client, verification_code)
+            two_factor_error(
+                client,
+                verification_code,
+                saved_two_step_context or None,
+            )
 
         message = str(error).strip()
         error_name = error.__class__.__name__
