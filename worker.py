@@ -1,134 +1,183 @@
+from __future__ import annotations
 
-import json
+import ipaddress
 import os
-import time
+import socket
+import tempfile
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+import requests
+from PIL import Image
 from instagrapi import Client
-from instagrapi.exceptions import LoginRequired, ChallengeRequired, BadPassword
+from instagrapi.exceptions import LoginRequired
 
-# Função para carregar ou criar a sessão
-def get_instagrapi_client(username, password, proxy=None, settings_path=None, verification_code=None):
-    cl = Client()
-    if proxy:
-        cl.set_proxy(proxy)
+PHOTO_LIMIT_BYTES = 20 * 1024 * 1024
+VIDEO_LIMIT_BYTES = 200 * 1024 * 1024
+DOWNLOAD_TIMEOUT = (10, 120)
 
-    if settings_path and os.path.exists(settings_path):
-        cl.load_settings(settings_path)
+
+def normalize_proxy(proxy: str | None) -> str | None:
+    if not proxy:
+        return None
+
+    value = proxy.strip()
+    if not value:
+        return None
+
+    if value.startswith(("http://", "https://", "socks4://", "socks5://", "socks5h://")):
+        return value
+
+    parts = value.split(":")
+    if len(parts) == 4:
+        host, port, username, password = parts
+        return f"http://{username}:{password}@{host}:{port}"
+    if len(parts) == 2:
+        return f"http://{value}"
+    if "@" in value:
+        return f"http://{value}"
+
+    return f"http://{value}"
+
+
+def create_login_client(proxy: str | None = None) -> Client:
+    client = Client()
+    client.request_timeout = 30
+
+    normalized_proxy = normalize_proxy(proxy)
+    if normalized_proxy:
+        client.set_proxy(normalized_proxy)
+
+    return client
+
+
+def create_session_client(session_settings: dict[str, Any], proxy: str | None = None) -> Client:
+    if not session_settings:
+        raise LoginRequired("Sessão não informada")
+
+    client = Client(session_settings)
+    client.request_timeout = 30
+
+    normalized_proxy = normalize_proxy(proxy)
+    if normalized_proxy:
+        client.set_proxy(normalized_proxy)
+
+    authorization_data = session_settings.get("authorization_data") or {}
+    cookies = session_settings.get("cookies") or {}
+    session_id = authorization_data.get("sessionid") or cookies.get("sessionid")
+
+    if not session_id:
+        raise LoginRequired("A sessão não possui sessionid")
+
+    client.login_by_sessionid(str(session_id))
+    return client
+
+
+def _ensure_public_https_url(url: str) -> None:
+    parsed = urlparse(url)
+
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("A mídia precisa usar uma URL HTTPS pública")
+
+    addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+    for address in addresses:
+        ip = ipaddress.ip_address(address[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise ValueError("URL de mídia não permitida")
+
+
+def download_media(url: str, media_type: str) -> Path:
+    _ensure_public_https_url(url)
+
+    is_video = media_type == "video"
+    maximum_size = VIDEO_LIMIT_BYTES if is_video else PHOTO_LIMIT_BYTES
+    suffix = ".mp4" if is_video else ".img"
+
+    response = requests.get(
+        url,
+        stream=True,
+        allow_redirects=True,
+        timeout=DOWNLOAD_TIMEOUT,
+        headers={"User-Agent": "InstagramSaaSWorker/1.0"},
+    )
+    response.raise_for_status()
+    _ensure_public_https_url(response.url)
+
+    content_length = response.headers.get("Content-Length")
+    if content_length and int(content_length) > maximum_size:
+        raise ValueError("Arquivo maior que o limite permitido")
+
+    content_type = response.headers.get("Content-Type", "").lower()
+    if is_video and content_type and not content_type.startswith("video/"):
+        raise ValueError("A URL não retornou um vídeo válido")
+    if not is_video and content_type and not content_type.startswith("image/"):
+        raise ValueError("A URL não retornou uma imagem válida")
+
+    fd, temporary_path = tempfile.mkstemp(suffix=suffix)
+    total = 0
 
     try:
-        cl.login(username, password)
-        if settings_path:
-            cl.dump_settings(settings_path)
-        return cl
-    except BadPassword:
-        print(f"Erro: Senha incorreta para {username}")
-        raise
-    except LoginRequired:
-        print(f"Erro: Login requerido para {username}. Tentando novamente...")
-        # Tenta login novamente, pode ser que a sessão tenha expirado
-        cl.login(username, password)
-        if settings_path:
-            cl.dump_settings(settings_path)
-        return cl
-    except ChallengeRequired:
-        if verification_code:
-            print(f"Tentando resolver desafio para {username} com código 2FA: {verification_code}")
-            cl.challenge_code_handler = lambda username, choice: verification_code
-            cl.login(username, password)
-            if settings_path:
-                cl.dump_settings(settings_path)
-            return cl
-        else:
-            print(f"Desafio de segurança requerido para {username}. Código 2FA não fornecido.")
-            raise # Re-lança a exceção para que o frontend possa lidar com ela
-    except Exception as e:
-        print(f"Erro inesperado ao logar {username}: {e}")
+        with os.fdopen(fd, "wb") as file:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > maximum_size:
+                    raise ValueError("Arquivo maior que o limite permitido")
+                file.write(chunk)
+    except Exception:
+        Path(temporary_path).unlink(missing_ok=True)
         raise
 
-# Função para postar uma imagem
-def post_photo(cl, image_path, caption):
+    return Path(temporary_path)
+
+
+def convert_to_jpeg(source_path: Path) -> Path:
+    fd, output_path = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd)
+    destination = Path(output_path)
+
     try:
-        media = cl.photo_upload(
-            image_path,
-            caption=caption
-        )
-        return media.dict()
+        with Image.open(source_path) as image:
+            image.convert("RGB").save(destination, format="JPEG", quality=95)
+        return destination
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
+
+def post_photo(client: Client, image_path: Path, caption: str):
+    jpeg_path: Path | None = None
+
+    try:
+        jpeg_path = convert_to_jpeg(image_path)
+        return client.photo_upload(jpeg_path, caption=caption)
     finally:
-        if os.path.exists(image_path):
-            os.remove(image_path)
+        if jpeg_path:
+            jpeg_path.unlink(missing_ok=True)
+        image_path.unlink(missing_ok=True)
+
+
+def post_reel(client: Client, video_path: Path, caption: str, cover_path: Path):
+    jpeg_cover_path: Path | None = None
 
     try:
-        media = cl.photo_upload(
-            image_path,
-            caption=caption
-        )
-        return media.dict()
-    except Exception as e:
-        print(f"Erro ao postar imagem: {e}")
-        raise
-
-# Função para postar um vídeo (Reel)
-def post_video(cl, video_path, caption, cover_path=None):
-    try:
-        media = cl.video_upload(
+        jpeg_cover_path = convert_to_jpeg(cover_path)
+        return client.clip_upload(
             video_path,
             caption=caption,
-            usertags=[] # Adicionar tags se necessário
+            thumbnail=jpeg_cover_path,
         )
-        return media.dict()
     finally:
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        if cover_path and os.path.exists(cover_path):
-            os.remove(cover_path)
-
-    try:
-        media = cl.video_upload(
-            video_path,
-            caption=caption,
-            usertags=[] # Adicionar tags se necessário
-        )
-        return media.dict()
-    except Exception as e:
-        print(f"Erro ao postar vídeo: {e}")
-        raise
-
-# Exemplo de uso (para testes)
-if __name__ == "__main__":
-    # Estes dados viriam do seu frontend/banco de dados
-    INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME")
-    INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD")
-    PROXY_URL = os.getenv("PROXY_URL") # Ex: "http://user:pass@host:port"
-
-    if not INSTAGRAM_USERNAME or not INSTAGRAM_PASSWORD:
-        print("Por favor, defina as variáveis de ambiente INSTAGRAM_USERNAME e INSTAGRAM_PASSWORD.")
-    else:
-        try:
-            # Caminho para salvar as configurações da sessão
-            session_file = f"./sessions/{INSTAGRAM_USERNAME}_session.json"
-            os.makedirs(os.path.dirname(session_file), exist_ok=True)
-
-            # Tenta logar ou carregar a sessão
-            cl = get_instagrapi_client(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD, PROXY_URL, session_file)
-            print(f"Login bem-sucedido para {INSTAGRAM_USERNAME}!")
-
-            # Exemplo de postagem (substitua pelos seus caminhos de arquivo e legenda)
-            # image_to_post = "/path/to/your/image.jpg"
-            # video_to_post = "/path/to/your/video.mp4"
-            # post_caption = "Minha primeira postagem com instagrapi! #instagrapi #python"
-
-            # if os.path.exists(image_to_post):
-            #     print(f"Postando imagem: {image_to_post}")
-            #     result = post_photo(cl, image_to_post, post_caption)
-            #     print(f"Imagem postada com sucesso: {result['code']}")
-            # elif os.path.exists(video_to_post):
-            #     print(f"Postando vídeo: {video_to_post}")
-            #     result = post_video(cl, video_to_post, post_caption)
-            #     print(f"Vídeo postado com sucesso: {result['code']}")
-            # else:
-            #     print("Nenhuma imagem ou vídeo de exemplo encontrado para postar.")
-
-        except ChallengeRequired:
-            print("Por favor, resolva o desafio de segurança e tente novamente.")
-        except Exception as e:
-            print(f"Ocorreu um erro: {e}")
-
+        if jpeg_cover_path:
+            jpeg_cover_path.unlink(missing_ok=True)
+        cover_path.unlink(missing_ok=True)
+        video_path.unlink(missing_ok=True)

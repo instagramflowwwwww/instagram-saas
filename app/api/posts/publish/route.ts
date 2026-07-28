@@ -1,155 +1,282 @@
-import { prisma } from "@/lib/prisma"
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
-import { getProxyAgent } from "@/lib/proxy"
+import { authOptions } from "@/lib/auth"
+import {
+  decryptInstagramSession,
+  encryptInstagramSession,
+} from "@/lib/instagram-session"
+import { prisma } from "@/lib/prisma"
 
-// URL do Worker Python
-const INSTAGRAPI_WORKER_URL = process.env.INSTAGRAPI_WORKER_URL || "http://localhost:8000"
+export const runtime = "nodejs"
+export const maxDuration = 300
 
-
-
-async function uploadToCloudinary(buffer: Buffer, resourceType: "video" | "image", filename: string): Promise<string> {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME!
-  const apiKey = process.env.CLOUDINARY_API_KEY!
-  const apiSecret = process.env.CLOUDINARY_API_SECRET!
-
-  const timestamp = Math.floor(Date.now() / 1000)
-  const signature_string = `timestamp=${timestamp}${apiSecret}`
-
-  const encoder = new TextEncoder()
-  const data = encoder.encode(signature_string)
-  const hashBuffer = await crypto.subtle.digest("SHA-1", data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("")
-
-  const formData = new FormData()
-  const blob = new Blob([buffer], { type: resourceType === "video" ? "video/mp4" : "image/jpeg" })
-  formData.append("file", blob, filename)
-  formData.append("api_key", apiKey)
-  formData.append("timestamp", timestamp.toString())
-  formData.append("signature", signature)
-
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
-    method: "POST",
-    body: formData,
-  })
-
-  const data2 = await res.json()
-  if (!data2.secure_url) throw new Error(`Cloudinary upload failed: ${JSON.stringify(data2)}`)
-  return data2.secure_url
+type PublishResult = {
+  accountId: string
+  username: string
+  status: "success" | "error"
+  error?: string
 }
 
-export async function POST(request: Request) {
-  const session = await getServerSession()
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+function isCloudinaryUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" && url.hostname === "res.cloudinary.com"
+  } catch {
+    return false
+  }
+}
+
+function getWorkerError(payload: any) {
+  const detail = payload?.detail
+
+  if (typeof detail === "string") {
+    return { code: payload?.code, message: detail }
   }
 
-  const formData = await request.formData()
-  const videoFile = formData.get("video") as File | null
-  const coverFile = formData.get("cover") as File | null
-  const imageFile = formData.get("image") as File | null
-  const caption = formData.get("caption") as string || ""
-  const hashtags = formData.get("hashtags") as string || ""
-  const accountIds = JSON.parse(formData.get("accountIds") as string || "[]")
-
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } })
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 })
-
-  let videoUrl = ""
-  let coverUrl = ""
-  let imageUrl = ""
-
-  if (videoFile) {
-    const buffer = Buffer.from(await videoFile.arrayBuffer())
-    videoUrl = await uploadToCloudinary(buffer, "video", videoFile.name)
-  }
-  if (coverFile) {
-    const buffer = Buffer.from(await coverFile.arrayBuffer())
-    coverUrl = await uploadToCloudinary(buffer, "image", coverFile.name)
-  }
-  if (imageFile) {
-    const buffer = Buffer.from(await imageFile.arrayBuffer())
-    imageUrl = await uploadToCloudinary(buffer, "image", imageFile.name)
-  }
-
-  const post = await prisma.post.create({
-    data: {
-      userId: user.id,
-      videoUrl,
-      imageUrl,
-      caption,
-      hashtags,
-      status: "publishing",
-    },
-  })
-
-  const accounts = await prisma.instagramAccount.findMany({
-    where: { id: { in: accountIds }, userId: user.id, isActive: true },
-  })
-
-  const results = []
-  for (const account of accounts) {
-    try {
-      const fullCaption = `${caption} ${hashtags}`.trim()
-      let mediaType: "photo" | "video" = "photo"
-      let mediaUrlToPost = imageUrl
-
-      if (videoUrl) {
-        mediaType = "video"
-        mediaUrlToPost = videoUrl
-      }
-
-      if (!mediaUrlToPost) {
-        throw new Error("Nenhuma mídia para postar.")
-      }
-
-      // Chamar o Worker Python para postar
-      const workerPostResponse = await fetch(`${INSTAGRAPI_WORKER_URL}/post`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account_id: account.instagramUsername, // Usar o username do Instagram
-          media_type: mediaType,
-          media_url: mediaUrlToPost,
-          caption: fullCaption,
-          cover_url: coverUrl, // Apenas para vídeos
-        }),
-      })
-
-      const workerPostData = await workerPostResponse.json()
-
-      if (!workerPostResponse.ok) {
-        throw new Error(workerPostData.detail || "Erro ao postar via Worker Instagrapi")
-      }
-
-      // O workerPostData deve conter o resultado da postagem, incluindo o mediaId
-      if (workerPostData.result && workerPostData.result.pk) {
-        await prisma.postLog.create({
-          data: { postId: post.id, instagramAccountId: account.id, status: "success", mediaId: workerPostData.result.pk },
-        })
-        results.push({ accountId: account.id, username: account.username, status: "success" })
-      } else {
-        throw new Error(publishData.error?.message || "Publish failed")
-      }
-    } catch (err: any) {
-      await prisma.postLog.create({
-        data: {
-          postId: post.id,
-          instagramAccountId: account.id,
-          status: "error",
-          errorMessage: err.message,
-        },
-      })
-      results.push({ accountId: account.id, username: account.username, status: "error", error: err.message })
+  if (detail && typeof detail === "object") {
+    return {
+      code: detail.code,
+      message: detail.message || "Erro ao publicar no Instagram",
     }
   }
 
-  const allSuccess = results.every((r) => r.status === "success")
-  await prisma.post.update({
-    where: { id: post.id },
-    data: { status: allSuccess ? "published" : "partial", publishedAt: new Date() },
-  })
+  return {
+    code: payload?.code,
+    message:
+      payload?.error || payload?.message || "Erro ao publicar no Instagram",
+  }
+}
 
-  return NextResponse.json({ post, results })
+export async function POST(request: Request) {
+  try {
+    const session = await getServerSession(authOptions)
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+    }
+
+    const workerKey = process.env.INSTAGRAPI_WORKER_API_KEY
+    if (!workerKey) {
+      return NextResponse.json(
+        { error: "INSTAGRAPI_WORKER_API_KEY não configurada na Vercel" },
+        { status: 500 }
+      )
+    }
+
+    const body = await request.json()
+    const videoUrl = String(body.videoUrl || "")
+    const imageUrl = String(body.imageUrl || "")
+    const coverUrl = String(body.coverUrl || "")
+    const caption = String(body.caption || "").trim()
+    const hashtags = String(body.hashtags || "").trim()
+    const accountIds = Array.isArray(body.accountIds)
+      ? body.accountIds.map(String)
+      : []
+
+    if ((!videoUrl && !imageUrl) || (videoUrl && imageUrl)) {
+      return NextResponse.json(
+        { error: "Envie uma imagem ou um vídeo, nunca os dois ao mesmo tempo" },
+        { status: 400 }
+      )
+    }
+
+    if (videoUrl && !coverUrl) {
+      return NextResponse.json(
+        { error: "A capa é obrigatória para publicar um Reel" },
+        { status: 400 }
+      )
+    }
+
+    const mediaUrls = [videoUrl, imageUrl, coverUrl].filter(Boolean)
+    if (!mediaUrls.every(isCloudinaryUrl)) {
+      return NextResponse.json(
+        { error: "Uma das mídias não foi enviada corretamente ao Cloudinary" },
+        { status: 400 }
+      )
+    }
+
+    if (accountIds.length === 0) {
+      return NextResponse.json(
+        { error: "Selecione pelo menos uma conta" },
+        { status: 400 }
+      )
+    }
+
+    const accounts = await prisma.instagramAccount.findMany({
+      where: {
+        id: { in: accountIds },
+        userId: session.user.id,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        username: true,
+        instagramUsername: true,
+        sessionFilePath: true,
+        proxy: true,
+      },
+    })
+
+    if (accounts.length === 0) {
+      return NextResponse.json(
+        { error: "Nenhuma conta conectada válida foi encontrada" },
+        { status: 400 }
+      )
+    }
+
+    const post = await prisma.post.create({
+      data: {
+        userId: session.user.id,
+        videoUrl: videoUrl || null,
+        imageUrl: imageUrl || null,
+        caption,
+        hashtags,
+        status: "publishing",
+      },
+    })
+
+    const fullCaption = [caption, hashtags].filter(Boolean).join("\n\n")
+    const workerUrl = new URL("/api/index", request.url)
+
+    const results = await Promise.all(
+      accounts.map(async (account): Promise<PublishResult> => {
+        try {
+          if (!account.sessionFilePath) {
+            throw new Error("Conta sem sessão. Reconecte o Instagram.")
+          }
+
+          const sessionSettings = decryptInstagramSession(
+            account.sessionFilePath
+          )
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 280_000)
+          let workerResponse: Response
+
+          try {
+            workerResponse = await fetch(workerUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Worker-Key": workerKey,
+              },
+              body: JSON.stringify({
+                action: "post",
+                username: account.instagramUsername || account.username,
+                session_settings: sessionSettings,
+                proxy: account.proxy,
+                media_type: videoUrl ? "video" : "photo",
+                media_url: videoUrl || imageUrl,
+                cover_url: coverUrl || null,
+                caption: fullCaption,
+              }),
+              cache: "no-store",
+              signal: controller.signal,
+            })
+          } finally {
+            clearTimeout(timeout)
+          }
+
+          const workerData = await workerResponse.json().catch(() => ({}))
+
+          if (!workerResponse.ok) {
+            const workerError = getWorkerError(workerData)
+
+            if (workerError.code === "SESSION_EXPIRED") {
+              await prisma.instagramAccount.update({
+                where: { id: account.id },
+                data: { isActive: false },
+              })
+            }
+
+            throw new Error(workerError.message)
+          }
+
+          const mediaId = workerData?.result?.pk
+          if (!mediaId) {
+            throw new Error(
+              "O Instagram não retornou o identificador da publicação"
+            )
+          }
+
+          await Promise.all([
+            prisma.instagramAccount.update({
+              where: { id: account.id },
+              data: {
+                ...(workerData.session
+                  ? {
+                      sessionFilePath: encryptInstagramSession(
+                        workerData.session
+                      ),
+                    }
+                  : {}),
+                isActive: true,
+                lastActiveAt: new Date(),
+              },
+            }),
+            prisma.postLog.create({
+              data: {
+                postId: post.id,
+                instagramAccountId: account.id,
+                status: "success",
+                mediaId: String(mediaId),
+              },
+            }),
+          ])
+
+          return {
+            accountId: account.id,
+            username: account.username,
+            status: "success",
+          }
+        } catch (error: any) {
+          const message =
+            error?.name === "AbortError"
+              ? "A publicação demorou demais e foi interrompida"
+              : error?.message || "Erro ao publicar"
+
+          await prisma.postLog.create({
+            data: {
+              postId: post.id,
+              instagramAccountId: account.id,
+              status: "error",
+              errorMessage: message,
+            },
+          })
+
+          return {
+            accountId: account.id,
+            username: account.username,
+            status: "error",
+            error: message,
+          }
+        }
+      })
+    )
+
+    const successCount = results.filter(
+      (result) => result.status === "success"
+    ).length
+    const status =
+      successCount === results.length
+        ? "published"
+        : successCount === 0
+          ? "failed"
+          : "partial"
+
+    const updatedPost = await prisma.post.update({
+      where: { id: post.id },
+      data: {
+        status,
+        publishedAt: successCount > 0 ? new Date() : null,
+      },
+    })
+
+    return NextResponse.json({ post: updatedPost, results })
+  } catch (error: any) {
+    console.error("Publish error:", error)
+    return NextResponse.json(
+      { error: error?.message || "Erro interno ao publicar" },
+      { status: 500 }
+    )
+  }
 }
