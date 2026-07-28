@@ -28,6 +28,7 @@ const emptyLoginData = {
   username: "",
   password: "",
   verificationCode: "",
+  challengeToken: "",
   proxy: "",
 }
 
@@ -145,12 +146,26 @@ export default function AccountsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginData),
       })
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        if (data.requiresTwoFactor || data.code === "TWO_FACTOR_REQUIRED") {
+        if (data.requiresTwoFactor) {
           setShow2FA(true)
-          setLoginError("Digite o código do aplicativo autenticador do Instagram.")
+          setLoginData((current) => ({
+            ...current,
+            verificationCode:
+              data.code === "TWO_FACTOR_INVALID"
+                ? ""
+                : current.verificationCode,
+            challengeToken:
+              typeof data.challengeToken === "string"
+                ? data.challengeToken
+                : current.challengeToken,
+          }))
+          setLoginError(
+            data.error ||
+              "Digite o código do aplicativo autenticador do Instagram."
+          )
           return
         }
 
@@ -362,7 +377,9 @@ export default function AccountsPage() {
 
               {show2FA && (
                 <div>
-                  <label className="block text-xs font-medium text-purple-400 mb-1.5 ml-1">Código 2FA</label>
+                  <label className="block text-xs font-medium text-purple-400 mb-1.5 ml-1">
+                    Código 2FA ou código de backup
+                  </label>
                   <div className="relative">
                     <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" size={16} />
                     <input
@@ -371,11 +388,25 @@ export default function AccountsPage() {
                       autoFocus
                       inputMode="numeric"
                       value={loginData.verificationCode}
-                      onChange={(event) => setLoginData({ ...loginData, verificationCode: event.target.value.replace(/\D/g, "").slice(0, 8) })}
+                      onChange={(event) =>
+                        setLoginData({
+                          ...loginData,
+                          verificationCode: event.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 8),
+                        })
+                      }
+                      minLength={6}
+                      maxLength={8}
+                      pattern="[0-9]{6}|[0-9]{8}"
+                      title="Use 6 dígitos do autenticador ou 8 dígitos de um código de backup"
                       placeholder="000000"
                       className="w-full bg-purple-500/5 border border-purple-500/30 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition-colors"
                     />
                   </div>
+                  <p className="text-[10px] text-gray-500 mt-2 ml-1">
+                    Use o código atual de 6 dígitos do autenticador. Também aceitamos código de backup de 8 dígitos.
+                  </p>
                 </div>
               )}
 

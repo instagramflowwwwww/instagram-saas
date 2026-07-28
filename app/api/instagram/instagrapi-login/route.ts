@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { encryptInstagramSession } from "@/lib/instagram-session"
+import {
+  decryptInstagramSession,
+  encryptInstagramSession,
+} from "@/lib/instagram-session"
 import { parseProxyUrl } from "@/lib/proxy"
 import { prisma } from "@/lib/prisma"
 
@@ -11,9 +14,12 @@ export const maxDuration = 300
 type WorkerError = {
   code?: string
   message: string
+  challengeState?: Record<string, unknown>
 }
 
-function getWorkerError(payload: any): WorkerError {
+type WorkerPayload = Record<string, any>
+
+function getWorkerError(payload: WorkerPayload): WorkerError {
   const detail = payload?.detail
 
   if (typeof detail === "string") {
@@ -24,6 +30,10 @@ function getWorkerError(payload: any): WorkerError {
     return {
       code: detail.code,
       message: detail.message || "Erro ao conectar a conta do Instagram",
+      challengeState:
+        detail.challenge_state && typeof detail.challenge_state === "object"
+          ? detail.challenge_state
+          : undefined,
     }
   }
 
@@ -33,6 +43,24 @@ function getWorkerError(payload: any): WorkerError {
       payload?.error ||
       payload?.message ||
       "Erro ao conectar a conta do Instagram",
+    challengeState:
+      payload?.challenge_state && typeof payload.challenge_state === "object"
+        ? payload.challenge_state
+        : undefined,
+  }
+}
+
+async function readWorkerResponse(response: Response) {
+  const raw = await response.text()
+
+  if (!raw.trim()) {
+    return { payload: null as WorkerPayload | null, raw }
+  }
+
+  try {
+    return { payload: JSON.parse(raw) as WorkerPayload, raw }
+  } catch {
+    return { payload: null as WorkerPayload | null, raw }
   }
 }
 
@@ -58,7 +86,10 @@ export async function POST(request: Request) {
       .replace(/^@/, "")
       .toLowerCase()
     const password = String(body.password || "")
-    const verificationCode = String(body.verificationCode || "").trim()
+    const verificationCode = String(body.verificationCode || "")
+      .replace(/\D/g, "")
+      .slice(0, 8)
+    const challengeToken = String(body.challengeToken || "").trim()
     const proxy = body.proxy ? parseProxyUrl(String(body.proxy)) : null
 
     if (!username || !password) {
@@ -66,6 +97,36 @@ export async function POST(request: Request) {
         { error: "Informe o usuário e a senha do Instagram" },
         { status: 400 }
       )
+    }
+
+    if (verificationCode && ![6, 8].includes(verificationCode.length)) {
+      return NextResponse.json(
+        {
+          error:
+            "O código do autenticador deve ter 6 dígitos; o código de backup deve ter 8 dígitos.",
+          code: "INVALID_TWO_FACTOR_FORMAT",
+          requiresTwoFactor: true,
+          challengeToken: challengeToken || undefined,
+        },
+        { status: 400 }
+      )
+    }
+
+    let challengeState: Record<string, unknown> | null = null
+
+    if (challengeToken) {
+      try {
+        challengeState = decryptInstagramSession(challengeToken)
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              "A tentativa de login expirou. Feche esta janela e conecte a conta novamente.",
+            code: "INVALID_CHALLENGE_TOKEN",
+          },
+          { status: 400 }
+        )
+      }
     }
 
     const existingAccount = await prisma.instagramAccount.findFirst({
@@ -105,6 +166,7 @@ export async function POST(request: Request) {
           password,
           verification_code: verificationCode || null,
           proxy,
+          challenge_state: challengeState,
         }),
         cache: "no-store",
         signal: controller.signal,
@@ -113,16 +175,42 @@ export async function POST(request: Request) {
       clearTimeout(timeout)
     }
 
-    const workerData = await workerResponse.json().catch(() => ({}))
+    const { payload: workerData, raw: workerRaw } =
+      await readWorkerResponse(workerResponse)
+
+    if (!workerData) {
+      console.error("Instagram Python returned a non-JSON response", {
+        status: workerResponse.status,
+        body: workerRaw.slice(0, 800),
+      })
+
+      return NextResponse.json(
+        {
+          error:
+            "A função Python do Instagram falhou antes de concluir o login. Abra o deployment da Vercel e consulte Functions → api/index.py para ver o erro real.",
+          code: "WORKER_INVALID_RESPONSE",
+        },
+        { status: 502 }
+      )
+    }
 
     if (!workerResponse.ok) {
       const workerError = getWorkerError(workerData)
+      const requiresTwoFactor = [
+        "TWO_FACTOR_REQUIRED",
+        "TWO_FACTOR_INVALID",
+        "INVALID_TWO_FACTOR_FORMAT",
+      ].includes(workerError.code || "")
+      const nextChallengeToken = workerError.challengeState
+        ? encryptInstagramSession(workerError.challengeState)
+        : challengeToken || undefined
 
       return NextResponse.json(
         {
           error: workerError.message,
           code: workerError.code,
-          requiresTwoFactor: workerError.code === "TWO_FACTOR_REQUIRED",
+          requiresTwoFactor,
+          challengeToken: requiresTwoFactor ? nextChallengeToken : undefined,
         },
         { status: workerResponse.status }
       )
