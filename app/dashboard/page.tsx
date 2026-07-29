@@ -485,8 +485,8 @@ export default function DashboardPage() {
               </Link>
             </section>
           ) : (
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-              <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center justify-between gap-4">
                   <div>
                     <h2 className="font-semibold text-white">Visão das contas</h2>
