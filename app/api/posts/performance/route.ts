@@ -49,7 +49,7 @@ export async function GET() {
         )
         url.searchParams.set(
           "fields",
-          "like_count,comments_count,media_type,media_product_type,permalink,timestamp"
+          "like_count,comments_count,media_type,media_product_type,permalink,timestamp,video_views,plays"
         )
         url.searchParams.set("access_token", accessToken)
 
@@ -68,6 +68,7 @@ export async function GET() {
           permalink: payload.permalink || null,
           likeCount: payload.like_count ?? null,
           commentsCount: payload.comments_count ?? null,
+          videoViews: payload.video_views ?? payload.plays ?? null,
           mediaType: payload.media_type || null,
           publishedAt: log.createdAt,
           error: null,
@@ -81,6 +82,7 @@ export async function GET() {
           permalink: null,
           likeCount: null,
           commentsCount: null,
+          videoViews: null,
           mediaType: null,
           publishedAt: log.createdAt,
           error:
