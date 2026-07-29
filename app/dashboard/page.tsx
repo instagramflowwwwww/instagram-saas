@@ -1,160 +1,781 @@
 "use client"
+
 import { useSession } from "next-auth/react"
-import { useEffect, useState } from "react"
-import { Instagram, Upload, CheckCircle, AlertCircle, Calendar, TrendingUp } from "lucide-react"
 import Link from "next/link"
+import {
+  AlertCircle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Calendar,
+  CalendarClock,
+  CheckCircle2,
+  CircleAlert,
+  ImageIcon,
+  Instagram,
+  Loader2,
+  Minus,
+  Play,
+  RefreshCw,
+  Send,
+  TrendingUp,
+  Upload,
+} from "lucide-react"
+import {
+  type ChangeEvent,
+  type ElementType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
-export default function DashboardPage() {
-  const { data: session } = useSession()
-  const [accounts, setAccounts] = useState<any[]>([])
-  const [posts, setPosts] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 30)
-    return d.toISOString().split("T")[0]
-  })
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split("T")[0])
+type Metric = {
+  value: number
+  trend: number | null
+}
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/instagram/accounts").then(r => r.json()),
-      fetch(`/api/posts/stats?from=${dateFrom}&to=${dateTo}`).then(r => r.json()),
-    ]).then(([accs, postsData]) => {
-      setAccounts(accs)
-      setPosts(postsData || [])
-      setLoading(false)
-    })
-  }, [dateFrom, dateTo])
+type DashboardAccount = {
+  id: string
+  username: string
+  name: string | null
+  accountType: string | null
+  profilePicture: string | null
+  followerCount: number | null
+  mediaCount: number | null
+  isActive: boolean
+  tokenExpiresAt: string | null
+  lastActiveAt: string
+  requiresReconnect: boolean
+}
 
-  const published = posts.filter((p: any) => p.status === "published" || p.status === "partial").length
-  const errors = posts.filter((p: any) => p.status === "error").length
-  const scheduled = posts.filter((p: any) => p.status === "scheduled").length
+type RecentPost = {
+  id: string
+  caption: string
+  kind: "Reel" | "Imagem"
+  thumbnailUrl: string | null
+  status: string
+  createdAt: string
+  publishedAt: string | null
+  scheduledAt: string | null
+  successCount: number
+  errorCount: number
+  errorMessage: string | null
+  accounts: Array<{
+    id: string
+    username: string
+    profilePicture: string | null
+  }>
+}
 
-  const stats = [
-    { label: "Contas conectadas", value: accounts.length, icon: Instagram, color: "text-purple-400", bg: "bg-purple-500/10" },
-    { label: "Posts publicados", value: loading ? "..." : published, icon: CheckCircle, color: "text-green-400", bg: "bg-green-500/10" },
-    { label: "Agendamentos", value: loading ? "..." : scheduled, icon: Calendar, color: "text-blue-400", bg: "bg-blue-500/10" },
-    { label: "Erros", value: loading ? "..." : errors, icon: AlertCircle, color: "text-red-400", bg: "bg-red-500/10" },
-  ]
+type DashboardData = {
+  summary: {
+    accounts: Metric & {
+      totalConfigured: number
+      newInPeriod: number
+    }
+    published: Metric
+    scheduled: Metric
+    failures: Metric
+  }
+  audience: {
+    totalFollowers: number
+    totalMedia: number
+    averageFollowers: number
+  }
+  accounts: DashboardAccount[]
+  recentPosts: RecentPost[]
+  generatedAt: string
+}
 
-  const formatDate = (date: string) => {
-    const [y, m, d] = date.split("-")
-    return `${d}/${m}/${y}`
+type StatCardProps = {
+  label: string
+  value: number
+  description: string
+  trend: number | null
+  icon: ElementType
+  iconClassName: string
+  iconBackground: string
+  inverseTrend?: boolean
+}
+
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; className: string; dot: string }
+> = {
+  published: {
+    label: "Publicado",
+    className: "border-green-500/20 bg-green-500/10 text-green-400",
+    dot: "bg-green-400",
+  },
+  partial: {
+    label: "Parcial",
+    className: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
+    dot: "bg-yellow-400",
+  },
+  scheduled: {
+    label: "Agendado",
+    className: "border-blue-500/20 bg-blue-500/10 text-blue-300",
+    dot: "bg-blue-400",
+  },
+  publishing: {
+    label: "Publicando",
+    className: "border-purple-500/20 bg-purple-500/10 text-purple-300",
+    dot: "bg-purple-400",
+  },
+  failed: {
+    label: "Falhou",
+    className: "border-red-500/20 bg-red-500/10 text-red-300",
+    dot: "bg-red-400",
+  },
+  draft: {
+    label: "Rascunho",
+    className: "border-white/10 bg-white/[0.04] text-gray-400",
+    dot: "bg-gray-500",
+  },
+}
+
+function getToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
+
+function getInitialDateFrom() {
+  const date = new Date()
+  date.setDate(date.getDate() - 30)
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date)
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("pt-BR").format(value)
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "—"
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value))
+}
+
+function AccountAvatar({
+  src,
+  username,
+  size = "md",
+}: {
+  src: string | null
+  username: string
+  size?: "sm" | "md"
+}) {
+  const [failed, setFailed] = useState(false)
+  const classes = size === "sm" ? "h-7 w-7" : "h-11 w-11"
+
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt={`Foto de @${username}`}
+        className={`${classes} shrink-0 rounded-full border border-white/10 object-cover`}
+        onError={() => setFailed(true)}
+      />
+    )
   }
 
   return (
-    <div>
-      <div className="flex items-start justify-between mb-8">
+    <div
+      className={`${classes} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white`}
+    >
+      <Instagram size={size === "sm" ? 13 : 18} />
+    </div>
+  )
+}
+
+function TrendBadge({
+  value,
+  inverse = false,
+}: {
+  value: number | null
+  inverse?: boolean
+}) {
+  if (value === null) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-300">
+        <TrendingUp size={12} />
+        Novo no período
+      </span>
+    )
+  }
+
+  if (value === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+        <Minus size={12} />
+        Sem alteração
+      </span>
+    )
+  }
+
+  const positive = value > 0
+  const healthy = inverse ? !positive : positive
+  const Icon = positive ? ArrowUpRight : ArrowDownRight
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+        healthy ? "text-green-400" : "text-red-400"
+      }`}
+    >
+      <Icon size={12} />
+      {Math.abs(value)}% vs. período anterior
+    </span>
+  )
+}
+
+function StatCard({
+  label,
+  value,
+  description,
+  trend,
+  icon: Icon,
+  iconClassName,
+  iconBackground,
+  inverseTrend,
+}: StatCardProps) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5 transition-colors hover:border-white/10">
+      <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">
-            Olá, {session?.user?.name?.split(" ")[0] || "usuário"} 👋
-          </h1>
-          <p className="text-gray-500 mt-1">Bem-vindo ao seu painel de controle teste</p>
+          <p className="text-xs font-medium text-gray-500">{label}</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-white">
+            {formatNumber(value)}
+          </p>
         </div>
-
-        {/* Filtro de data */}
-        <div className="flex items-center gap-2 bg-[#111] border border-white/10 rounded-xl px-4 py-2.5">
-          <Calendar size={14} className="text-gray-500" />
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={e => setDateFrom(e.target.value)}
-            className="bg-transparent text-sm text-white focus:outline-none"
-          />
-          <span className="text-gray-600 text-sm">até</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={e => setDateTo(e.target.value)}
-            className="bg-transparent text-sm text-white focus:outline-none"
-          />
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBackground}`}
+        >
+          <Icon size={16} className={iconClassName} />
         </div>
       </div>
+      <div className="flex min-h-8 flex-col gap-1">
+        <TrendBadge value={trend} inverse={inverseTrend} />
+        <p className="text-[11px] text-gray-600">{description}</p>
+      </div>
+    </div>
+  )
+}
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        {stats.map((stat) => (
-          <div key={stat.label} className="bg-[#111] border border-white/5 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs text-gray-500 font-medium">{stat.label}</span>
-              <div className={`w-8 h-8 rounded-lg ${stat.bg} flex items-center justify-center`}>
-                <stat.icon size={14} className={stat.color} />
+export default function DashboardPage() {
+  const { data: session } = useSession()
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [dateFrom, setDateFrom] = useState(getInitialDateFrom)
+  const [dateTo, setDateTo] = useState(getToday)
+  const initialLoad = useRef(true)
+
+  const loadDashboard = useCallback(
+    async (syncAccounts = false) => {
+      setError(null)
+      setRefreshing(syncAccounts)
+
+      try {
+        if (syncAccounts) {
+          await fetch("/api/instagram/accounts", {
+            cache: "no-store",
+          }).catch(() => null)
+        }
+
+        const params = new URLSearchParams({
+          from: dateFrom,
+          to: dateTo,
+        })
+        const response = await fetch(`/api/dashboard/stats?${params}`, {
+          cache: "no-store",
+        })
+        const payload = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Não foi possível carregar o dashboard.")
+        }
+
+        setData(payload)
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Não foi possível carregar o dashboard."
+        )
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    },
+    [dateFrom, dateTo]
+  )
+
+  useEffect(() => {
+    setLoading(true)
+    void loadDashboard(initialLoad.current)
+    initialLoad.current = false
+  }, [loadDashboard])
+
+  const maxFollowers = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...(data?.accounts.map((account) => account.followerCount || 0) || [0])
+      ),
+    [data?.accounts]
+  )
+
+  const firstName = session?.user?.name?.trim().split(" ")[0] || "usuário"
+  const hasAccounts = Boolean(data?.accounts.length)
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Olá, {firstName} 👋</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Acompanhe suas contas, publicações e falhas em um só lugar.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-3 py-2.5">
+            <Calendar size={14} className="shrink-0 text-gray-500" />
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setDateFrom(event.target.value)
+              }
+              className="min-w-0 bg-transparent text-xs text-gray-200 outline-none [color-scheme:dark]"
+              aria-label="Data inicial"
+            />
+            <span className="text-xs text-gray-600">até</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom}
+              max={getToday()}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setDateTo(event.target.value)
+              }
+              className="min-w-0 bg-transparent text-xs text-gray-200 outline-none [color-scheme:dark]"
+              aria-label="Data final"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => loadDashboard(true)}
+            disabled={loading || refreshing}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-300 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw
+              size={14}
+              className={refreshing ? "animate-spin" : ""}
+            />
+            Atualizar dados
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+          <CircleAlert size={17} className="mt-0.5 shrink-0 text-red-400" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-300">{error}</p>
+            <button
+              type="button"
+              onClick={() => loadDashboard(true)}
+              className="mt-2 text-xs font-medium text-red-200/70 underline underline-offset-4 hover:text-red-200"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading && !data ? (
+        <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-white/[0.06] bg-[#111]">
+          <div className="text-center">
+            <Loader2 size={24} className="mx-auto animate-spin text-purple-400" />
+            <p className="mt-3 text-sm text-gray-500">Carregando dados reais...</p>
+          </div>
+        </div>
+      ) : data ? (
+        <>
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Contas conectadas"
+              value={data.summary.accounts.value}
+              description={`${data.summary.accounts.newInPeriod} nova(s) no período`}
+              trend={data.summary.accounts.trend}
+              icon={Instagram}
+              iconClassName="text-purple-400"
+              iconBackground="bg-purple-500/10"
+            />
+            <StatCard
+              label="Posts publicados"
+              value={data.summary.published.value}
+              description="Publicações com pelo menos um envio aprovado"
+              trend={data.summary.published.trend}
+              icon={CheckCircle2}
+              iconClassName="text-green-400"
+              iconBackground="bg-green-500/10"
+            />
+            <StatCard
+              label="Agendamentos"
+              value={data.summary.scheduled.value}
+              description="Conteúdos programados neste período"
+              trend={data.summary.scheduled.trend}
+              icon={CalendarClock}
+              iconClassName="text-blue-400"
+              iconBackground="bg-blue-500/10"
+            />
+            <StatCard
+              label="Falhas de envio"
+              value={data.summary.failures.value}
+              description="Tentativas que retornaram erro por conta"
+              trend={data.summary.failures.trend}
+              icon={AlertCircle}
+              iconClassName="text-red-400"
+              iconBackground="bg-red-500/10"
+              inverseTrend
+            />
+          </section>
+
+          {!hasAccounts ? (
+            <section className="rounded-2xl border border-dashed border-white/10 bg-[#111] px-6 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
+                <Instagram size={24} className="text-purple-400" />
               </div>
+              <h2 className="font-semibold text-white">Nenhuma conta conectada</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
+                Configure seu App Meta e conecte a primeira conta para começar a publicar e acompanhar os resultados.
+              </p>
+              <Link
+                href="/dashboard/meta-app"
+                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                <Instagram size={15} />
+                Conectar pelo App Meta
+              </Link>
+            </section>
+          ) : (
+            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+              <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+                <div className="mb-5 flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-semibold text-white">Visão das contas</h2>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Audiência e conteúdo sincronizados pela API oficial.
+                    </p>
+                  </div>
+                  <Link
+                    href="/dashboard/accounts"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300"
+                  >
+                    Ver contas
+                    <ArrowRight size={13} />
+                  </Link>
+                </div>
+
+                <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+                    <p className="text-[10px] uppercase tracking-wide text-gray-600">
+                      Seguidores totais
+                    </p>
+                    <p className="mt-1.5 text-xl font-semibold text-white">
+                      {formatCompactNumber(data.audience.totalFollowers)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+                    <p className="text-[10px] uppercase tracking-wide text-gray-600">
+                      Posts nos perfis
+                    </p>
+                    <p className="mt-1.5 text-xl font-semibold text-white">
+                      {formatCompactNumber(data.audience.totalMedia)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+                    <p className="text-[10px] uppercase tracking-wide text-gray-600">
+                      Média por conta
+                    </p>
+                    <p className="mt-1.5 text-xl font-semibold text-white">
+                      {formatCompactNumber(data.audience.averageFollowers)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {data.accounts.slice(0, 4).map((account) => {
+                    const followers = account.followerCount || 0
+                    const width = Math.max(4, (followers / maxFollowers) * 100)
+
+                    return (
+                      <div
+                        key={account.id}
+                        className="rounded-xl border border-white/[0.05] bg-black/10 px-3.5 py-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <AccountAvatar
+                            src={account.profilePicture}
+                            username={account.username}
+                            size="sm"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-semibold text-white">
+                                  @{account.username}
+                                </p>
+                                <p className="truncate text-[10px] text-gray-600">
+                                  {account.name || account.accountType || "Instagram"}
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="text-xs font-semibold text-gray-200">
+                                  {formatCompactNumber(followers)}
+                                </p>
+                                <p className="text-[10px] text-gray-600">seguidores</p>
+                              </div>
+                            </div>
+                            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.05]">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500"
+                                style={{ width: `${width}%` }}
+                              />
+                            </div>
+                          </div>
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              account.requiresReconnect
+                                ? "bg-red-400"
+                                : "bg-green-400"
+                            }`}
+                            title={
+                              account.requiresReconnect
+                                ? "Precisa reconectar"
+                                : "Conectada"
+                            }
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+                <div className="mb-5">
+                  <h2 className="font-semibold text-white">Ações rápidas</h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Atalhos para as tarefas mais usadas.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <Link
+                    href="/dashboard/publish"
+                    className="group flex items-center gap-3 rounded-xl border border-purple-500/20 bg-purple-500/[0.08] p-4 transition-colors hover:bg-purple-500/[0.13]"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15">
+                      <Upload size={17} className="text-purple-300" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-white">Publicar agora</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        Envie uma imagem ou Reel
+                      </p>
+                    </div>
+                    <ArrowRight
+                      size={15}
+                      className="text-purple-400 transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+
+                  <Link
+                    href="/dashboard/meta-app"
+                    className="group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.045]"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-pink-500/10">
+                      <Instagram size={17} className="text-pink-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-white">Conectar conta</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        Autorize outra conta oficial
+                      </p>
+                    </div>
+                    <ArrowRight
+                      size={15}
+                      className="text-gray-600 transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+
+                  <Link
+                    href="/dashboard/performance"
+                    className="group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.045]"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/10">
+                      <TrendingUp size={17} className="text-green-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-white">Ver performance</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        Curtidas, comentários e views
+                      </p>
+                    </div>
+                    <ArrowRight
+                      size={15}
+                      className="text-gray-600 transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+                </div>
+
+                <div className="mt-5 rounded-xl border border-white/[0.05] bg-black/10 p-4">
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <RefreshCw size={12} />
+                    Última leitura
+                  </div>
+                  <p className="mt-1.5 text-xs font-medium text-gray-300">
+                    {formatDate(data.generatedAt)}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-white">Atividade recente</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Últimas publicações e tentativas dentro do período selecionado.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/history"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300"
+              >
+                Ver histórico
+                <ArrowRight size={13} />
+              </Link>
             </div>
-            <p className="text-3xl font-bold text-white">{stat.value}</p>
-            <p className="text-xs text-gray-600 mt-1">{formatDate(dateFrom)} — {formatDate(dateTo)}</p>
-          </div>
-        ))}
-      </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <Link href="/dashboard/accounts" className="bg-[#111] border border-white/5 rounded-xl p-6 hover:border-purple-500/30 transition-all group">
-          <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4 group-hover:bg-purple-500/20 transition-colors">
-            <Instagram size={18} className="text-purple-400" />
-          </div>
-          <h3 className="font-semibold text-white mb-1">Conectar Instagram</h3>
-          <p className="text-sm text-gray-500">Adicione suas contas do Instagram para publicar</p>
-        </Link>
-        <Link href="/dashboard/publish" className="bg-[#111] border border-white/5 rounded-xl p-6 hover:border-purple-500/30 transition-all group">
-          <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4 group-hover:bg-purple-500/20 transition-colors">
-            <Upload size={18} className="text-purple-400" />
-          </div>
-          <h3 className="font-semibold text-white mb-1">Publicar conteúdo</h3>
-          <p className="text-sm text-gray-500">Envie vídeos e imagens para várias contas</p>
-        </Link>
-      </div>
-
-      {/* Posts recentes */}
-      {posts.length > 0 && (
-        <div className="bg-[#111] border border-white/5 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp size={15} className="text-purple-400" />
-            <h3 className="font-semibold text-white text-sm">Posts recentes</h3>
-          </div>
-          <div className="space-y-2">
-            {posts.slice(0, 5).map((post: any) => (
-              <div key={post.id} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  post.status === "published" ? "bg-green-400" :
-                  post.status === "error" ? "bg-red-400" :
-                  post.status === "scheduled" ? "bg-blue-400" : "bg-gray-400"
-                }`} />
-                <p className="text-sm text-gray-300 flex-1 truncate">{post.caption || "Sem legenda"}</p>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  post.status === "published" ? "bg-green-500/10 text-green-400" :
-                  post.status === "error" ? "bg-red-500/10 text-red-400" :
-                  post.status === "scheduled" ? "bg-blue-500/10 text-blue-400" : "bg-gray-500/10 text-gray-400"
-                }`}>
-                  {post.status === "published" ? "Publicado" :
-                   post.status === "error" ? "Erro" :
-                   post.status === "scheduled" ? "Agendado" : post.status}
-                </span>
-                <span className="text-xs text-gray-600">
-                  {new Date(post.createdAt).toLocaleDateString("pt-BR")}
-                </span>
+            {data.recentPosts.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/[0.08] px-5 py-10 text-center">
+                <Send size={20} className="mx-auto text-gray-700" />
+                <p className="mt-3 text-sm font-medium text-gray-300">
+                  Nenhuma atividade neste período
+                </p>
+                <p className="mt-1 text-xs text-gray-600">
+                  Publique ou agende um conteúdo para ele aparecer aqui.
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            ) : (
+              <div className="divide-y divide-white/[0.05]">
+                {data.recentPosts.map((post) => {
+                  const status = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
+                  const activityDate =
+                    post.publishedAt || post.scheduledAt || post.createdAt
 
-      {/* Empty state */}
-      {accounts.length === 0 && (
-        <div className="mt-8 bg-[#111] border border-white/5 rounded-xl p-10 text-center">
-          <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
-            <Instagram size={22} className="text-purple-400" />
-          </div>
-          <h3 className="font-semibold text-white mb-2">Nenhuma conta conectada</h3>
-          <p className="text-gray-500 text-sm mb-6">Conecte sua primeira conta do Instagram para começar</p>
-          <Link href="/dashboard/accounts"
-            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
-            <Instagram size={15} />
-            Conectar agora
-          </Link>
-        </div>
-      )}
+                  return (
+                    <div
+                      key={post.id}
+                      className="flex flex-col gap-3 py-3.5 first:pt-0 last:pb-0 lg:flex-row lg:items-center"
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03]">
+                          {post.thumbnailUrl ? (
+                            <img
+                              src={post.thumbnailUrl}
+                              alt="Prévia da publicação"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : post.kind === "Reel" ? (
+                            <Play size={16} className="text-purple-400" />
+                          ) : (
+                            <ImageIcon size={16} className="text-purple-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-sm font-medium text-gray-200">
+                              {post.caption}
+                            </p>
+                            <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-600">
+                              {post.kind}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
+                            <span>{formatDate(activityDate)}</span>
+                            <span>{post.successCount} envio(s) aprovado(s)</span>
+                            {post.errorCount > 0 && (
+                              <span className="text-red-400/80">
+                                {post.errorCount} falha(s)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 lg:justify-end">
+                        <div className="flex -space-x-1.5">
+                          {post.accounts.slice(0, 3).map((account) => (
+                            <AccountAvatar
+                              key={account.id}
+                              src={account.profilePicture}
+                              username={account.username}
+                              size="sm"
+                            />
+                          ))}
+                          {post.accounts.length > 3 && (
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[#111] bg-[#222] text-[10px] font-medium text-gray-400">
+                              +{post.accounts.length - 3}
+                            </div>
+                          )}
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${status.className}`}
+                          title={post.errorMessage || undefined}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+                          {status.label}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
     </div>
   )
 }
