@@ -17,6 +17,29 @@ export type MetaApiError = {
   fbtrace_id?: string
 }
 
+export type InstagramProfile = {
+  id?: string
+  user_id?: string
+  username?: string
+  name?: string
+  account_type?: string
+  profile_picture_url?: string
+  followers_count?: number | string
+  follows_count?: number | string
+  media_count?: number | string
+}
+
+const INSTAGRAM_PROFILE_FIELDS = [
+  "user_id",
+  "username",
+  "name",
+  "account_type",
+  "profile_picture_url",
+  "followers_count",
+  "follows_count",
+  "media_count",
+].join(",")
+
 export function getPublicBaseUrl(request?: NextRequest | Request) {
   const configured = process.env.NEXT_PUBLIC_URL?.trim().replace(/\/$/, "")
   if (configured) return configured
@@ -97,4 +120,39 @@ export async function readJsonResponse(response: Response) {
   } catch {
     return { payload: null, raw }
   }
+}
+
+export function parseMetaCount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+
+  return null
+}
+
+export async function fetchInstagramProfile(accessToken: string) {
+  const url = new URL(
+    `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}/me`
+  )
+  url.searchParams.set("fields", INSTAGRAM_PROFILE_FIELDS)
+  url.searchParams.set("access_token", accessToken)
+
+  const response = await fetch(url, { cache: "no-store" })
+  const { payload, raw } = await readJsonResponse(response)
+
+  if (!response.ok || !payload) {
+    const error = getMetaError(payload)
+
+    console.error("Instagram profile request failed", {
+      status: response.status,
+      body: raw.slice(0, 1000),
+    })
+
+    throw new Error(metaErrorMessage(error))
+  }
+
+  return payload as InstagramProfile
 }

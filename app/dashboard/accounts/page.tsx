@@ -28,6 +28,7 @@ type InstagramAccount = {
   tokenExpiresAt: string | null
   lastActiveAt: string
   appId: string | null
+  syncError: string | null
 }
 
 function formatNumber(value: number | null) {
@@ -43,14 +44,60 @@ function formatDate(value: string | null) {
   }).format(new Date(value))
 }
 
+function getAccountTypeLabel(value: string | null) {
+  if (value === "BUSINESS") return "Conta comercial"
+  if (value === "MEDIA_CREATOR") return "Criador de conteúdo"
+  return "Conta profissional"
+}
+
+function AccountAvatar({
+  src,
+  username,
+}: {
+  src: string | null
+  username: string
+}) {
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [src])
+
+  if (!src || failed) {
+    return (
+      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0 ring-2 ring-white/5">
+        <Instagram size={21} className="text-white" />
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt={`Foto de perfil de @${username}`}
+      className="w-14 h-14 rounded-full object-cover shrink-0 ring-2 ring-purple-500/25"
+      onError={() => setFailed(true)}
+      referrerPolicy="no-referrer"
+    />
+  )
+}
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
-  const fetchAccounts = async () => {
-    setLoading(true)
+  const fetchAccounts = async (manual = false) => {
+    if (manual) {
+      setRefreshing(true)
+      setMessage(null)
+    } else {
+      setLoading(true)
+    }
+
+    setError(null)
 
     try {
       const response = await fetch("/api/instagram/accounts", {
@@ -63,6 +110,10 @@ export default function AccountsPage() {
       }
 
       setAccounts(Array.isArray(data) ? data : [])
+
+      if (manual) {
+        setMessage("Dados das contas atualizados pela API oficial.")
+      }
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -71,6 +122,7 @@ export default function AccountsPage() {
       )
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -107,20 +159,34 @@ export default function AccountsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Contas do Instagram</h1>
           <p className="text-gray-500 mt-1">
             {officialCount} conta(s) conectada(s) pela API oficial
           </p>
         </div>
-        <Link
-          href="/dashboard/meta-app"
-          className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-opacity"
-        >
-          <UserPlus size={15} />
-          Conectar pelo App Meta
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fetchAccounts(true)}
+            disabled={loading || refreshing}
+            className="inline-flex items-center justify-center gap-2 border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] disabled:opacity-50 text-gray-300 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+          >
+            <RefreshCw
+              size={15}
+              className={refreshing ? "animate-spin" : ""}
+            />
+            Atualizar dados
+          </button>
+          <Link
+            href="/dashboard/meta-app"
+            className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-opacity"
+          >
+            <UserPlus size={15} />
+            Conectar pelo App Meta
+          </Link>
+        </div>
       </div>
 
       {message && (
@@ -183,55 +249,60 @@ export default function AccountsPage() {
             return (
               <div
                 key={account.id}
-                className="bg-[#111] border border-white/5 rounded-2xl p-5"
+                className="bg-[#111] border border-white/[0.07] rounded-2xl p-5 transition-colors hover:border-white/10"
               >
-                <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-start justify-between gap-3 mb-5">
                   <div className="flex items-center gap-3 min-w-0">
-                    {account.profilePicture ? (
-                      <img
-                        src={account.profilePicture}
-                        alt=""
-                        className="w-11 h-11 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-                        <Instagram size={17} className="text-white" />
-                      </div>
-                    )}
+                    <AccountAvatar
+                      src={account.profilePicture}
+                      username={account.username}
+                    />
                     <div className="min-w-0">
-                      <p className="font-medium text-white text-sm truncate">
+                      <p className="font-semibold text-white text-sm truncate">
                         @{account.username}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {account.name || account.accountType || "Conta profissional"}
+                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                        {account.name || getAccountTypeLabel(account.accountType)}
+                      </p>
+                      <p className="text-[10px] text-purple-400/80 mt-1 uppercase tracking-wide">
+                        {getAccountTypeLabel(account.accountType)}
                       </p>
                     </div>
                   </div>
                   <span
-                    className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                      connected ? "bg-green-400" : "bg-red-400"
+                    className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 shadow-[0_0_10px_currentColor] ${
+                      connected ? "bg-green-400 text-green-400" : "bg-red-400 text-red-400"
                     }`}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 mb-4">
-                  <div className="bg-white/[0.025] border border-white/5 rounded-xl p-3">
+                  <div className="bg-white/[0.025] border border-white/[0.06] rounded-xl p-3.5">
                     <p className="text-[10px] text-gray-600 uppercase tracking-wide">
                       Seguidores
                     </p>
-                    <p className="text-sm text-white font-medium mt-1">
+                    <p className="text-lg text-white font-semibold mt-1">
                       {formatNumber(account.followerCount)}
                     </p>
                   </div>
-                  <div className="bg-white/[0.025] border border-white/5 rounded-xl p-3">
+                  <div className="bg-white/[0.025] border border-white/[0.06] rounded-xl p-3.5">
                     <p className="text-[10px] text-gray-600 uppercase tracking-wide">
                       Publicações
                     </p>
-                    <p className="text-sm text-white font-medium mt-1">
+                    <p className="text-lg text-white font-semibold mt-1">
                       {formatNumber(account.mediaCount)}
                     </p>
                   </div>
                 </div>
+
+                {account.syncError && (
+                  <div className="flex items-start gap-2 border border-yellow-500/15 bg-yellow-500/[0.06] rounded-lg px-3 py-2.5 mb-4">
+                    <AlertCircle size={13} className="text-yellow-400 mt-0.5 shrink-0" />
+                    <p className="text-[11px] leading-4 text-yellow-200/70">
+                      {account.syncError}
+                    </p>
+                  </div>
+                )}
 
                 <div className="space-y-2 text-xs mb-4">
                   <div className="flex items-center justify-between gap-3">
@@ -246,6 +317,12 @@ export default function AccountsPage() {
                       {account.connectionType === "official"
                         ? "API oficial"
                         : "Privada antiga"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-gray-600">Última atualização</span>
+                    <span className="text-gray-400">
+                      {formatDate(account.lastActiveAt)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">

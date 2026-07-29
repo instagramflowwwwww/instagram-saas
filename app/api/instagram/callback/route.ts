@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import {
+  fetchInstagramProfile,
   getInstagramRedirectUri,
   getMetaError,
-  INSTAGRAM_GRAPH_VERSION,
   metaErrorMessage,
+  parseMetaCount,
   readJsonResponse,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
@@ -26,50 +27,10 @@ type OAuthState = {
   expiresAt: number
 }
 
-type InstagramProfile = {
-  id?: string
-  user_id?: string
-  username?: string
-  name?: string
-  account_type?: string
-  profile_picture_url?: string
-  followers_count?: number
-  media_count?: number
-}
-
 function redirectWithError(request: NextRequest, error: string) {
   const url = new URL("/dashboard/meta-app", request.url)
   url.searchParams.set("error", error)
   return NextResponse.redirect(url)
-}
-
-async function fetchProfile(accessToken: string) {
-  const fieldSets = [
-    "id,user_id,username,name,account_type,profile_picture_url,followers_count,media_count",
-    "id,user_id,username,name,account_type,profile_picture_url",
-    "id,username,account_type",
-  ]
-
-  let lastError = "Não foi possível carregar o perfil do Instagram"
-
-  for (const fields of fieldSets) {
-    const url = new URL(
-      `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}/me`
-    )
-    url.searchParams.set("fields", fields)
-    url.searchParams.set("access_token", accessToken)
-
-    const response = await fetch(url, { cache: "no-store" })
-    const { payload } = await readJsonResponse(response)
-
-    if (response.ok && payload) {
-      return payload as InstagramProfile
-    }
-
-    lastError = metaErrorMessage(getMetaError(payload))
-  }
-
-  throw new Error(lastError)
 }
 
 export async function GET(request: NextRequest) {
@@ -179,7 +140,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const profile = await fetchProfile(accessToken)
+    const profile = await fetchInstagramProfile(accessToken)
     const igUserId = String(
       profile.id || tokenData.user_id || profile.user_id || ""
     )
@@ -216,14 +177,8 @@ export async function GET(request: NextRequest) {
         : null,
       accessToken: encryptValue(accessToken),
       tokenExpiresAt,
-      followerCount:
-        typeof profile.followers_count === "number"
-          ? profile.followers_count
-          : null,
-      mediaCount:
-        typeof profile.media_count === "number"
-          ? profile.media_count
-          : null,
+      followerCount: parseMetaCount(profile.followers_count),
+      mediaCount: parseMetaCount(profile.media_count),
       connectionType: "official",
       isActive: true,
       proxy: null,
