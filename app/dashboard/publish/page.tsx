@@ -16,6 +16,9 @@ type InstagramAccount = {
   id: string
   username: string
   profilePicture: string | null
+  connectionType: string
+  isActive: boolean
+  requiresReconnect: boolean
 }
 
 type PublishResult = {
@@ -33,7 +36,7 @@ type CloudinarySignature = {
   signature: string
 }
 
-const IMAGE_LIMIT = 20 * 1024 * 1024
+const IMAGE_LIMIT = 8 * 1024 * 1024
 const VIDEO_LIMIT = 200 * 1024 * 1024
 
 export default function PublishPage() {
@@ -61,7 +64,12 @@ export default function PublishPage() {
         return data
       })
       .then((data) => {
-        const accountList = Array.isArray(data) ? data : []
+        const accountList = (Array.isArray(data) ? data : []).filter(
+          (account: InstagramAccount) =>
+            account.connectionType === "official" &&
+            account.isActive &&
+            !account.requiresReconnect
+        )
         setAccounts(accountList)
         setSelectedAccounts(accountList.map((account: InstagramAccount) => account.id))
       })
@@ -163,12 +171,20 @@ export default function PublishPage() {
       setPublishError("Selecione pelo menos uma conta")
       return
     }
+    if (imageFile && imageFile.type !== "image/jpeg") {
+      setPublishError("A API oficial aceita somente imagem JPEG no feed")
+      return
+    }
+    if (coverFile && coverFile.type !== "image/jpeg") {
+      setPublishError("A capa do Reel deve ser uma imagem JPEG")
+      return
+    }
     if (imageFile && imageFile.size > IMAGE_LIMIT) {
-      setPublishError("A imagem pode ter no máximo 20 MB")
+      setPublishError("A imagem JPEG pode ter no máximo 8 MB")
       return
     }
     if (coverFile && coverFile.size > IMAGE_LIMIT) {
-      setPublishError("A capa pode ter no máximo 20 MB")
+      setPublishError("A capa JPEG pode ter no máximo 8 MB")
       return
     }
     if (videoFile && videoFile.size > VIDEO_LIMIT) {
@@ -280,7 +296,7 @@ export default function PublishPage() {
                 <input
                   ref={coverRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/jpeg"
                   className="hidden"
                   onChange={(event) => handleCoverChange(event.target.files?.[0] || null)}
                 />
@@ -310,7 +326,7 @@ export default function PublishPage() {
               <input
                 ref={imageRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg"
                 className="hidden"
                 onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
               />
@@ -395,7 +411,7 @@ export default function PublishPage() {
             </div>
 
             {accounts.length === 0 ? (
-              <p className="text-gray-500 text-xs text-center py-6">Nenhuma conta conectada</p>
+              <p className="text-gray-500 text-xs text-center py-6">Nenhuma conta oficial conectada</p>
             ) : (
               <div className="space-y-2">
                 {accounts.map((account) => (

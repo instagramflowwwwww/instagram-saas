@@ -1,22 +1,32 @@
-import { prisma } from "@/lib/prisma"
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
-import { getProxyAgent } from "@/lib/proxy"
+import { authOptions } from "@/lib/auth"
+import {
+  getMetaError,
+  INSTAGRAM_GRAPH_VERSION,
+  metaErrorMessage,
+  readJsonResponse,
+} from "@/lib/instagram-meta"
+import { prisma } from "@/lib/prisma"
+import { decryptValue } from "@/lib/secure-store"
+
+export const runtime = "nodejs"
 
 export async function GET() {
-  const session = await getServerSession()
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const session = await getServerSession(authOptions)
 
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } })
-  if (!user) return NextResponse.json([])
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  }
 
   const logs = await prisma.postLog.findMany({
     where: {
       status: "success",
       mediaId: { not: null },
-      post: { userId: user.id },
+      post: { userId: session.user.id },
+      instagramAccount: {
+        connectionType: "official",
+      },
     },
     include: {
       post: true,
@@ -29,28 +39,40 @@ export async function GET() {
   const results = await Promise.all(
     logs.map(async (log) => {
       try {
-        const agent = getProxyAgent(log.instagramAccount.proxy)
-        const fields = "like_count,comments_count,media_type,media_product_type,permalink,timestamp"
-        const res = await fetch(
-          `https://graph.instagram.com/v19.0/${log.mediaId}?fields=${fields}&access_token=${log.instagramAccount.accessToken}`,
-          // @ts-ignore
-          { agent }
+        if (!log.instagramAccount.accessToken) {
+          throw new Error("Conta sem token oficial")
+        }
+
+        const accessToken = decryptValue(log.instagramAccount.accessToken)
+        const url = new URL(
+          `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}/${log.mediaId}`
         )
-        const data = await res.json()
+        url.searchParams.set(
+          "fields",
+          "like_count,comments_count,media_type,media_product_type,permalink,timestamp"
+        )
+        url.searchParams.set("access_token", accessToken)
+
+        const response = await fetch(url, { cache: "no-store" })
+        const { payload } = await readJsonResponse(response)
+
+        if (!response.ok || !payload) {
+          throw new Error(metaErrorMessage(getMetaError(payload)))
+        }
 
         return {
           id: log.id,
           username: log.instagramAccount.username,
           profilePicture: log.instagramAccount.profilePicture,
           caption: log.post.caption,
-          permalink: data.permalink || null,
-          likeCount: data.like_count ?? null,
-          commentsCount: data.comments_count ?? null,
-          mediaType: data.media_type || null,
+          permalink: payload.permalink || null,
+          likeCount: payload.like_count ?? null,
+          commentsCount: payload.comments_count ?? null,
+          mediaType: payload.media_type || null,
           publishedAt: log.createdAt,
-          error: data.error?.message || null,
+          error: null,
         }
-      } catch (err: any) {
+      } catch (error) {
         return {
           id: log.id,
           username: log.instagramAccount.username,
@@ -61,7 +83,10 @@ export async function GET() {
           commentsCount: null,
           mediaType: null,
           publishedAt: log.createdAt,
-          error: "Não foi possível carregar",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Não foi possível carregar",
         }
       }
     })

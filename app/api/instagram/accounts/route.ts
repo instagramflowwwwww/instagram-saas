@@ -16,16 +16,35 @@ export async function GET() {
     select: {
       id: true,
       username: true,
+      name: true,
+      accountType: true,
       profilePicture: true,
       followerCount: true,
+      mediaCount: true,
+      connectionType: true,
       isActive: true,
-      proxy: true,
+      tokenExpiresAt: true,
       lastActiveAt: true,
       createdAt: true,
+      appConfig: {
+        select: {
+          metaAppId: true,
+        },
+      },
     },
   })
 
-  return NextResponse.json(accounts)
+  return NextResponse.json(
+    accounts.map((account) => ({
+      ...account,
+      appId: account.appConfig?.metaAppId || null,
+      appConfig: undefined,
+      requiresReconnect:
+        account.connectionType !== "official" ||
+        !account.tokenExpiresAt ||
+        account.tokenExpiresAt.getTime() <= Date.now(),
+    }))
+  )
 }
 
 export async function DELETE(request: Request) {
@@ -35,7 +54,8 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
-  const { id } = await request.json()
+  const body = await request.json().catch(() => ({}))
+  const id = String(body.id || "")
 
   if (!id) {
     return NextResponse.json({ error: "Conta inválida" }, { status: 400 })
@@ -43,7 +63,7 @@ export async function DELETE(request: Request) {
 
   const result = await prisma.instagramAccount.deleteMany({
     where: {
-      id: String(id),
+      id,
       userId: session.user.id,
     },
   })

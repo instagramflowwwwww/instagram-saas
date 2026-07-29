@@ -6,7 +6,7 @@ import Link from "next/link"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, Zap, FolderOpen,
-  ListChecks, Star, TrendingUp, Shield
+  ListChecks, Star, TrendingUp, Shield, Boxes
 } from "lucide-react"
 
 const ADMIN_EMAIL = "jfontesdacunha@gmail.com"
@@ -38,6 +38,7 @@ const navGroups = [
     label: "Operação",
     items: [
       { href: "/dashboard/accounts", icon: Instagram, label: "Contas" },
+      { href: "/dashboard/meta-app", icon: Boxes, label: "App Meta" },
       { href: "/dashboard/queue", icon: ListChecks, label: "Status da Fila" },
     ],
   },
