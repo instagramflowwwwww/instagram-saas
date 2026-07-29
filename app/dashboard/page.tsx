@@ -19,7 +19,6 @@ import {
   RefreshCw,
   Send,
   TrendingUp,
-  Upload,
 } from "lucide-react"
 import {
   type ChangeEvent,
@@ -591,189 +590,87 @@ export default function DashboardPage() {
               </div>
 
               <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-                <div className="mb-5">
-                  <h2 className="font-semibold text-white">Ações rápidas</h2>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Atalhos para as tarefas mais usadas.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <Link
-                    href="/dashboard/publish"
-                    className="group flex items-center gap-3 rounded-xl border border-purple-500/20 bg-purple-500/[0.08] p-4 transition-colors hover:bg-purple-500/[0.13]"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15">
-                      <Upload size={17} className="text-purple-300" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-white">Publicar agora</p>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        Envie uma imagem ou Reel
-                      </p>
-                    </div>
-                    <ArrowRight
-                      size={15}
-                      className="text-purple-400 transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-
-                  <Link
-                    href="/dashboard/meta-app"
-                    className="group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.045]"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-pink-500/10">
-                      <Instagram size={17} className="text-pink-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-white">Conectar conta</p>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        Autorize outra conta oficial
-                      </p>
-                    </div>
-                    <ArrowRight
-                      size={15}
-                      className="text-gray-600 transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-
-                  <Link
-                    href="/dashboard/performance"
-                    className="group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.045]"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/10">
-                      <TrendingUp size={17} className="text-green-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-white">Ver performance</p>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        Curtidas, comentários e views
-                      </p>
-                    </div>
-                    <ArrowRight
-                      size={15}
-                      className="text-gray-600 transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-                </div>
-
-                <div className="mt-5 rounded-xl border border-white/[0.05] bg-black/10 p-4">
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <RefreshCw size={12} />
-                    Última leitura
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-white">Atividade recente</h2>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Últimas publicações e tentativas.
+                    </p>
                   </div>
-                  <p className="mt-1.5 text-xs font-medium text-gray-300">
-                    {formatDate(data.generatedAt)}
-                  </p>
+                  <Link
+                    href="/dashboard/history"
+                    className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-purple-400 hover:text-purple-300"
+                  >
+                    Ver histórico
+                    <ArrowRight size={13} />
+                  </Link>
                 </div>
+
+                {data.recentPosts.length === 0 ? (
+                  <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] px-5 text-center">
+                    <Send size={19} className="text-gray-700" />
+                    <p className="mt-3 text-sm font-medium text-gray-300">
+                      Nenhuma atividade
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-gray-600">
+                      As próximas publicações aparecerão aqui.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/[0.05]">
+                    {data.recentPosts.slice(0, 5).map((post) => {
+                      const status = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
+                      const activityDate =
+                        post.publishedAt || post.scheduledAt || post.createdAt
+
+                      return (
+                        <div key={post.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.03]">
+                            {post.thumbnailUrl ? (
+                              <img
+                                src={post.thumbnailUrl}
+                                alt="Prévia da publicação"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : post.kind === "Reel" ? (
+                              <Play size={14} className="text-purple-400" />
+                            ) : (
+                              <ImageIcon size={14} className="text-purple-400" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-medium text-gray-200">
+                              {post.caption}
+                            </p>
+                            <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-600">
+                              <span>{formatDate(activityDate)}</span>
+                              {post.errorCount > 0 ? (
+                                <span className="text-red-400/80">
+                                  {post.errorCount} falha(s)
+                                </span>
+                              ) : (
+                                <span>{post.successCount} envio(s)</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <span
+                            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${status.className}`}
+                            title={post.errorMessage || undefined}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+                            {status.label}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </section>
           )}
 
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="font-semibold text-white">Atividade recente</h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  Últimas publicações e tentativas dentro do período selecionado.
-                </p>
-              </div>
-              <Link
-                href="/dashboard/history"
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300"
-              >
-                Ver histórico
-                <ArrowRight size={13} />
-              </Link>
-            </div>
-
-            {data.recentPosts.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/[0.08] px-5 py-10 text-center">
-                <Send size={20} className="mx-auto text-gray-700" />
-                <p className="mt-3 text-sm font-medium text-gray-300">
-                  Nenhuma atividade neste período
-                </p>
-                <p className="mt-1 text-xs text-gray-600">
-                  Publique ou agende um conteúdo para ele aparecer aqui.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-white/[0.05]">
-                {data.recentPosts.map((post) => {
-                  const status = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
-                  const activityDate =
-                    post.publishedAt || post.scheduledAt || post.createdAt
-
-                  return (
-                    <div
-                      key={post.id}
-                      className="flex flex-col gap-3 py-3.5 first:pt-0 last:pb-0 lg:flex-row lg:items-center"
-                    >
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03]">
-                          {post.thumbnailUrl ? (
-                            <img
-                              src={post.thumbnailUrl}
-                              alt="Prévia da publicação"
-                              className="h-full w-full object-cover"
-                            />
-                          ) : post.kind === "Reel" ? (
-                            <Play size={16} className="text-purple-400" />
-                          ) : (
-                            <ImageIcon size={16} className="text-purple-400" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <p className="truncate text-sm font-medium text-gray-200">
-                              {post.caption}
-                            </p>
-                            <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-600">
-                              {post.kind}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
-                            <span>{formatDate(activityDate)}</span>
-                            <span>{post.successCount} envio(s) aprovado(s)</span>
-                            {post.errorCount > 0 && (
-                              <span className="text-red-400/80">
-                                {post.errorCount} falha(s)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 lg:justify-end">
-                        <div className="flex -space-x-1.5">
-                          {post.accounts.slice(0, 3).map((account) => (
-                            <AccountAvatar
-                              key={account.id}
-                              src={account.profilePicture}
-                              username={account.username}
-                              size="sm"
-                            />
-                          ))}
-                          {post.accounts.length > 3 && (
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[#111] bg-[#222] text-[10px] font-medium text-gray-400">
-                              +{post.accounts.length - 3}
-                            </div>
-                          )}
-                        </div>
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${status.className}`}
-                          title={post.errorMessage || undefined}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-                          {status.label}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </section>
         </>
       ) : null}
     </div>
