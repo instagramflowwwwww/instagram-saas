@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
-import { Heart, MessageCircle, ExternalLink, TrendingUp, Instagram } from "lucide-react"
+import { Heart, MessageCircle, ExternalLink, TrendingUp, Instagram, Play } from "lucide-react"
 
 export default function PerformancePage() {
   const [posts, setPosts] = useState<any[]>([])
@@ -17,6 +17,7 @@ export default function PerformancePage() {
 
   const totalLikes = posts.reduce((sum, p) => sum + (p.likeCount || 0), 0)
   const totalComments = posts.reduce((sum, p) => sum + (p.commentsCount || 0), 0)
+  const totalViews = posts.reduce((sum, p) => sum + (p.videoViews || 0), 0)
 
   return (
     <div>
@@ -24,7 +25,7 @@ export default function PerformancePage() {
         <h1 className="text-2xl font-bold text-white">Performance</h1>
         <p className="text-gray-500 mt-1">Métricas dos seus últimos posts publicados</p>
       </div>
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-4 gap-4 mb-8">
         <div className="bg-[#111] border border-white/5 rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-gray-500 font-medium">Posts analisados</span>
@@ -45,6 +46,13 @@ export default function PerformancePage() {
             <MessageCircle size={14} className="text-blue-400" />
           </div>
           <p className="text-2xl font-bold text-white">{loading ? "..." : totalComments.toLocaleString()}</p>
+        </div>
+        <div className="bg-[#111] border border-white/5 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs text-gray-500 font-medium">Total de views</span>
+            <Play size={14} className="text-purple-400" />
+          </div>
+          <p className="text-2xl font-bold text-white">{loading ? "..." : totalViews.toLocaleString()}</p>
         </div>
       </div>
       {loading && (
@@ -90,6 +98,12 @@ export default function PerformancePage() {
                     <MessageCircle size={14} className="text-blue-400" />
                     {post.commentsCount?.toLocaleString() ?? "—"}
                   </div>
+                  {post.videoViews !== null && post.videoViews !== undefined && (
+                    <div className="flex items-center gap-1.5 text-sm text-gray-300">
+                      <Play size={14} className="text-purple-400" />
+                      {post.videoViews?.toLocaleString() ?? "—"}
+                    </div>
+                  )}
                   {post.permalink && (
                     <a href={post.permalink} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white">
                       <ExternalLink size={14} />
