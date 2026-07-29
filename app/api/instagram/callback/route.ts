@@ -204,73 +204,59 @@ export async function GET(request: NextRequest) {
       Date.now() + Math.max(3600, expiresIn) * 1000
     )
 
-    await prisma.$transaction([
-      prisma.instagramAccount.upsert({
+    const accountData = {
+      appConfigId: app.id,
+      username,
+      name: profile.name ? String(profile.name) : null,
+      accountType: profile.account_type
+        ? String(profile.account_type)
+        : null,
+      profilePicture: profile.profile_picture_url
+        ? String(profile.profile_picture_url)
+        : null,
+      accessToken: encryptValue(accessToken),
+      tokenExpiresAt,
+      followerCount:
+        typeof profile.followers_count === "number"
+          ? profile.followers_count
+          : null,
+      mediaCount:
+        typeof profile.media_count === "number"
+          ? profile.media_count
+          : null,
+      connectionType: "official",
+      isActive: true,
+      proxy: null,
+      instagramUsername: null,
+      instagramPassword: null,
+      sessionFilePath: null,
+      lastActiveAt: new Date(),
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const updatedAccounts = await tx.instagramAccount.updateMany({
         where: {
-          userId_igUserId: {
+          userId: session.user.id,
+          igUserId,
+        },
+        data: accountData,
+      })
+
+      if (updatedAccounts.count === 0) {
+        await tx.instagramAccount.create({
+          data: {
             userId: session.user.id,
             igUserId,
+            ...accountData,
           },
-        },
-        update: {
-          appConfigId: app.id,
-          username,
-          name: profile.name ? String(profile.name) : null,
-          accountType: profile.account_type
-            ? String(profile.account_type)
-            : null,
-          profilePicture: profile.profile_picture_url
-            ? String(profile.profile_picture_url)
-            : null,
-          accessToken: encryptValue(accessToken),
-          tokenExpiresAt,
-          followerCount:
-            typeof profile.followers_count === "number"
-              ? profile.followers_count
-              : null,
-          mediaCount:
-            typeof profile.media_count === "number"
-              ? profile.media_count
-              : null,
-          connectionType: "official",
-          isActive: true,
-          proxy: null,
-          instagramUsername: null,
-          instagramPassword: null,
-          sessionFilePath: null,
-          lastActiveAt: new Date(),
-        },
-        create: {
-          userId: session.user.id,
-          appConfigId: app.id,
-          igUserId,
-          username,
-          name: profile.name ? String(profile.name) : null,
-          accountType: profile.account_type
-            ? String(profile.account_type)
-            : null,
-          profilePicture: profile.profile_picture_url
-            ? String(profile.profile_picture_url)
-            : null,
-          accessToken: encryptValue(accessToken),
-          tokenExpiresAt,
-          followerCount:
-            typeof profile.followers_count === "number"
-              ? profile.followers_count
-              : null,
-          mediaCount:
-            typeof profile.media_count === "number"
-              ? profile.media_count
-              : null,
-          connectionType: "official",
-          isActive: true,
-        },
-      }),
-      prisma.instagramApp.update({
+        })
+      }
+
+      await tx.instagramApp.update({
         where: { id: app.id },
         data: { lastValidatedAt: new Date() },
-      }),
-    ])
+      })
+    })
 
     const url = new URL("/dashboard/meta-app", request.url)
     url.searchParams.set("success", "connected")

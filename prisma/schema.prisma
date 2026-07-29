@@ -94,7 +94,7 @@ model InstagramAccount {
   appConfig           InstagramApp? @relation(fields: [appConfigId], references: [id], onDelete: SetNull)
   postLogs            PostLog[]
 
-  @@unique([userId, igUserId])
+  @@index([userId, igUserId])
   @@index([appConfigId])
 }
 
