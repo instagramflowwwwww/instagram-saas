@@ -105,6 +105,7 @@ model Post {
   userId      String
   videoUrl    String?
   imageUrl    String?
+  coverUrl    String?
   caption     String?
   hashtags    String?
   status      String    @default("draft")

@@ -305,7 +305,12 @@ export default function LibraryPage() {
               setSelected((current) =>
                 allFilteredSelected
                   ? current.filter((id) => !filtered.some((item) => item.id === id))
-                  : [...new Set([...current, ...filtered.map((item) => item.id)])]
+                  : Array.from(
+                      new Set<string>([
+                        ...current,
+                        ...filtered.map((item) => item.id),
+                      ])
+                    )
               )
             }
             className="text-xs font-medium text-purple-400 hover:text-purple-300"

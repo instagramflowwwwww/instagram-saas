@@ -207,6 +207,7 @@ export async function publishExistingPost(params: {
       videoUrl: true,
       caption: true,
       hashtags: true,
+      coverUrl: true,
     },
   })
 
@@ -215,7 +216,9 @@ export async function publishExistingPost(params: {
     throw new Error("A publicação precisa ter exatamente uma mídia.")
   }
 
-  const requestedAccountIds = [...new Set(params.accountIds)]
+  const requestedAccountIds = Array.from(
+    new Set<string>(params.accountIds)
+  )
   const accounts = await prisma.instagramAccount.findMany({
     where: {
       id: { in: requestedAccountIds },
@@ -288,7 +291,7 @@ export async function publishExistingPost(params: {
           token,
           imageUrl: post.imageUrl || "",
           videoUrl: post.videoUrl || "",
-          coverUrl: params.coverUrl || "",
+          coverUrl: params.coverUrl || post.coverUrl || "",
           caption: fullCaption,
         })
 

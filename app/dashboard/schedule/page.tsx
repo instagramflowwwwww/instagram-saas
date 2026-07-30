@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowDown,
@@ -15,6 +15,7 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  Upload,
   X,
 } from "lucide-react"
 
@@ -40,7 +41,26 @@ type CaptionDraft = {
   hashtags: string
 }
 
+type CloudinarySignature = {
+  cloudName: string
+  apiKey: string
+  timestamp: number
+  folder: string
+  signature: string
+}
+
+type UploadResponse = {
+  secure_url?: string
+  error?: { message?: string }
+}
+
+type CoverUpload = {
+  file: File
+  preview: string
+}
+
 const INTERVAL_OPTIONS = [5, 10, 15, 30, 60, 120, 360, 720, 1440]
+const IMAGE_LIMIT = 8 * 1024 * 1024
 
 function toLocalInputValue(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
@@ -52,6 +72,11 @@ function formatSchedule(value: Date) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(value)
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export default function SchedulePage() {
@@ -71,6 +96,11 @@ export default function SchedulePage() {
   const [rotationCaptions, setRotationCaptions] = useState<CaptionDraft[]>([
     { caption: "", hashtags: "" },
   ])
+  const [coverMode, setCoverMode] = useState<"none" | "single" | "per_video">("none")
+  const [sharedCover, setSharedCover] = useState<CoverUpload | null>(null)
+  const [perVideoCovers, setPerVideoCovers] = useState<Record<string, CoverUpload>>({})
+  const sharedCoverRef = useRef<CoverUpload | null>(null)
+  const perVideoCoversRef = useRef<Record<string, CoverUpload>>({})
   const [name, setName] = useState("")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -112,6 +142,25 @@ export default function SchedulePage() {
       .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    sharedCoverRef.current = sharedCover
+  }, [sharedCover])
+
+  useEffect(() => {
+    perVideoCoversRef.current = perVideoCovers
+  }, [perVideoCovers])
+
+  useEffect(() => {
+    return () => {
+      if (sharedCoverRef.current?.preview) {
+        URL.revokeObjectURL(sharedCoverRef.current.preview)
+      }
+      Object.values(perVideoCoversRef.current).forEach((item) => {
+        URL.revokeObjectURL(item.preview)
+      })
+    }
+  }, [])
+
   const selectedItems = useMemo(
     () =>
       selectedMedia
@@ -119,6 +168,38 @@ export default function SchedulePage() {
         .filter((item): item is MediaItem => Boolean(item)),
     [media, selectedMedia]
   )
+
+  const videoItems = useMemo(
+    () => selectedItems.filter((item) => item.type === "video"),
+    [selectedItems]
+  )
+
+  useEffect(() => {
+    setPerVideoCovers((current) => {
+      const allowedIds = new Set(videoItems.map((item) => item.id))
+      let changed = false
+      const next: Record<string, CoverUpload> = {}
+
+      Object.entries(current).forEach(([mediaId, upload]) => {
+        if (allowedIds.has(mediaId)) {
+          next[mediaId] = upload
+        } else {
+          changed = true
+          URL.revokeObjectURL(upload.preview)
+        }
+      })
+
+      return changed ? next : current
+    })
+
+    if (videoItems.length === 0) {
+      setCoverMode("none")
+      if (sharedCover) {
+        URL.revokeObjectURL(sharedCover.preview)
+        setSharedCover(null)
+      }
+    }
+  }, [sharedCover, videoItems])
 
   const timeline = useMemo(() => {
     const first = new Date(startAt)
@@ -174,14 +255,134 @@ export default function SchedulePage() {
     )
   }
 
+  const validateCoverFile = (file: File) => {
+    if (file.type !== "image/jpeg") {
+      throw new Error("A capa do Reel precisa ser uma imagem JPEG.")
+    }
+    if (file.size > IMAGE_LIMIT) {
+      throw new Error("A capa do Reel pode ter no máximo 8 MB.")
+    }
+  }
+
+  const getCloudinarySignature = async () => {
+    const response = await fetch("/api/cloudinary/signature", { method: "POST" })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || "Não foi possível preparar o upload")
+    }
+
+    return data as CloudinarySignature
+  }
+
+  const uploadCover = async (file: File, signatureData: CloudinarySignature) => {
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("api_key", signatureData.apiKey)
+    formData.append("timestamp", String(signatureData.timestamp))
+    formData.append("folder", signatureData.folder)
+    formData.append("signature", signatureData.signature)
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/image/upload`,
+      { method: "POST", body: formData }
+    )
+    const uploaded = (await response.json()) as UploadResponse
+
+    if (!response.ok || !uploaded.secure_url) {
+      throw new Error(uploaded.error?.message || "Falha ao enviar a capa do Reel")
+    }
+
+    return String(uploaded.secure_url)
+  }
+
+  const handleSharedCoverChange = (file: File | null) => {
+    try {
+      if (file) validateCoverFile(file)
+      setError(null)
+      setSharedCover((current) => {
+        if (current?.preview) URL.revokeObjectURL(current.preview)
+        return file ? { file, preview: URL.createObjectURL(file) } : null
+      })
+    } catch (coverError) {
+      setError(
+        coverError instanceof Error
+          ? coverError.message
+          : "Não foi possível usar esta capa."
+      )
+    }
+  }
+
+  const handlePerVideoCoverChange = (mediaId: string, file: File | null) => {
+    try {
+      if (file) validateCoverFile(file)
+      setError(null)
+      setPerVideoCovers((current) => {
+        const existing = current[mediaId]
+        if (existing?.preview) URL.revokeObjectURL(existing.preview)
+        const next = { ...current }
+        if (file) {
+          next[mediaId] = { file, preview: URL.createObjectURL(file) }
+        } else {
+          delete next[mediaId]
+        }
+        return next
+      })
+    } catch (coverError) {
+      setError(
+        coverError instanceof Error
+          ? coverError.message
+          : "Não foi possível usar esta capa."
+      )
+    }
+  }
+
   const submit = async () => {
     setError(null)
+
     if (selectedMedia.length === 0) return setError("Selecione pelo menos uma mídia.")
     if (selectedAccounts.length === 0) return setError("Selecione pelo menos uma conta.")
     if (!startAt) return setError("Informe quando a sequência deve começar.")
 
+    if (videoItems.length > 0) {
+      if (coverMode === "single" && !sharedCover) {
+        return setError("Adicione a capa compartilhada para os vídeos.")
+      }
+      if (
+        coverMode === "per_video" &&
+        videoItems.some((item) => !perVideoCovers[item.id])
+      ) {
+        return setError("Adicione uma capa para cada vídeo selecionado.")
+      }
+    }
+
     setSubmitting(true)
     try {
+      const itemCovers: Array<{ mediaId: string; coverUrl: string }> = []
+
+      if (videoItems.length > 0 && coverMode !== "none") {
+        const signatureData = await getCloudinarySignature()
+
+        if (coverMode === "single" && sharedCover) {
+          const sharedUrl = await uploadCover(sharedCover.file, signatureData)
+          videoItems.forEach((item) => {
+            itemCovers.push({ mediaId: item.id, coverUrl: sharedUrl })
+          })
+        }
+
+        if (coverMode === "per_video") {
+          const uploaded = await Promise.all(
+            videoItems.map(async (item) => {
+              const entry = perVideoCovers[item.id]
+              if (!entry) throw new Error(`Adicione uma capa para ${item.fileName}.`)
+              const coverUrl = await uploadCover(entry.file, signatureData)
+              return { mediaId: item.id, coverUrl }
+            })
+          )
+          itemCovers.push(...uploaded)
+        }
+      }
+
       const response = await fetch("/api/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -200,6 +401,7 @@ export default function SchedulePage() {
             hashtags: perMedia[mediaId]?.hashtags || "",
           })),
           rotationCaptions,
+          itemCovers,
         }),
       })
       const data = await response.json()
@@ -225,7 +427,7 @@ export default function SchedulePage() {
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-white">Automação de posts</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Monte uma sequência de mídias, legendas e intervalos para publicar automaticamente.
+          Monte uma sequência de mídias, legendas, capas e intervalos para publicar automaticamente.
         </p>
       </div>
 
@@ -314,7 +516,83 @@ export default function SchedulePage() {
           </section>
 
           <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-            <h2 className="mb-4 text-sm font-semibold text-white">2. Configure as legendas</h2>
+            <h2 className="mb-4 text-sm font-semibold text-white">2. Capa dos vídeos</h2>
+
+            {videoItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
+                <ImageIcon size={22} className="mx-auto mb-3 text-purple-400" />
+                <p className="text-sm text-white">Adicione vídeos para usar capa personalizada</p>
+                <p className="mt-1 text-xs text-gray-500">As capas se aplicam apenas aos Reels da automação.</p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {([
+                    ["none", "Sem capa"],
+                    ["single", "Uma para todos"],
+                    ["per_video", "Uma por vídeo"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      onClick={() => setCoverMode(value)}
+                      className={`rounded-xl border px-3 py-2.5 text-sm ${
+                        coverMode === value
+                          ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                          : "border-white/[0.07] bg-white/[0.025] text-gray-500 hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {coverMode === "none" && (
+                  <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 text-sm text-gray-400">
+                    Os vídeos serão publicados sem capa personalizada.
+                  </div>
+                )}
+
+                {coverMode === "single" && (
+                  <CoverPicker
+                    inputId="shared-cover"
+                    label="Capa compartilhada"
+                    description="A mesma capa será aplicada em todos os vídeos desta automação."
+                    file={sharedCover?.file || null}
+                    preview={sharedCover?.preview || null}
+                    onChange={handleSharedCoverChange}
+                  />
+                )}
+
+                {coverMode === "per_video" && (
+                  <div className="space-y-4">
+                    {videoItems.map((item, index) => (
+                      <div key={item.id} className="rounded-xl border border-white/[0.07] p-4">
+                        <div className="mb-3 flex items-center gap-3">
+                          <div className="h-12 w-12 overflow-hidden rounded-lg bg-black">
+                            <video src={item.url} className="h-full w-full object-cover" muted />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-white">{index + 1}. {item.fileName}</p>
+                            <p className="text-xs text-gray-500">Defina a capa específica deste Reel.</p>
+                          </div>
+                        </div>
+                        <CoverPicker
+                          inputId={`cover-${item.id}`}
+                          label="Capa do Reel"
+                          file={perVideoCovers[item.id]?.file || null}
+                          preview={perVideoCovers[item.id]?.preview || null}
+                          onChange={(file) => handlePerVideoCoverChange(item.id, file)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <h2 className="mb-4 text-sm font-semibold text-white">3. Configure as legendas</h2>
             <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {([
                 ["single", "Uma para todas"],
@@ -388,7 +666,7 @@ export default function SchedulePage() {
 
         <div className="space-y-6 xl:col-span-2">
           <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-            <h2 className="mb-4 text-sm font-semibold text-white">3. Contas e intervalo</h2>
+            <h2 className="mb-4 text-sm font-semibold text-white">4. Contas e intervalo</h2>
             <label className="mb-1.5 block text-xs text-gray-400">Nome da automação <span className="text-gray-600">(opcional)</span></label>
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Conteúdo da semana" className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
 
@@ -437,7 +715,14 @@ export default function SchedulePage() {
                   <div key={item.id} className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3">
                     <span className="text-xs font-bold text-purple-300">{index + 1}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-white">{item.fileName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-xs font-medium text-white">{item.fileName}</p>
+                        {item.type === "video" && coverMode !== "none" && (
+                          <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-300">
+                            com capa
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-0.5 text-[11px] text-gray-500">{formatSchedule(scheduledAt)}</p>
                     </div>
                   </div>
@@ -470,6 +755,57 @@ function CaptionFields({
     <div className="space-y-3">
       <textarea value={value.caption} onChange={(event) => onChange("caption", event.target.value)} placeholder="Legenda da publicação..." rows={4} className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
       <input value={value.hashtags} onChange={(event) => onChange("hashtags", event.target.value)} placeholder="#hashtag1 #hashtag2" className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
+    </div>
+  )
+}
+
+function CoverPicker({
+  inputId,
+  label,
+  description,
+  file,
+  preview,
+  onChange,
+}: {
+  inputId: string
+  label: string
+  description?: string
+  file: File | null
+  preview: string | null
+  onChange: (file: File | null) => void
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs text-gray-400">{label}</label>
+      {description ? <p className="mb-3 text-xs text-gray-500">{description}</p> : null}
+      <input
+        type="file"
+        accept="image/jpeg"
+        className="hidden"
+        id={inputId}
+        onChange={(event) => {
+          onChange(event.target.files?.[0] || null)
+          event.currentTarget.value = ""
+        }}
+      />
+      {file && preview ? (
+        <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+          <img src={preview} alt="capa" className="h-10 w-10 rounded object-cover" />
+          <span className="min-w-0 flex-1 truncate text-sm text-white">{file.name}</span>
+          <span className="text-xs text-gray-500">{formatSize(file.size)}</span>
+          <button onClick={() => onChange(null)}>
+            <X size={14} className="text-gray-500 hover:text-white" />
+          </button>
+        </div>
+      ) : (
+        <label
+          htmlFor={inputId}
+          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-yellow-500/20 bg-white/5 px-3 py-4 text-sm text-gray-500 transition-colors hover:border-yellow-500/50 hover:text-white"
+        >
+          <Upload size={15} />
+          Clique para adicionar a capa
+        </label>
+      )}
     </div>
   )
 }

@@ -104,12 +104,12 @@ export async function DELETE(request: Request) {
 
   try {
     const body = await request.json()
-    const requestedIds = Array.isArray(body.ids)
-      ? body.ids.map(String)
+    const requestedIds: string[] = Array.isArray(body.ids)
+      ? body.ids.map((id: unknown) => String(id))
       : body.id
         ? [String(body.id)]
         : []
-    const ids = [...new Set(requestedIds)].slice(0, 100)
+    const ids = Array.from(new Set<string>(requestedIds)).slice(0, 100)
 
     if (ids.length === 0) {
       return NextResponse.json(

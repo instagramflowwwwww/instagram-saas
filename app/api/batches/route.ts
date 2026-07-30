@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { isCloudinaryDeliveryUrl } from "@/lib/cloudinary"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -12,10 +13,23 @@ type CaptionEntry = {
   hashtags?: string
 }
 
+type CoverEntry = {
+  mediaId?: string
+  coverUrl?: string
+}
+
 const CAPTION_MODES = new Set(["single", "per_media", "rotate"])
 
 function cleanText(value: unknown, max = 2200) {
   return String(value || "").trim().slice(0, max)
+}
+
+function uniqueStrings(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) return []
+
+  return Array.from(
+    new Set<string>(value.map((item: unknown) => String(item)))
+  ).slice(0, limit)
 }
 
 export async function GET() {
@@ -79,16 +93,10 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const mediaIds: string[] = Array.isArray(body.mediaIds)
-      ? Array.from(
-          new Set(body.mediaIds.map((mediaId: unknown) => String(mediaId)))
-        ).slice(0, 50)
-      : []
-    const accountIds: string[] = Array.isArray(body.accountIds)
-      ? Array.from(
-          new Set(body.accountIds.map((accountId: unknown) => String(accountId)))
-        ).slice(0, 20)
-      : []
+
+    const mediaIds = uniqueStrings(body.mediaIds, 50)
+    const accountIds = uniqueStrings(body.accountIds, 20)
+
     const captionMode = String(body.captionMode || "single")
     const intervalMinutes = Number(body.intervalMinutes)
     const startAt = new Date(String(body.startAt || ""))
@@ -172,6 +180,24 @@ export async function POST(request: Request) {
           (entry) => cleanText(entry.caption) || cleanText(entry.hashtags, 500)
         )
       : []
+    const coverEntries = Array.isArray(body.itemCovers)
+      ? (body.itemCovers as CoverEntry[])
+      : []
+    const validCoverEntries = coverEntries
+      .map((entry) => ({
+        mediaId: String(entry.mediaId || ""),
+        coverUrl: String(entry.coverUrl || "").trim(),
+      }))
+      .filter((entry) => entry.mediaId && entry.coverUrl)
+
+    if (!validCoverEntries.every((entry) => isCloudinaryDeliveryUrl(entry.coverUrl))) {
+      return NextResponse.json(
+        { error: "Uma ou mais capas não foram enviadas corretamente." },
+        { status: 400 }
+      )
+    }
+
+    const itemCoverMap = new Map(validCoverEntries.map((entry) => [entry.mediaId, entry.coverUrl]))
     const singleCaption = cleanText(body.singleCaption)
     const singleHashtags = cleanText(body.singleHashtags, 500)
 
@@ -225,11 +251,13 @@ export async function POST(request: Request) {
           startAt.getTime() + index * intervalMinutes * 60 * 1000
         )
         const text = getCaption(mediaId, index)
+        const coverUrl = media.type === "video" ? itemCoverMap.get(mediaId) || null : null
         const post = await tx.post.create({
           data: {
             userId: session.user.id,
             imageUrl: media.type === "image" ? media.url : null,
             videoUrl: media.type === "video" ? media.url : null,
+            coverUrl,
             caption: text.caption,
             hashtags: text.hashtags,
             status: "scheduled",
