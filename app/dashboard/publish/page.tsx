@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import {
   CheckCircle,
@@ -7,6 +8,7 @@ import {
   Image,
   Instagram,
   Loader2,
+  Layers3,
   Upload,
   X,
   XCircle,
@@ -163,10 +165,6 @@ export default function PublishPage() {
       setPublishError("Adicione uma imagem ou um vídeo")
       return
     }
-    if (videoFile && !coverFile) {
-      setPublishError("Adicione uma capa para publicar o Reel")
-      return
-    }
     if (selectedAccounts.length === 0) {
       setPublishError("Selecione pelo menos uma conta")
       return
@@ -242,9 +240,17 @@ export default function PublishPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Publicar conteúdo</h1>
-        <p className="text-gray-500 mt-1">Publique em múltiplas contas ao mesmo tempo</p>
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Publicar conteúdo</h1>
+          <p className="text-gray-500 mt-1">Publique em múltiplas contas ao mesmo tempo</p>
+        </div>
+        <Link
+          href="/dashboard/schedule"
+          className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-4 py-2.5 text-sm font-medium text-purple-300 hover:bg-purple-500/15"
+        >
+          <Layers3 size={15} /> Automatizar várias mídias
+        </Link>
       </div>
 
       {publishError && (
@@ -291,7 +297,7 @@ export default function PublishPage() {
             {videoFile && (
               <div>
                 <label className="text-xs text-gray-400 mb-1.5 block">
-                  Capa do Reel <span className="text-red-400">(obrigatória)</span>
+                  Capa do Reel <span className="text-gray-600">(opcional)</span>
                 </label>
                 <input
                   ref={coverRef}

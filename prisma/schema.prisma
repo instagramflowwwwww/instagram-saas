@@ -20,6 +20,7 @@ model User {
   igAccounts    InstagramAccount[]
   posts         Post[]
   media         MediaLibrary[]
+  postingBatches PostingBatch[]
   createdAt     DateTime  @default(now())
 }
 
@@ -93,6 +94,7 @@ model InstagramAccount {
   user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   appConfig           InstagramApp? @relation(fields: [appConfigId], references: [id], onDelete: SetNull)
   postLogs            PostLog[]
+  batchAccounts       PostingBatchAccount[]
 
   @@index([userId, igUserId])
   @@index([appConfigId])
@@ -111,6 +113,7 @@ model Post {
   createdAt   DateTime  @default(now())
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   logs        PostLog[]
+  batchItem   PostingBatchItem?
 }
 
 model PostLog {
@@ -126,11 +129,78 @@ model PostLog {
 }
 
 model MediaLibrary {
-  id        String   @id @default(cuid())
-  userId    String
-  url       String
-  type      String
-  fileName  String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String             @id @default(cuid())
+  userId       String
+  url          String
+  type         String
+  fileName     String
+  publicId     String?
+  resourceType String?
+  bytes        Int?
+  width        Int?
+  height       Int?
+  duration     Float?
+  format       String?
+  createdAt    DateTime           @default(now())
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batchItems   PostingBatchItem[]
+
+  @@index([userId, createdAt])
+}
+
+model PostingBatch {
+  id              String                @id @default(cuid())
+  userId          String
+  name            String?
+  status          String                @default("scheduled")
+  captionMode     String                @default("single")
+  intervalMinutes Int                   @default(10)
+  startAt         DateTime
+  totalItems      Int                   @default(0)
+  processedItems  Int                   @default(0)
+  successItems    Int                   @default(0)
+  failedItems     Int                   @default(0)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts        PostingBatchAccount[]
+  items           PostingBatchItem[]
+
+  @@index([userId, status])
+  @@index([status, startAt])
+}
+
+model PostingBatchAccount {
+  batchId           String
+  instagramAccountId String
+  batch             PostingBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  instagramAccount  InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+
+  @@id([batchId, instagramAccountId])
+  @@index([instagramAccountId])
+}
+
+model PostingBatchItem {
+  id                  String       @id @default(cuid())
+  batchId             String
+  mediaId             String?
+  postId              String?      @unique
+  position            Int
+  caption             String?
+  hashtags            String?
+  scheduledAt         DateTime
+  status              String       @default("pending")
+  attempts            Int          @default(0)
+  lastError           String?
+  processingStartedAt DateTime?
+  processedAt         DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  batch               PostingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  media               MediaLibrary? @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  post                Post?        @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@unique([batchId, position])
+  @@index([status, scheduledAt])
+  @@index([batchId, status])
 }

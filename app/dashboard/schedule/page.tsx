@@ -1,269 +1,475 @@
 "use client"
-import { useState, useRef } from "react"
-import { Calendar, Clock, Trash2, Plus, Film, Image, X } from "lucide-react"
 
-type ScheduledPost = {
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import {
+  ArrowDown,
+  ArrowUp,
+  CalendarClock,
+  CheckCircle2,
+  Film,
+  ImageIcon,
+  Instagram,
+  Layers3,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react"
+
+type MediaItem = {
   id: string
-  date: string
-  time: string
+  url: string
+  type: "image" | "video"
+  fileName: string
+  createdAt: string
+}
+
+type InstagramAccount = {
+  id: string
+  username: string
+  profilePicture: string | null
+  connectionType: string
+  isActive: boolean
+  requiresReconnect: boolean
+}
+
+type CaptionDraft = {
   caption: string
   hashtags: string
-  type: "video" | "image"
-  fileName: string
-  coverName?: string
+}
+
+const INTERVAL_OPTIONS = [5, 10, 15, 30, 60, 120, 360, 720, 1440]
+
+function toLocalInputValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+function formatSchedule(value: Date) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(value)
 }
 
 export default function SchedulePage() {
-  const [posts, setPosts] = useState<ScheduledPost[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [date, setDate] = useState("")
-  const [time, setTime] = useState("")
-  const [caption, setCaption] = useState("")
-  const [hashtags, setHashtags] = useState("")
-  const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [coverFile, setCoverFile] = useState<File | null>(null)
-  const [coverPreview, setCoverPreview] = useState<string | null>(null)
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [fileType, setFileType] = useState<"video" | "image">("video")
-  const videoRef = useRef<HTMLInputElement>(null)
-  const coverRef = useRef<HTMLInputElement>(null)
-  const imageRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
+  const [media, setMedia] = useState<MediaItem[]>([])
+  const [accounts, setAccounts] = useState<InstagramAccount[]>([])
+  const [selectedMedia, setSelectedMedia] = useState<string[]>([])
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([])
+  const [startAt, setStartAt] = useState(() =>
+    toLocalInputValue(new Date(Date.now() + 10 * 60 * 1000))
+  )
+  const [intervalMinutes, setIntervalMinutes] = useState(10)
+  const [captionMode, setCaptionMode] = useState<"single" | "per_media" | "rotate">("single")
+  const [singleCaption, setSingleCaption] = useState("")
+  const [singleHashtags, setSingleHashtags] = useState("")
+  const [perMedia, setPerMedia] = useState<Record<string, CaptionDraft>>({})
+  const [rotationCaptions, setRotationCaptions] = useState<CaptionDraft[]>([
+    { caption: "", hashtags: "" },
+  ])
+  const [name, setName] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/library", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || "Erro ao carregar a biblioteca")
+        return Array.isArray(data) ? (data as MediaItem[]) : []
+      }),
+      fetch("/api/instagram/accounts", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || "Erro ao carregar as contas")
+        return (Array.isArray(data) ? data : []).filter(
+          (account: InstagramAccount) =>
+            account.connectionType === "official" &&
+            account.isActive &&
+            !account.requiresReconnect
+        ) as InstagramAccount[]
+      }),
+    ])
+      .then(([library, accountList]) => {
+        setMedia(library)
+        setAccounts(accountList)
+        setSelectedAccounts(accountList.map((account) => account.id))
+
+        const params = new URLSearchParams(window.location.search)
+        const requested = String(params.get("media") || "")
+          .split(",")
+          .filter(Boolean)
+        const existing = requested.filter((id) => library.some((item) => item.id === id))
+        setSelectedMedia(existing)
+      })
+      .catch((requestError) =>
+        setError(requestError instanceof Error ? requestError.message : "Erro ao carregar dados")
+      )
+      .finally(() => setLoading(false))
+  }, [])
+
+  const selectedItems = useMemo(
+    () =>
+      selectedMedia
+        .map((id) => media.find((item) => item.id === id))
+        .filter((item): item is MediaItem => Boolean(item)),
+    [media, selectedMedia]
+  )
+
+  const timeline = useMemo(() => {
+    const first = new Date(startAt)
+    if (Number.isNaN(first.getTime())) return []
+    return selectedItems.map((item, index) => ({
+      item,
+      scheduledAt: new Date(first.getTime() + index * intervalMinutes * 60_000),
+    }))
+  }, [intervalMinutes, selectedItems, startAt])
+
+  const toggleMedia = (id: string) => {
+    setSelectedMedia((current) =>
+      current.includes(id)
+        ? current.filter((itemId) => itemId !== id)
+        : current.length >= 50
+          ? current
+          : [...current, id]
+    )
   }
 
-  const handleCoverChange = (file: File | null) => {
-    setCoverFile(file)
-    if (file) {
-      setCoverPreview(URL.createObjectURL(file))
-    } else {
-      setCoverPreview(null)
+  const moveMedia = (index: number, direction: -1 | 1) => {
+    setSelectedMedia((current) => {
+      const nextIndex = index + direction
+      if (nextIndex < 0 || nextIndex >= current.length) return current
+      const copy = [...current]
+      ;[copy[index], copy[nextIndex]] = [copy[nextIndex], copy[index]]
+      return copy
+    })
+  }
+
+  const toggleAccount = (id: string) => {
+    setSelectedAccounts((current) =>
+      current.includes(id) ? current.filter((accountId) => accountId !== id) : [...current, id]
+    )
+  }
+
+  const updatePerMedia = (mediaId: string, field: keyof CaptionDraft, value: string) => {
+    setPerMedia((current) => ({
+      ...current,
+      [mediaId]: {
+        caption: current[mediaId]?.caption || "",
+        hashtags: current[mediaId]?.hashtags || "",
+        [field]: value,
+      },
+    }))
+  }
+
+  const updateRotation = (index: number, field: keyof CaptionDraft, value: string) => {
+    setRotationCaptions((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, [field]: value } : entry
+      )
+    )
+  }
+
+  const submit = async () => {
+    setError(null)
+    if (selectedMedia.length === 0) return setError("Selecione pelo menos uma mídia.")
+    if (selectedAccounts.length === 0) return setError("Selecione pelo menos uma conta.")
+    if (!startAt) return setError("Informe quando a sequência deve começar.")
+
+    setSubmitting(true)
+    try {
+      const response = await fetch("/api/batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          mediaIds: selectedMedia,
+          accountIds: selectedAccounts,
+          startAt: new Date(startAt).toISOString(),
+          intervalMinutes,
+          captionMode,
+          singleCaption,
+          singleHashtags,
+          itemCaptions: selectedMedia.map((mediaId) => ({
+            mediaId,
+            caption: perMedia[mediaId]?.caption || "",
+            hashtags: perMedia[mediaId]?.hashtags || "",
+          })),
+          rotationCaptions,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Não foi possível criar a automação")
+      router.push("/dashboard/queue")
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Não foi possível criar a automação")
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const switchType = (type: "video" | "image") => {
-    setFileType(type)
-    setVideoFile(null)
-    setCoverFile(null)
-    setCoverPreview(null)
-    setImageFile(null)
-  }
-
-  const addPost = () => {
-    const file = fileType === "video" ? videoFile : imageFile
-    if (!date || !time || !file) return alert("Preencha data, hora e selecione um arquivo")
-    const newPost: ScheduledPost = {
-      id: Math.random().toString(36).slice(2),
-      date,
-      time,
-      caption,
-      hashtags,
-      type: fileType,
-      fileName: file.name,
-      coverName: coverFile?.name,
-    }
-    setPosts(prev => [...prev, newPost].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)))
-    setShowForm(false)
-    setDate("")
-    setTime("")
-    setCaption("")
-    setHashtags("")
-    setVideoFile(null)
-    setCoverFile(null)
-    setCoverPreview(null)
-    setImageFile(null)
-  }
-
-  const removePost = (id: string) => {
-    if (!confirm("Remover agendamento?")) return
-    setPosts(prev => prev.filter(p => p.id !== id))
-  }
-
-  const formatDate = (date: string) => {
-    const [y, m, d] = date.split("-")
-    return `${d}/${m}/${y}`
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-purple-400" />
+      </div>
+    )
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Agendamentos</h1>
-          <p className="text-gray-500 mt-1">{posts.length} post{posts.length !== 1 ? "s" : ""} agendado{posts.length !== 1 ? "s" : ""}</p>
-        </div>
-        <button onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-opacity">
-          <Plus size={15} />
-          Novo agendamento
-        </button>
+      <div className="mb-7">
+        <h1 className="text-2xl font-bold text-white">Automação de posts</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Monte uma sequência de mídias, legendas e intervalos para publicar automaticamente.
+        </p>
       </div>
 
-      {showForm && (
-        <div className="bg-[#111] border border-white/10 rounded-xl p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-white text-sm">Novo agendamento</h2>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-gray-400 mb-1.5 block">Data</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 mb-1.5 block">Hora</label>
-              <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500" />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-gray-400 mb-1.5 block">Tipo de conteúdo</label>
-            <div className="flex gap-2">
-              <button onClick={() => switchType("video")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${fileType === "video" ? "bg-purple-500/20 border border-purple-500/40 text-purple-300" : "bg-white/5 border border-white/10 text-gray-400 hover:text-white"}`}>
-                <Film size={14} /> Vídeo (Reel)
-              </button>
-              <button onClick={() => switchType("image")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${fileType === "image" ? "bg-pink-500/20 border border-pink-500/40 text-pink-300" : "bg-white/5 border border-white/10 text-gray-400 hover:text-white"}`}>
-                <Image size={14} /> Imagem
-              </button>
-            </div>
-          </div>
-
-          {fileType === "video" && (
-            <>
-              <div>
-                <label className="text-xs text-gray-400 mb-1.5 block">Vídeo (Reel)</label>
-                <input ref={videoRef} type="file" accept="video/*" className="hidden"
-                  onChange={e => setVideoFile(e.target.files?.[0] || null)} />
-                {videoFile ? (
-                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                    <Film size={15} className="text-purple-400" />
-                    <span className="text-sm text-white flex-1 truncate">{videoFile.name}</span>
-                    <span className="text-xs text-gray-500">{formatSize(videoFile.size)}</span>
-                    <button onClick={() => setVideoFile(null)}><X size={14} className="text-gray-500 hover:text-white" /></button>
-                  </div>
-                ) : (
-                  <button onClick={() => videoRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-purple-500/50 transition-colors">
-                    <Film size={15} />
-                    Clique para selecionar vídeo
-                  </button>
-                )}
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-400 mb-1.5 block">Capa do Reel <span className="text-gray-600">(opcional)</span></label>
-                <input ref={coverRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => handleCoverChange(e.target.files?.[0] || null)} />
-                {coverFile && coverPreview ? (
-                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                    <img src={coverPreview} alt="capa" className="w-10 h-10 rounded object-cover" />
-                    <span className="text-sm text-white flex-1 truncate">{coverFile.name}</span>
-                    <span className="text-xs text-gray-500">{formatSize(coverFile.size)}</span>
-                    <button onClick={() => handleCoverChange(null)}><X size={14} className="text-gray-500 hover:text-white" /></button>
-                  </div>
-                ) : (
-                  <button onClick={() => coverRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-yellow-500/20 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-yellow-500/50 transition-colors">
-                    <Image size={15} />
-                    Clique para adicionar capa do Reel
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-
-          {fileType === "image" && (
-            <div>
-              <label className="text-xs text-gray-400 mb-1.5 block">Imagem</label>
-              <input ref={imageRef} type="file" accept="image/*" className="hidden"
-                onChange={e => setImageFile(e.target.files?.[0] || null)} />
-              {imageFile ? (
-                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                  <Image size={15} className="text-pink-400" />
-                  <span className="text-sm text-white flex-1 truncate">{imageFile.name}</span>
-                  <span className="text-xs text-gray-500">{formatSize(imageFile.size)}</span>
-                  <button onClick={() => setImageFile(null)}><X size={14} className="text-gray-500 hover:text-white" /></button>
-                </div>
-              ) : (
-                <button onClick={() => imageRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-pink-500/50 transition-colors">
-                  <Image size={15} />
-                  Clique para selecionar imagem
-                </button>
-              )}
-            </div>
-          )}
-
-          <div>
-            <label className="text-xs text-gray-400 mb-1.5 block">Legenda</label>
-            <textarea value={caption} onChange={e => setCaption(e.target.value)}
-              placeholder="Escreva a legenda..." rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 resize-none" />
-          </div>
-
-          <div>
-            <label className="text-xs text-gray-400 mb-1.5 block">Hashtags</label>
-            <input type="text" value={hashtags} onChange={e => setHashtags(e.target.value)}
-              placeholder="#hashtag1 #hashtag2"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500" />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <button onClick={addPost}
-              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white text-sm font-medium py-2.5 rounded-lg transition-opacity">
-              Agendar post
-            </button>
-            <button onClick={() => setShowForm(false)}
-              className="px-4 bg-white/5 hover:bg-white/10 text-gray-400 text-sm rounded-lg transition-colors">
-              Cancelar
-            </button>
-          </div>
+      {error && (
+        <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {error}
         </div>
       )}
 
-      {posts.length === 0 ? (
-        <div className="bg-[#111] border border-white/5 rounded-xl p-16 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center mx-auto mb-5">
-            <Calendar size={24} className="text-purple-400" />
-          </div>
-          <h3 className="font-semibold text-white mb-2">Nenhum post agendado</h3>
-          <p className="text-gray-500 text-sm max-w-xs mx-auto">Clique em "Novo agendamento" para agendar seu primeiro post</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {posts.map(post => (
-            <div key={post.id} className="bg-[#111] border border-white/5 rounded-xl p-5 flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${post.type === "video" ? "bg-purple-500/20" : "bg-pink-500/20"}`}>
-                {post.type === "video" ? <Film size={18} className="text-purple-400" /> : <Image size={18} className="text-pink-400" />}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <div className="space-y-6 xl:col-span-3">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-white">1. Escolha e ordene as mídias</h2>
+                <p className="mt-1 text-xs text-gray-500">Até 50 imagens ou vídeos da biblioteca.</p>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-white font-medium truncate">{post.fileName}</p>
-                {post.coverName && <p className="text-xs text-yellow-500/70 truncate mt-0.5">Capa: {post.coverName}</p>}
-                {post.caption && <p className="text-xs text-gray-500 truncate mt-0.5">{post.caption}</p>}
+              <button
+                onClick={() => router.push("/dashboard/library")}
+                className="text-xs font-medium text-purple-400 hover:text-purple-300"
+              >
+                Abrir biblioteca
+              </button>
+            </div>
+
+            {media.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 p-10 text-center">
+                <Layers3 size={24} className="mx-auto mb-3 text-purple-400" />
+                <p className="text-sm text-white">Sua biblioteca está vazia</p>
+                <p className="mt-1 text-xs text-gray-500">Adicione arquivos antes de criar a sequência.</p>
               </div>
-              <div className="flex items-center gap-4 flex-shrink-0">
-                <div className="text-right">
-                  <div className="flex items-center gap-1.5 text-sm text-white">
-                    <Calendar size={13} className="text-gray-500" />
-                    {formatDate(post.date)}
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {media.map((item) => {
+                  const selected = selectedMedia.includes(item.id)
+                  const position = selectedMedia.indexOf(item.id)
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => toggleMedia(item.id)}
+                      className={`relative overflow-hidden rounded-xl border text-left ${
+                        selected ? "border-purple-500/60" : "border-white/[0.07] hover:border-white/20"
+                      }`}
+                    >
+                      <div className="aspect-square bg-black">
+                        {item.type === "video" ? (
+                          <video src={item.url} className="h-full w-full object-cover" muted preload="metadata" />
+                        ) : (
+                          <img src={item.url} alt={item.fileName} className="h-full w-full object-cover" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 bg-[#151515] p-2.5">
+                        {item.type === "video" ? <Film size={12} className="text-purple-400" /> : <ImageIcon size={12} className="text-pink-400" />}
+                        <span className="truncate text-xs text-gray-300">{item.fileName}</span>
+                      </div>
+                      {selected && (
+                        <span className="absolute left-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-lg bg-purple-500 px-2 text-xs font-bold text-white">
+                          {position + 1}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {selectedItems.length > 0 && (
+              <div className="mt-5 space-y-2">
+                <p className="text-xs font-medium text-gray-400">Ordem da sequência</p>
+                {selectedItems.map((item, index) => (
+                  <div key={item.id} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-xs font-bold text-purple-300">
+                      {index + 1}
+                    </span>
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-black">
+                      {item.type === "video" ? <video src={item.url} className="h-full w-full object-cover" muted /> : <img src={item.url} alt="" className="h-full w-full object-cover" />}
+                    </div>
+                    <span className="min-w-0 flex-1 truncate text-sm text-white">{item.fileName}</span>
+                    <button onClick={() => moveMedia(index, -1)} disabled={index === 0} className="p-1.5 text-gray-500 hover:text-white disabled:opacity-20"><ArrowUp size={14} /></button>
+                    <button onClick={() => moveMedia(index, 1)} disabled={index === selectedItems.length - 1} className="p-1.5 text-gray-500 hover:text-white disabled:opacity-20"><ArrowDown size={14} /></button>
+                    <button onClick={() => toggleMedia(item.id)} className="p-1.5 text-red-400 hover:text-red-300"><X size={14} /></button>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-0.5">
-                    <Clock size={11} />
-                    {post.time}
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <h2 className="mb-4 text-sm font-semibold text-white">2. Configure as legendas</h2>
+            <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {([
+                ["single", "Uma para todas"],
+                ["per_media", "Uma por mídia"],
+                ["rotate", "Alternar lista"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setCaptionMode(value)}
+                  className={`rounded-xl border px-3 py-2.5 text-sm ${
+                    captionMode === value
+                      ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                      : "border-white/[0.07] bg-white/[0.025] text-gray-500 hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {captionMode === "single" && (
+              <CaptionFields
+                value={{ caption: singleCaption, hashtags: singleHashtags }}
+                onChange={(field, value) =>
+                  field === "caption" ? setSingleCaption(value) : setSingleHashtags(value)
+                }
+              />
+            )}
+
+            {captionMode === "per_media" && (
+              <div className="space-y-4">
+                {selectedItems.length === 0 ? (
+                  <p className="text-sm text-gray-500">Selecione as mídias primeiro.</p>
+                ) : (
+                  selectedItems.map((item, index) => (
+                    <div key={item.id} className="rounded-xl border border-white/[0.07] p-4">
+                      <p className="mb-3 text-xs font-semibold text-white">{index + 1}. {item.fileName}</p>
+                      <CaptionFields
+                        value={perMedia[item.id] || { caption: "", hashtags: "" }}
+                        onChange={(field, value) => updatePerMedia(item.id, field, value)}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {captionMode === "rotate" && (
+              <div className="space-y-4">
+                {rotationCaptions.map((entry, index) => (
+                  <div key={index} className="rounded-xl border border-white/[0.07] p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-xs font-semibold text-white">Legenda {index + 1}</p>
+                      {rotationCaptions.length > 1 && (
+                        <button onClick={() => setRotationCaptions((current) => current.filter((_, entryIndex) => entryIndex !== index))} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
+                      )}
+                    </div>
+                    <CaptionFields value={entry} onChange={(field, value) => updateRotation(index, field, value)} />
                   </div>
-                </div>
-                <button onClick={() => removePost(post.id)}
-                  className="text-red-400 hover:text-red-300 bg-red-500/5 hover:bg-red-500/10 p-2 rounded-lg transition-colors">
-                  <Trash2 size={14} />
+                ))}
+                <button
+                  onClick={() => setRotationCaptions((current) => [...current, { caption: "", hashtags: "" }])}
+                  className="flex items-center gap-2 text-sm font-medium text-purple-400 hover:text-purple-300"
+                >
+                  <Plus size={14} /> Adicionar outra legenda
                 </button>
               </div>
-            </div>
-          ))}
+            )}
+          </section>
         </div>
-      )}
+
+        <div className="space-y-6 xl:col-span-2">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <h2 className="mb-4 text-sm font-semibold text-white">3. Contas e intervalo</h2>
+            <label className="mb-1.5 block text-xs text-gray-400">Nome da automação <span className="text-gray-600">(opcional)</span></label>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Conteúdo da semana" className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
+
+            <label className="mb-1.5 block text-xs text-gray-400">Primeira publicação</label>
+            <input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none" />
+
+            <label className="mb-1.5 block text-xs text-gray-400">Intervalo entre mídias</label>
+            <select value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value))} className="mb-5 w-full rounded-lg border border-white/10 bg-[#171717] px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none">
+              {INTERVAL_OPTIONS.map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {minutes < 60 ? `${minutes} minutos` : minutes === 60 ? "1 hora" : minutes < 1440 ? `${minutes / 60} horas` : "24 horas"}
+                </option>
+              ))}
+            </select>
+
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-xs text-gray-400">Contas</label>
+              <button onClick={() => setSelectedAccounts(selectedAccounts.length === accounts.length ? [] : accounts.map((account) => account.id))} className="text-xs text-purple-400 hover:text-purple-300">
+                {selectedAccounts.length === accounts.length ? "Limpar" : "Todas"}
+              </button>
+            </div>
+            <div className="space-y-2">
+              {accounts.map((account) => {
+                const selected = selectedAccounts.includes(account.id)
+                return (
+                  <button key={account.id} onClick={() => toggleAccount(account.id)} className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left ${selected ? "border-purple-500/35 bg-purple-500/10" : "border-white/[0.07] bg-white/[0.025]"}`}>
+                    {account.profilePicture ? <img src={account.profilePicture} alt="" className="h-8 w-8 rounded-full object-cover" /> : <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500"><Instagram size={13} /></div>}
+                    <span className="text-sm text-white">@{account.username}</span>
+                    {selected && <CheckCircle2 size={15} className="ml-auto text-purple-400" />}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <CalendarClock size={16} className="text-purple-400" />
+              <h2 className="text-sm font-semibold text-white">Prévia da fila</h2>
+            </div>
+            {timeline.length === 0 ? (
+              <p className="text-sm text-gray-500">Selecione mídias para visualizar os horários.</p>
+            ) : (
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {timeline.map(({ item, scheduledAt }, index) => (
+                  <div key={item.id} className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3">
+                    <span className="text-xs font-bold text-purple-300">{index + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-white">{item.fileName}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-500">{formatSchedule(scheduledAt)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 rounded-xl border border-blue-500/15 bg-blue-500/5 p-3 text-xs leading-5 text-blue-200/80">
+              O executor verifica a fila a cada 5 minutos. Uma publicação atrasada será processada na próxima verificação, sem perder a ordem.
+            </div>
+          </section>
+
+          <button onClick={submit} disabled={submitting || selectedMedia.length === 0 || selectedAccounts.length === 0} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 py-3 font-medium text-white hover:opacity-90 disabled:opacity-40">
+            {submitting ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+            {submitting ? "Criando automação..." : `Agendar ${selectedMedia.length} mídia(s)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CaptionFields({
+  value,
+  onChange,
+}: {
+  value: CaptionDraft
+  onChange: (field: keyof CaptionDraft, value: string) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <textarea value={value.caption} onChange={(event) => onChange("caption", event.target.value)} placeholder="Legenda da publicação..." rows={4} className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
+      <input value={value.hashtags} onChange={(event) => onChange("hashtags", event.target.value)} placeholder="#hashtag1 #hashtag2" className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
     </div>
   )
 }

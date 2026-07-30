@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Ban,
   XCircle,
 } from "lucide-react"
 import {
@@ -78,6 +79,7 @@ type HistoryData = {
     scheduled: number
     publishing: number
     draft: number
+    cancelled: number
   }
   accounts: Account[]
   pagination: {
@@ -135,6 +137,12 @@ const STATUS_CONFIG: Record<
     className: "border-purple-500/20 bg-purple-500/10 text-purple-300",
     dotClassName: "bg-purple-400",
     icon: Loader2,
+  },
+  cancelled: {
+    label: "Cancelado",
+    className: "border-white/10 bg-white/[0.04] text-gray-400",
+    dotClassName: "bg-gray-500",
+    icon: Ban,
   },
   draft: {
     label: "Rascunho",
@@ -435,6 +443,7 @@ export default function HistoryPage() {
             <option value="scheduled">Agendado</option>
             <option value="publishing">Publicando</option>
             <option value="draft">Rascunho</option>
+            <option value="cancelled">Cancelado</option>
           </select>
 
           <select

@@ -15,6 +15,7 @@ const ALLOWED_STATUSES = new Set([
   "partial",
   "failed",
   "scheduled",
+  "cancelled",
 ])
 
 function parseDate(value: string | null, endOfDay = false) {
@@ -214,6 +215,7 @@ export async function GET(request: Request) {
       scheduled: 0,
       publishing: 0,
       draft: 0,
+      cancelled: 0,
     }
 
     groupedStatuses.forEach((item) => {

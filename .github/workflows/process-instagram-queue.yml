@@ -1,0 +1,23 @@
+name: Process Instagram Queue
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  process-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Process due Instagram post
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          QUEUE_CRON_SECRET: ${{ secrets.QUEUE_CRON_SECRET }}
+        run: |
+          test -n "$APP_URL" || (echo "APP_URL secret is missing" && exit 1)
+          test -n "$QUEUE_CRON_SECRET" || (echo "QUEUE_CRON_SECRET secret is missing" && exit 1)
+          curl --fail-with-body --silent --show-error --retry 2 \
+            --request POST \
+            --header "Authorization: Bearer $QUEUE_CRON_SECRET" \
+            "${APP_URL%/}/api/cron/process-queue"

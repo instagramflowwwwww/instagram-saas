@@ -22,7 +22,7 @@ const navGroups = [
     label: "Publicação",
     items: [
       { href: "/dashboard/publish", icon: Upload, label: "Postar" },
-      { href: "/dashboard/schedule", icon: Calendar, label: "Agendamentos" },
+      { href: "/dashboard/schedule", icon: Calendar, label: "Automação" },
       { href: "/dashboard/stories", icon: Star, label: "Stories" },
     ],
   },
