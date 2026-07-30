@@ -84,6 +84,7 @@ export default function SchedulePage() {
   const [media, setMedia] = useState<MediaItem[]>([])
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
   const [selectedMedia, setSelectedMedia] = useState<string[]>([])
+  const [showAllMedia, setShowAllMedia] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([])
   const [startAt, setStartAt] = useState(() =>
     toLocalInputValue(new Date(Date.now() + 10 * 60 * 1000))
@@ -160,6 +161,11 @@ export default function SchedulePage() {
       })
     }
   }, [])
+
+  const visibleMedia = useMemo(
+    () => (showAllMedia ? media : media.slice(0, 3)),
+    [media, showAllMedia]
+  )
 
   const selectedItems = useMemo(
     () =>
@@ -461,7 +467,7 @@ export default function SchedulePage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {media.map((item) => {
+                {visibleMedia.map((item) => {
                   const selected = selectedMedia.includes(item.id)
                   const position = selectedMedia.indexOf(item.id)
                   return (
@@ -492,6 +498,16 @@ export default function SchedulePage() {
                   )
                 })}
               </div>
+            )}
+
+            {media.length > 3 && (
+              <button
+                type="button"
+                onClick={() => setShowAllMedia((current) => !current)}
+                className="mt-4 flex w-full items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-2.5 text-sm font-medium text-purple-300 transition-colors hover:border-purple-500/30 hover:bg-purple-500/[0.08]"
+              >
+                {showAllMedia ? "Retrair" : `Ver todas (${media.length})`}
+              </button>
             )}
 
             {selectedItems.length > 0 && (
