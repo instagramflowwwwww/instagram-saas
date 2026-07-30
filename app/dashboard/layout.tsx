@@ -1,7 +1,7 @@
 "use client"
 import { useSession, signOut } from "next-auth/react"
 import { useRouter, usePathname } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import Link from "next/link"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
@@ -54,10 +54,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: session, status } = useSession()
   const router = useRouter()
   const pathname = usePathname()
+  const queueTickRunning = useRef(false)
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login")
   }, [status, router])
+
+  useEffect(() => {
+    if (status !== "authenticated") return
+
+    let disposed = false
+
+    const processQueue = async () => {
+      if (disposed || queueTickRunning.current) return
+      queueTickRunning.current = true
+
+      try {
+        await fetch("/api/queue/process", {
+          method: "POST",
+          cache: "no-store",
+          keepalive: true,
+        })
+      } catch (error) {
+        console.error("[queue-dashboard] Heartbeat failed", error)
+      } finally {
+        queueTickRunning.current = false
+      }
+    }
+
+    void processQueue()
+    const interval = window.setInterval(processQueue, 60_000)
+
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+    }
+  }, [status])
 
   if (status === "loading") {
     return (

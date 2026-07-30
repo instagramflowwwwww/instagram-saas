@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { processDueQueue } from "@/lib/queue-processor"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
 export async function POST() {
@@ -12,14 +13,27 @@ export async function POST() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
+  const startedAt = Date.now()
+
   try {
     const result = await processDueQueue({ userId: session.user.id, limit: 1 })
-    return NextResponse.json(result)
-  } catch (error) {
-    console.error("Manual queue process error", error)
     return NextResponse.json(
-      { error: "Não foi possível processar a fila agora." },
-      { status: 500 }
+      {
+        ...result,
+        executor: "dashboard",
+        durationMs: Date.now() - startedAt,
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    )
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Não foi possível processar a fila agora."
+
+    console.error("[queue-dashboard] Manual queue process error", error)
+
+    return NextResponse.json(
+      { error: message, executor: "dashboard", durationMs: Date.now() - startedAt },
+      { status: 500, headers: { "Cache-Control": "no-store, max-age=0" } }
     )
   }
 }

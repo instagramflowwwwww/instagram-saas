@@ -109,7 +109,12 @@ export async function processDueQueue(options: {
     },
     orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
     select: { id: true },
-    take: Math.min(Math.max(options.limit || 1, 1), 3),
+    take: Math.min(Math.max(options.limit || 1, 1), 10),
+  })
+
+  console.info("[queue] Due items found", {
+    userId: options.userId || "all",
+    count: dueItems.length,
   })
 
   const processed: Array<{
@@ -119,6 +124,8 @@ export async function processDueQueue(options: {
   }> = []
 
   for (const candidate of dueItems) {
+    console.info("[queue] Claiming item", { itemId: candidate.id })
+
     const claim = await prisma.postingBatchItem.updateMany({
       where: { id: candidate.id, status: "pending" },
       data: {
@@ -244,6 +251,7 @@ export async function processDueQueue(options: {
     }
 
     await refreshBatchStats(item.batchId)
+    console.info("[queue] Item finished", processed[processed.length - 1])
   }
 
   return {
