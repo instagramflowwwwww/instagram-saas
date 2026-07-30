@@ -28,7 +28,22 @@ type PerformancePost = {
   error: string | null
 }
 
+type PeriodKey = "today" | "yesterday" | "month" | "total"
+
+type PeriodOption = {
+  value: PeriodKey
+  label: string
+  description: string
+}
+
 const numberFormatter = new Intl.NumberFormat("pt-BR")
+
+const PERIOD_OPTIONS: PeriodOption[] = [
+  { value: "today", label: "Hoje", description: "Publicações de hoje" },
+  { value: "yesterday", label: "Ontem", description: "Publicações de ontem" },
+  { value: "month", label: "Este mês", description: "Publicações do mês atual" },
+  { value: "total", label: "Total", description: "Todas as publicações" },
+]
 
 function formatNumber(value: number | null) {
   return value === null ? "—" : numberFormatter.format(value)
@@ -42,17 +57,58 @@ function mediaLabel(post: PerformancePost) {
   return "Publicação"
 }
 
+function getPeriodRange(period: PeriodKey) {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  if (period === "today") {
+    return {
+      from: today,
+      to: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1),
+    }
+  }
+
+  if (period === "yesterday") {
+    return {
+      from: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1),
+      to: today,
+    }
+  }
+
+  if (period === "month") {
+    return {
+      from: new Date(now.getFullYear(), now.getMonth(), 1),
+      to: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    }
+  }
+
+  return null
+}
+
+function getPerformanceUrl(period: PeriodKey) {
+  const range = getPeriodRange(period)
+  if (!range) return "/api/posts/performance"
+
+  const params = new URLSearchParams({
+    from: range.from.toISOString(),
+    to: range.to.toISOString(),
+  })
+
+  return `/api/posts/performance?${params.toString()}`
+}
+
 export default function PerformancePage() {
   const [posts, setPosts] = useState<PerformancePost[]>([])
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("today")
   const [loading, setLoading] = useState(true)
   const [pageError, setPageError] = useState("")
 
-  async function loadPerformance() {
+  async function loadPerformance(period: PeriodKey) {
     setLoading(true)
     setPageError("")
 
     try {
-      const response = await fetch("/api/posts/performance", {
+      const response = await fetch(getPerformanceUrl(period), {
         cache: "no-store",
       })
       const payload = await response.json()
@@ -79,8 +135,12 @@ export default function PerformancePage() {
   }
 
   useEffect(() => {
-    void loadPerformance()
-  }, [])
+    void loadPerformance(selectedPeriod)
+  }, [selectedPeriod])
+
+  const selectedPeriodOption =
+    PERIOD_OPTIONS.find((option) => option.value === selectedPeriod) ||
+    PERIOD_OPTIONS[0]
 
   const totals = useMemo(
     () =>
@@ -97,22 +157,54 @@ export default function PerformancePage() {
 
   return (
     <div>
-      <div className="mb-8 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Performance</h1>
           <p className="mt-1 text-gray-500">
-            Métricas oficiais dos seus últimos posts publicados
+            Métricas oficiais dos posts publicados pelo sistema
+          </p>
+          <p className="mt-1 text-xs text-purple-300/80">
+            {selectedPeriodOption.description}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadPerformance()}
-          disabled={loading}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-medium text-gray-300 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          Atualizar
-        </button>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div
+            role="tablist"
+            aria-label="Período da performance"
+            className="inline-flex rounded-xl border border-white/[0.07] bg-[#111] p-1"
+          >
+            {PERIOD_OPTIONS.map((option) => {
+              const active = option.value === selectedPeriod
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setSelectedPeriod(option.value)}
+                  className={`rounded-lg px-3.5 py-2 text-xs font-medium transition ${
+                    active
+                      ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/30"
+                      : "text-gray-500 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void loadPerformance(selectedPeriod)}
+            disabled={loading}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-medium text-gray-300 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -183,11 +275,11 @@ export default function PerformancePage() {
             <TrendingUp size={24} className="text-purple-400" />
           </div>
           <h3 className="mb-2 font-semibold text-white">
-            Nenhum post publicado ainda
+            Nenhuma publicação neste período
           </h3>
           <p className="mx-auto max-w-sm text-sm text-gray-500">
-            Assim que você publicar conteúdo pelas contas conectadas, as métricas
-            aparecerão aqui.
+            Selecione outro período ou publique novos conteúdos para acompanhar as
+            métricas aqui.
           </p>
         </div>
       )}

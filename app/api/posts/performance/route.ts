@@ -12,6 +12,7 @@ import { decryptValue, encryptValue } from "@/lib/secure-store"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 const GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`
 const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
@@ -59,6 +60,12 @@ type PerformanceLog = {
 function toNumber(value: unknown) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseDate(value: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function extractInsightValue(payload: Record<string, any> | null) {
@@ -239,7 +246,7 @@ async function fetchViews(
   return { value: null, metric: null }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions)
 
   if (!session?.user?.id) {
@@ -247,10 +254,39 @@ export async function GET() {
   }
 
   try {
+    const requestUrl = new URL(request.url)
+    const rawFrom = requestUrl.searchParams.get("from")
+    const rawTo = requestUrl.searchParams.get("to")
+    const from = parseDate(rawFrom)
+    const to = parseDate(rawTo)
+
+    if ((rawFrom && !from) || (rawTo && !to)) {
+      return NextResponse.json(
+        { error: "Período informado é inválido." },
+        { status: 400 }
+      )
+    }
+
+    if (from && to && from.getTime() >= to.getTime()) {
+      return NextResponse.json(
+        { error: "A data inicial precisa ser anterior à data final." },
+        { status: 400 }
+      )
+    }
+
+    const createdAt =
+      from || to
+        ? {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lt: to } : {}),
+          }
+        : undefined
+
     const logs = (await prisma.postLog.findMany({
       where: {
         status: "success",
         mediaId: { not: null },
+        ...(createdAt ? { createdAt } : {}),
         post: { userId: session.user.id },
         instagramAccount: {
           connectionType: "official",
@@ -261,7 +297,6 @@ export async function GET() {
         instagramAccount: true,
       },
       orderBy: { createdAt: "desc" },
-      take: 30,
     })) as PerformanceLog[]
 
     const seen = new Set<string>()
