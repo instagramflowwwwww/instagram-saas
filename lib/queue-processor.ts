@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL } from "@/lib/account-access"
 import { publishExistingPost } from "@/lib/instagram-publisher"
 import { prisma } from "@/lib/prisma"
 
@@ -105,6 +106,18 @@ export async function processDueQueue(options: {
       batch: {
         status: { in: ["scheduled", "processing"] },
         ...(options.userId ? { userId: options.userId } : {}),
+        user: {
+          OR: [
+            { email: ADMIN_EMAIL },
+            {
+              accessStatus: "approved",
+              OR: [
+                { accessExpiresAt: null },
+                { accessExpiresAt: { gt: new Date() } },
+              ],
+            },
+          ],
+        },
       },
     },
     orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],

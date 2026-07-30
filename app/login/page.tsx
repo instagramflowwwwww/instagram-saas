@@ -11,11 +11,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
+    setSuccess("")
     setLoading(true)
 
     try {
@@ -31,7 +33,14 @@ export default function LoginPage() {
           setLoading(false)
           return
         }
-        // Auto login after register
+        setIsRegister(false)
+        setPassword("")
+        setSuccess(
+          data.message ||
+            "Cadastro enviado para análise. Aguarde a aprovação do administrador."
+        )
+        setLoading(false)
+        return
       }
 
       const result = await signIn("credentials", {
@@ -41,13 +50,21 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setError(
-          result.error === "Usuário não encontrado"
-            ? "Email não cadastrado"
-            : result.error === "Senha incorreta"
-            ? "Senha incorreta"
-            : "Email ou senha inválidos"
-        )
+        const authError = decodeURIComponent(result.error)
+
+        if (authError.includes("ACCOUNT_PENDING")) {
+          setError("Seu cadastro ainda está aguardando aprovação do administrador.")
+        } else if (authError.includes("ACCOUNT_REJECTED")) {
+          setError("Seu cadastro foi recusado. Entre em contato com o administrador.")
+        } else if (authError.includes("ACCOUNT_EXPIRED")) {
+          setError("Seu plano expirou. Solicite a renovação ao administrador.")
+        } else if (authError.includes("Usuário não encontrado")) {
+          setError("Email não cadastrado")
+        } else if (authError.includes("Senha incorreta")) {
+          setError("Senha incorreta")
+        } else {
+          setError("Email ou senha inválidos")
+        }
       } else {
         router.push("/dashboard")
         router.refresh()
@@ -121,6 +138,12 @@ export default function LoginPage() {
               />
             </div>
 
+            {success && (
+              <p className="text-green-300 text-sm bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">
+                {success}
+              </p>
+            )}
+
             {error && (
               <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
                 {error}
@@ -146,6 +169,7 @@ export default function LoginPage() {
               onClick={() => {
                 setIsRegister(!isRegister)
                 setError("")
+                setSuccess("")
               }}
               className="text-purple-400 hover:text-purple-300 transition-colors font-medium"
             >

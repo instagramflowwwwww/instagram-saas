@@ -1,5 +1,11 @@
 import NextAuth from "next-auth"
 
+interface AccessFields {
+  accessStatus?: string
+  planName?: string | null
+  accessExpiresAt?: string | null
+}
+
 declare module "next-auth" {
   interface Session {
     user: {
@@ -7,6 +13,12 @@ declare module "next-auth" {
       name?: string | null
       email?: string | null
       image?: string | null
-    }
+    } & AccessFields
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT extends AccessFields {
+    id?: string
   }
 }

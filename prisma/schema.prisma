@@ -21,7 +21,14 @@ model User {
   posts         Post[]
   media         MediaLibrary[]
   postingBatches PostingBatch[]
-  createdAt     DateTime  @default(now())
+  accessStatus   String    @default("approved")
+  planName       String?
+  planDurationDays Int?
+  accessStartsAt DateTime?
+  accessExpiresAt DateTime?
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  createdAt      DateTime  @default(now())
 }
 
 model Account {

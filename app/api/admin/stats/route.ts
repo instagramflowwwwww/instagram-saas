@@ -1,12 +1,17 @@
-import { prisma } from "@/lib/prisma"
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
+import {
+  getEffectiveAccessStatus,
+  isAdminEmail,
+} from "@/lib/account-access"
+import { authOptions } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 
-const ADMIN_EMAIL = "jfontesdacunha@gmail.com"
+export const dynamic = "force-dynamic"
 
 export async function GET() {
-  const session = await getServerSession()
-  if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
+  const session = await getServerSession(authOptions)
+  if (!isAdminEmail(session?.user?.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -16,30 +21,60 @@ export async function GET() {
       name: true,
       email: true,
       createdAt: true,
+      accessStatus: true,
+      planName: true,
+      planDurationDays: true,
+      accessStartsAt: true,
+      accessExpiresAt: true,
+      approvedAt: true,
+      rejectedAt: true,
       igAccounts: { select: { id: true } },
       posts: { select: { id: true, status: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ accessStatus: "asc" }, { createdAt: "desc" }],
   })
 
-  const totalUsers = users.length
-  const totalAccounts = users.reduce((sum, u) => sum + u.igAccounts.length, 0)
-  const totalPosts = users.reduce((sum, u) => sum + u.posts.length, 0)
+  const formattedUsers = users.map((user) => {
+    const effectiveStatus = getEffectiveAccessStatus(user)
 
-  const usersFormatted = users.map((u) => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    createdAt: u.createdAt,
-    accountsCount: u.igAccounts.length,
-    postsCount: u.posts.length,
-    publishedCount: u.posts.filter((p) => p.status === "published").length,
-  }))
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt,
+      accessStatus: user.accessStatus,
+      effectiveStatus,
+      planName: user.planName,
+      planDurationDays: user.planDurationDays,
+      accessStartsAt: user.accessStartsAt,
+      accessExpiresAt: user.accessExpiresAt,
+      approvedAt: user.approvedAt,
+      rejectedAt: user.rejectedAt,
+      isAdmin: isAdminEmail(user.email),
+      accountsCount: user.igAccounts.length,
+      postsCount: user.posts.length,
+      publishedCount: user.posts.filter((post) => post.status === "published")
+        .length,
+    }
+  })
+
+  const countByStatus = (status: string) =>
+    formattedUsers.filter((user) => user.effectiveStatus === status).length
 
   return NextResponse.json({
-    totalUsers,
-    totalAccounts,
-    totalPosts,
-    users: usersFormatted,
+    totalUsers: formattedUsers.length,
+    totalAccounts: formattedUsers.reduce(
+      (total, user) => total + user.accountsCount,
+      0
+    ),
+    totalPosts: formattedUsers.reduce(
+      (total, user) => total + user.postsCount,
+      0
+    ),
+    pendingUsers: countByStatus("pending"),
+    activeUsers: countByStatus("approved"),
+    expiredUsers: countByStatus("expired"),
+    rejectedUsers: countByStatus("rejected"),
+    users: formattedUsers,
   })
 }

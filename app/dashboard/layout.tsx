@@ -3,13 +3,13 @@ import { useSession, signOut } from "next-auth/react"
 import { useRouter, usePathname } from "next/navigation"
 import { useEffect, useRef } from "react"
 import Link from "next/link"
+import { isAdminEmail } from "@/lib/account-access"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, Zap, FolderOpen,
   ListChecks, Star, TrendingUp, Shield, Boxes
 } from "lucide-react"
 
-const ADMIN_EMAIL = "jfontesdacunha@gmail.com"
 
 const navGroups = [
   {
@@ -57,11 +57,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const queueTickRunning = useRef(false)
 
   useEffect(() => {
-    if (status === "unauthenticated") router.push("/login")
-  }, [status, router])
+    if (status === "unauthenticated") {
+      router.push("/login")
+      return
+    }
+
+    if (status === "authenticated" && !session?.user?.id) {
+      void signOut({ callbackUrl: "/login" })
+    }
+  }, [session?.user?.id, status, router])
 
   useEffect(() => {
-    if (status !== "authenticated") return
+    if (status !== "authenticated" || !session?.user?.id) return
 
     let disposed = false
 
@@ -89,7 +96,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       disposed = true
       window.clearInterval(interval)
     }
-  }, [status])
+  }, [session?.user?.id, status])
 
   if (status === "loading") {
     return (
@@ -99,7 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  const isAdmin = session?.user?.email === ADMIN_EMAIL
+  const isAdmin = isAdminEmail(session?.user?.email)
 
   const groups = isAdmin
     ? [

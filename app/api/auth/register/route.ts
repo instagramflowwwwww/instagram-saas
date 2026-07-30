@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs"
+import { prisma } from "@/lib/prisma"
 
 export async function POST(request: Request) {
   try {
-    const { name, email, password } = await request.json()
+    const body = await request.json()
+    const name = String(body.name || "").trim().slice(0, 120)
+    const email = String(body.email || "").trim().toLowerCase()
+    const password = String(body.password || "")
 
     if (!email || !password) {
       return NextResponse.json(
@@ -31,12 +34,26 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    const user = await prisma.user.create({
-      data: { name: name || null, email, password: hashedPassword },
+    await prisma.user.create({
+      data: {
+        name: name || null,
+        email,
+        password: hashedPassword,
+        accessStatus: "pending",
+        planName: null,
+        planDurationDays: null,
+        accessStartsAt: null,
+        accessExpiresAt: null,
+        approvedAt: null,
+        rejectedAt: null,
+      },
     })
 
     return NextResponse.json(
-      { message: "Conta criada com sucesso!", userId: user.id },
+      {
+        message:
+          "Cadastro enviado para análise. Você poderá entrar depois que o administrador aprovar sua conta.",
+      },
       { status: 201 }
     )
   } catch (error) {
