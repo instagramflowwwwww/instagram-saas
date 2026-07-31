@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Sparkles,
   Ban,
   XCircle,
 } from "lucide-react"
@@ -58,7 +59,7 @@ type HistoryPost = {
   imageUrl: string | null
   videoUrl: string | null
   thumbnailUrl: string | null
-  type: "image" | "reel"
+  type: "image" | "reel" | "story"
   status: string
   scheduledAt: string | null
   publishedAt: string | null
@@ -457,6 +458,7 @@ export default function HistoryPage() {
             <option value="all">Todos os conteúdos</option>
             <option value="image">Imagens</option>
             <option value="reel">Reels</option>
+            <option value="story">Stories</option>
           </select>
 
           <select
@@ -576,7 +578,9 @@ export default function HistoryPage() {
                       <div
                         className={`flex h-10 w-10 items-center justify-center rounded-xl border ${config.className}`}
                       >
-                        {post.type === "reel" ? (
+                        {post.type === "story" ? (
+                          <Sparkles size={17} />
+                        ) : post.type === "reel" ? (
                           <Film size={17} />
                         ) : (
                           <ImageIcon size={17} />
@@ -591,13 +595,13 @@ export default function HistoryPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <StatusBadge status={post.status} />
                         <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600">
-                          {post.type === "reel" ? "Reel" : "Imagem"}
+                          {post.type === "story" ? "Story" : post.type === "reel" ? "Reel" : "Imagem"}
                         </span>
                         <span className="text-[11px] text-gray-700">#{post.id.slice(-7)}</span>
                       </div>
 
                       <p className="mt-3 line-clamp-2 text-sm leading-6 text-gray-300">
-                        {post.caption || post.hashtags || "Publicação sem legenda"}
+                        {post.type === "story" ? "Story publicado pela API oficial" : post.caption || post.hashtags || "Publicação sem legenda"}
                       </p>
 
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-gray-600">
@@ -676,7 +680,9 @@ export default function HistoryPage() {
                               />
                             ) : (
                               <div className="flex aspect-video items-center justify-center bg-white/[0.03]">
-                                {post.type === "reel" ? (
+                                {post.type === "story" ? (
+                                  <Sparkles size={26} className="text-pink-400" />
+                                ) : post.type === "reel" ? (
                                   <Film size={26} className="text-purple-400" />
                                 ) : (
                                   <ImageIcon size={26} className="text-pink-400" />
@@ -685,7 +691,7 @@ export default function HistoryPage() {
                             )}
                             <div className="space-y-2 p-3">
                               <p className="line-clamp-3 text-xs leading-5 text-gray-400">
-                                {post.caption || "Sem legenda"}
+                                {post.type === "story" ? "Stories não recebem legenda pela API oficial." : post.caption || "Sem legenda"}
                               </p>
                               {post.hashtags && (
                                 <p className="line-clamp-2 text-[11px] leading-5 text-purple-300/70">

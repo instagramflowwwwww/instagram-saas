@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   XCircle,
 } from "lucide-react"
 
@@ -50,6 +51,7 @@ type Batch = {
   name: string | null
   status: string
   captionMode: string
+  publicationType: string
   intervalMinutes: number
   startAt: string
   totalItems: number
@@ -251,6 +253,12 @@ export default function QueuePage() {
             <RefreshCw size={15} /> Atualizar
           </button>
           <Link
+            href="/dashboard/stories"
+            className="flex items-center gap-2 rounded-lg border border-pink-500/25 bg-pink-500/10 px-4 py-2.5 text-sm font-medium text-pink-300 hover:bg-pink-500/15"
+          >
+            <Sparkles size={15} /> Novos Stories
+          </Link>
+          <Link
             href="/dashboard/schedule"
             className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90"
           >
@@ -339,15 +347,19 @@ export default function QueuePage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="truncate text-base font-semibold text-white">
-                          {batch.name || `Sequência de ${batch.totalItems} mídias`}
+                          {batch.name || `${batch.publicationType === "story" ? "Stories" : "Sequência"} de ${batch.totalItems} mídias`}
                         </h2>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${batch.publicationType === "story" ? "border-pink-500/20 bg-pink-500/10 text-pink-300" : "border-purple-500/20 bg-purple-500/10 text-purple-300"}`}>
+                          {batch.publicationType === "story" ? <Sparkles size={11} /> : <CalendarClock size={11} />}
+                          {batch.publicationType === "story" ? "Stories" : "Posts"}
+                        </span>
                         <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${info.className}`}>
                           <Icon size={12} className={batch.status === "processing" ? "animate-spin" : ""} />
                           {info.label}
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-gray-500">
-                        Início {formatDate(batch.startAt)} · intervalo de {batch.intervalMinutes} min · {batch.totalItems} mídia(s)
+                        Início {formatDate(batch.startAt)} · intervalo de {batch.intervalMinutes} min · {batch.totalItems} {batch.publicationType === "story" ? "Story(s)" : "mídia(s)"}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

@@ -97,7 +97,8 @@ export async function POST(request: Request) {
     const mediaIds = uniqueStrings(body.mediaIds, 50)
     const accountIds = uniqueStrings(body.accountIds, 20)
 
-    const captionMode = String(body.captionMode || "single")
+    const publicationType = String(body.publicationType || "post").toLowerCase()
+    const captionMode = publicationType === "story" ? "none" : String(body.captionMode || "single")
     const intervalMinutes = Number(body.intervalMinutes)
     const startAt = new Date(String(body.startAt || ""))
     const name = cleanText(body.name, 120) || null
@@ -114,7 +115,10 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    if (!CAPTION_MODES.has(captionMode)) {
+    if (!["post", "story"].includes(publicationType)) {
+      return NextResponse.json({ error: "Tipo de publicação inválido." }, { status: 400 })
+    }
+    if (publicationType === "post" && !CAPTION_MODES.has(captionMode)) {
       return NextResponse.json({ error: "Modo de legenda inválido." }, { status: 400 })
     }
     if (!Number.isInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 1440) {
@@ -201,7 +205,7 @@ export async function POST(request: Request) {
     const singleCaption = cleanText(body.singleCaption)
     const singleHashtags = cleanText(body.singleHashtags, 500)
 
-    if (captionMode === "rotate" && rotationCaptions.length === 0) {
+    if (publicationType === "post" && captionMode === "rotate" && rotationCaptions.length === 0) {
       return NextResponse.json(
         { error: "Adicione pelo menos uma legenda para alternar." },
         { status: 400 }
@@ -232,6 +236,7 @@ export async function POST(request: Request) {
           userId: session.user.id,
           name,
           captionMode,
+          publicationType,
           intervalMinutes,
           startAt,
           totalItems: mediaIds.length,
@@ -257,9 +262,10 @@ export async function POST(request: Request) {
             userId: session.user.id,
             imageUrl: media.type === "image" ? media.url : null,
             videoUrl: media.type === "video" ? media.url : null,
-            coverUrl,
-            caption: text.caption,
-            hashtags: text.hashtags,
+            coverUrl: publicationType === "story" ? null : coverUrl,
+            publicationType,
+            caption: publicationType === "story" ? "" : text.caption,
+            hashtags: publicationType === "story" ? "" : text.hashtags,
             status: "scheduled",
             scheduledAt,
           },
@@ -271,8 +277,8 @@ export async function POST(request: Request) {
             mediaId: media.id,
             postId: post.id,
             position: index,
-            caption: text.caption,
-            hashtags: text.hashtags,
+            caption: publicationType === "story" ? "" : text.caption,
+            hashtags: publicationType === "story" ? "" : text.hashtags,
             scheduledAt,
           },
         })

@@ -287,7 +287,7 @@ export async function GET(request: Request) {
         status: "success",
         mediaId: { not: null },
         ...(createdAt ? { createdAt } : {}),
-        post: { userId: session.user.id },
+        post: { userId: session.user.id, publicationType: "post" },
         instagramAccount: {
           connectionType: "official",
         },

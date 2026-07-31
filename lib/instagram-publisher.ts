@@ -119,19 +119,28 @@ async function createContainer(params: {
   videoUrl: string
   coverUrl?: string
   caption: string
+  publicationType: string
 }) {
   const body = new URLSearchParams({
     access_token: params.token,
-    caption: params.caption,
   })
 
-  if (params.videoUrl) {
+  if (params.publicationType === "story") {
+    body.set("media_type", "STORIES")
+    if (params.videoUrl) {
+      body.set("video_url", params.videoUrl)
+    } else {
+      body.set("image_url", params.imageUrl)
+    }
+  } else if (params.videoUrl) {
     body.set("media_type", "REELS")
     body.set("video_url", params.videoUrl)
     body.set("share_to_feed", "true")
     if (params.coverUrl) body.set("cover_url", params.coverUrl)
+    if (params.caption) body.set("caption", params.caption)
   } else {
     body.set("image_url", params.imageUrl)
+    if (params.caption) body.set("caption", params.caption)
   }
 
   const payload = await metaRequest(`${params.account.igUserId}/media`, {
@@ -208,6 +217,7 @@ export async function publishExistingPost(params: {
       caption: true,
       hashtags: true,
       coverUrl: true,
+      publicationType: true,
     },
   })
 
@@ -292,7 +302,8 @@ export async function publishExistingPost(params: {
           imageUrl: post.imageUrl || "",
           videoUrl: post.videoUrl || "",
           coverUrl: params.coverUrl || post.coverUrl || "",
-          caption: fullCaption,
+          caption: post.publicationType === "story" ? "" : fullCaption,
+          publicationType: post.publicationType,
         })
 
         await waitUntilReady(containerId, token)

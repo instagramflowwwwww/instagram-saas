@@ -53,11 +53,17 @@ function buildBaseWhere(params: {
   }
 
   if (params.type === "image") {
+    where.publicationType = "post"
     where.imageUrl = { not: null }
   }
 
   if (params.type === "reel") {
+    where.publicationType = "post"
     where.videoUrl = { not: null }
+  }
+
+  if (params.type === "story") {
+    where.publicationType = "story"
   }
 
   if (params.accountId) {
@@ -121,7 +127,7 @@ export async function GET(request: Request) {
     )
   }
 
-  if (!["all", "image", "reel"].includes(type)) {
+  if (!["all", "image", "reel", "story"].includes(type)) {
     return NextResponse.json(
       { error: "O tipo de conteúdo informado é inválido." },
       { status: 400 }
@@ -158,6 +164,7 @@ export async function GET(request: Request) {
           hashtags: true,
           imageUrl: true,
           videoUrl: true,
+          publicationType: true,
           status: true,
           scheduledAt: true,
           publishedAt: true,
@@ -237,7 +244,7 @@ export async function GET(request: Request) {
 
         return {
           ...post,
-          type: post.videoUrl ? "reel" : "image",
+          type: post.publicationType === "story" ? "story" : post.videoUrl ? "reel" : "image",
           thumbnailUrl: post.imageUrl,
           successCount,
           errorCount,

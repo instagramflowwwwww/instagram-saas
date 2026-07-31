@@ -113,6 +113,7 @@ model Post {
   videoUrl    String?
   imageUrl    String?
   coverUrl    String?
+  publicationType String @default("post")
   caption     String?
   hashtags    String?
   status      String    @default("draft")
@@ -162,6 +163,7 @@ model PostingBatch {
   name            String?
   status          String                @default("scheduled")
   captionMode     String                @default("single")
+  publicationType String                @default("post")
   intervalMinutes Int                   @default(10)
   startAt         DateTime
   totalItems      Int                   @default(0)
