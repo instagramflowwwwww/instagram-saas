@@ -156,8 +156,8 @@ export default function PerformancePage() {
   )
 
   return (
-    <div>
-      <div className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <div className="min-w-0 max-w-full overflow-x-hidden">
+      <div className="mb-6 flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Performance</h1>
           <p className="mt-1 text-gray-500">
@@ -289,9 +289,9 @@ export default function PerformancePage() {
           {posts.map((post) => (
             <div
               key={post.id}
-              className="flex flex-col gap-4 rounded-xl border border-white/5 bg-[#111] p-5 lg:flex-row lg:items-center"
+              className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-hidden rounded-xl border border-white/5 bg-[#111] p-5 lg:flex-row lg:items-center"
             >
-              <div className="flex min-w-0 flex-1 items-center gap-4">
+              <div className="flex w-full min-w-0 flex-1 items-center gap-4 lg:w-0">
                 {post.profilePicture ? (
                   <img
                     src={post.profilePicture}
@@ -304,7 +304,7 @@ export default function PerformancePage() {
                   </div>
                 )}
 
-                <div className="min-w-0 flex-1">
+                <div className="w-0 min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-white">
                       @{post.username}
@@ -313,7 +313,10 @@ export default function PerformancePage() {
                       {mediaLabel(post)}
                     </span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                  <p
+                    className="mt-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-500"
+                    title={post.caption || "Sem legenda"}
+                  >
                     {post.caption || "Sem legenda"}
                   </p>
                 </div>
