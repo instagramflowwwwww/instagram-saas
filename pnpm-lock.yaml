@@ -26,6 +26,9 @@ importers:
       next-auth:
         specifier: ^4.24.7
         version: 4.24.14(next@14.2.35(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      https-proxy-agent:
+        specifier: ^7.0.6
+        version: 7.0.6
       prisma:
         specifier: ^5.22.0
         version: 5.22.0

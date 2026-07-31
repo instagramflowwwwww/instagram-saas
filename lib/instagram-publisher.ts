@@ -5,6 +5,7 @@ import {
   readJsonResponse,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
+import { fetchInstagramRequest } from "@/lib/proxy-http"
 import { decryptValue, encryptValue } from "@/lib/secure-store"
 
 export type PublishResult = {
@@ -35,6 +36,7 @@ function sleep(ms: number) {
 
 async function metaRequest(
   path: string,
+  accountId: string,
   options: RequestInit & { searchParams?: Record<string, string> } = {}
 ) {
   const url = new URL(`${GRAPH_BASE}/${path.replace(/^\//, "")}`)
@@ -43,10 +45,15 @@ async function metaRequest(
     url.searchParams.set(key, value)
   })
 
-  const response = await fetch(url, {
-    ...options,
-    cache: "no-store",
-  })
+  const { searchParams: _searchParams, ...requestOptions } = options
+  const response = await fetchInstagramRequest(
+    url,
+    {
+      ...requestOptions,
+      cache: "no-store",
+    },
+    accountId
+  )
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload) {
@@ -82,7 +89,11 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
   url.searchParams.set("grant_type", "ig_refresh_token")
   url.searchParams.set("access_token", token)
 
-  const response = await fetch(url, { cache: "no-store" })
+  const response = await fetchInstagramRequest(
+    url,
+    { cache: "no-store" },
+    account.id
+  )
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload?.access_token) {
@@ -143,11 +154,15 @@ async function createContainer(params: {
     if (params.caption) body.set("caption", params.caption)
   }
 
-  const payload = await metaRequest(`${params.account.igUserId}/media`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  })
+  const payload = await metaRequest(
+    `${params.account.igUserId}/media`,
+    params.account.id,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    }
+  )
 
   if (!payload.id) {
     throw new Error("A Meta não retornou o contêiner da publicação.")
@@ -156,9 +171,13 @@ async function createContainer(params: {
   return String(payload.id)
 }
 
-async function waitUntilReady(containerId: string, token: string) {
+async function waitUntilReady(
+  containerId: string,
+  token: string,
+  accountId: string
+) {
   for (let attempt = 0; attempt < MAX_STATUS_CHECKS; attempt += 1) {
-    const payload = await metaRequest(containerId, {
+    const payload = await metaRequest(containerId, accountId, {
       searchParams: {
         fields: "status_code,status",
         access_token: token,
@@ -186,14 +205,18 @@ async function publishContainer(
   containerId: string,
   token: string
 ) {
-  const payload = await metaRequest(`${account.igUserId}/media_publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      creation_id: containerId,
-      access_token: token,
-    }),
-  })
+  const payload = await metaRequest(
+    `${account.igUserId}/media_publish`,
+    account.id,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        creation_id: containerId,
+        access_token: token,
+      }),
+    }
+  )
 
   if (!payload.id) {
     throw new Error("A Meta não retornou o ID da publicação.")
@@ -306,7 +329,7 @@ export async function publishExistingPost(params: {
           publicationType: post.publicationType,
         })
 
-        await waitUntilReady(containerId, token)
+        await waitUntilReady(containerId, token, account.id)
         const mediaId = await publishContainer(account, containerId, token)
 
         await Promise.all([

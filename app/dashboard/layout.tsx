@@ -7,7 +7,7 @@ import { isAdminEmail } from "@/lib/account-access"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, Zap, FolderOpen,
-  ListChecks, Star, TrendingUp, Shield, Boxes
+  ListChecks, Star, TrendingUp, Shield, Boxes, Network
 } from "lucide-react"
 
 
@@ -115,6 +115,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           label: "Administração",
           items: [
             { href: "/dashboard/admin", icon: Shield, label: "Painel Admin" },
+            { href: "/dashboard/admin/proxies", icon: Network, label: "Proxies" },
           ],
         },
       ]

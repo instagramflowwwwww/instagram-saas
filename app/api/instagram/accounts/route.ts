@@ -82,7 +82,7 @@ export async function GET() {
       ) {
         try {
           const accessToken = decryptValue(account.accessToken)
-          const profile = await fetchInstagramProfile(accessToken)
+          const profile = await fetchInstagramProfile(accessToken, account.id)
           const username = String(profile.username || account.username)
           const followerCount = parseMetaCount(profile.followers_count)
           const mediaCount = parseMetaCount(profile.media_count)
@@ -130,6 +130,8 @@ export async function GET() {
         connectionType: currentAccount.connectionType,
         isActive: currentAccount.isActive,
         tokenExpiresAt: currentAccount.tokenExpiresAt,
+        proxyAssignedAt: currentAccount.proxyAssignedAt,
+        hasAssignedProxy: Boolean(currentAccount.proxyAssignedAt),
         lastActiveAt: currentAccount.lastActiveAt,
         createdAt: currentAccount.createdAt,
         appId: currentAccount.appConfig?.metaAppId || null,

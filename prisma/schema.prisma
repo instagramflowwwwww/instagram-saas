@@ -8,27 +8,27 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  accounts      Account[]
-  sessions      Session[]
-  instagramApp  InstagramApp?
-  igAccounts    InstagramAccount[]
-  posts         Post[]
-  media         MediaLibrary[]
-  postingBatches PostingBatch[]
-  accessStatus   String    @default("approved")
-  planName       String?
+  id               String             @id @default(cuid())
+  name             String?
+  email            String?            @unique
+  emailVerified    DateTime?
+  image            String?
+  password         String?
+  accounts         Account[]
+  sessions         Session[]
+  instagramApp     InstagramApp?
+  igAccounts       InstagramAccount[]
+  posts            Post[]
+  media            MediaLibrary[]
+  postingBatches   PostingBatch[]
+  accessStatus     String             @default("approved")
+  planName         String?
   planDurationDays Int?
-  accessStartsAt DateTime?
-  accessExpiresAt DateTime?
-  approvedAt     DateTime?
-  rejectedAt     DateTime?
-  createdAt      DateTime  @default(now())
+  accessStartsAt   DateTime?
+  accessExpiresAt  DateTime?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  createdAt        DateTime           @default(now())
 }
 
 model Account {
@@ -78,51 +78,68 @@ model InstagramApp {
 }
 
 model InstagramAccount {
-  id                  String        @id @default(cuid())
-  userId              String
-  appConfigId         String?
-  igUserId            String
-  username            String
-  name                String?
-  accountType         String?
-  profilePicture      String?
-  accessToken         String?
-  instagramUsername   String?
-  instagramPassword   String?
-  sessionFilePath     String?
-  tokenExpiresAt      DateTime?
-  followerCount       Int?
-  mediaCount          Int?
-  connectionType      String        @default("legacy")
-  isActive            Boolean       @default(true)
-  proxy               String?
-  lastActiveAt        DateTime      @default(now())
-  createdAt           DateTime      @default(now())
-  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appConfig           InstagramApp? @relation(fields: [appConfigId], references: [id], onDelete: SetNull)
-  postLogs            PostLog[]
-  batchAccounts       PostingBatchAccount[]
+  id                String                @id @default(cuid())
+  userId            String
+  appConfigId       String?
+  igUserId          String
+  username          String
+  name              String?
+  accountType       String?
+  profilePicture    String?
+  accessToken       String?
+  instagramUsername String?
+  instagramPassword String?
+  sessionFilePath   String?
+  tokenExpiresAt    DateTime?
+  followerCount     Int?
+  mediaCount        Int?
+  connectionType    String                @default("legacy")
+  isActive          Boolean               @default(true)
+  proxy             String?
+  proxyAssignedAt   DateTime?
+  lastActiveAt      DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appConfig         InstagramApp?         @relation(fields: [appConfigId], references: [id], onDelete: SetNull)
+  postLogs          PostLog[]
+  batchAccounts     PostingBatchAccount[]
+  assignedProxy     InstagramProxy?
 
   @@index([userId, igUserId])
   @@index([appConfigId])
 }
 
+model InstagramProxy {
+  id                String            @id @default(cuid())
+  fingerprint       String            @unique
+  encryptedValue    String
+  isActive          Boolean           @default(true)
+  usedAt            DateTime?
+  assignedAt        DateTime?
+  assignedAccountId String?           @unique
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  account           InstagramAccount? @relation(fields: [assignedAccountId], references: [id], onDelete: SetNull)
+
+  @@index([isActive, usedAt])
+}
+
 model Post {
-  id          String    @id @default(cuid())
-  userId      String
-  videoUrl    String?
-  imageUrl    String?
-  coverUrl    String?
-  publicationType String @default("post")
-  caption     String?
-  hashtags    String?
-  status      String    @default("draft")
-  scheduledAt DateTime?
-  publishedAt DateTime?
-  createdAt   DateTime  @default(now())
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  logs        PostLog[]
-  batchItem   PostingBatchItem?
+  id              String            @id @default(cuid())
+  userId          String
+  videoUrl        String?
+  imageUrl        String?
+  coverUrl        String?
+  publicationType String            @default("post")
+  caption         String?
+  hashtags        String?
+  status          String            @default("draft")
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs            PostLog[]
+  batchItem       PostingBatchItem?
 }
 
 model PostLog {
@@ -181,34 +198,34 @@ model PostingBatch {
 }
 
 model PostingBatchAccount {
-  batchId           String
+  batchId            String
   instagramAccountId String
-  batch             PostingBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  instagramAccount  InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  batch              PostingBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  instagramAccount   InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
 
   @@id([batchId, instagramAccountId])
   @@index([instagramAccountId])
 }
 
 model PostingBatchItem {
-  id                  String       @id @default(cuid())
+  id                  String        @id @default(cuid())
   batchId             String
   mediaId             String?
-  postId              String?      @unique
+  postId              String?       @unique
   position            Int
   caption             String?
   hashtags            String?
   scheduledAt         DateTime
-  status              String       @default("pending")
-  attempts            Int          @default(0)
+  status              String        @default("pending")
+  attempts            Int           @default(0)
   lastError           String?
   processingStartedAt DateTime?
   processedAt         DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-  batch               PostingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  batch               PostingBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
   media               MediaLibrary? @relation(fields: [mediaId], references: [id], onDelete: SetNull)
-  post                Post?        @relation(fields: [postId], references: [id], onDelete: SetNull)
+  post                Post?         @relation(fields: [postId], references: [id], onDelete: SetNull)
 
   @@unique([batchId, position])
   @@index([status, scheduledAt])

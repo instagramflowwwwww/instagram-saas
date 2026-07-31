@@ -11,6 +11,10 @@ import {
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
 import {
+  assignProxyToAccount,
+  isInstagramProxyRequired,
+} from "@/lib/proxy-manager"
+import {
   decryptValue,
   encryptValue,
   openPayload,
@@ -203,30 +207,49 @@ export async function GET(request: NextRequest) {
       lastActiveAt: new Date(),
     }
 
-    await prisma.$transaction(async (tx) => {
-      const updatedAccounts = await tx.instagramAccount.updateMany({
+    const connectedAccount = await prisma.$transaction(async (tx) => {
+      const existingAccount = await tx.instagramAccount.findFirst({
         where: {
           userId: session.user.id,
           igUserId,
         },
-        data: accountData,
+        select: { id: true },
       })
 
-      if (updatedAccounts.count === 0) {
-        await tx.instagramAccount.create({
-          data: {
-            userId: session.user.id,
-            igUserId,
-            ...accountData,
-          },
-        })
-      }
+      const account = existingAccount
+        ? await tx.instagramAccount.update({
+            where: { id: existingAccount.id },
+            data: accountData,
+            select: { id: true },
+          })
+        : await tx.instagramAccount.create({
+            data: {
+              userId: session.user.id,
+              igUserId,
+              ...accountData,
+            },
+            select: { id: true },
+          })
 
       await tx.instagramApp.update({
         where: { id: app.id },
         data: { lastValidatedAt: new Date() },
       })
+
+      return account
     })
+
+    const assignedProxy = await assignProxyToAccount(connectedAccount.id)
+
+    if (!assignedProxy && isInstagramProxyRequired()) {
+      await prisma.instagramAccount.update({
+        where: { id: connectedAccount.id },
+        data: { isActive: false },
+      })
+      throw new Error(
+        "Não há proxy disponível para esta conta. Importe novas proxies antes de conectar outra conta."
+      )
+    }
 
     const url = new URL("/dashboard/meta-app", request.url)
     url.searchParams.set("success", "connected")

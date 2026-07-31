@@ -8,6 +8,7 @@ import {
   readJsonResponse,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
+import { fetchInstagramRequest } from "@/lib/proxy-http"
 import { decryptValue, encryptValue } from "@/lib/secure-store"
 
 export const runtime = "nodejs"
@@ -129,7 +130,11 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
   url.searchParams.set("grant_type", "ig_refresh_token")
   url.searchParams.set("access_token", token)
 
-  const response = await fetch(url, { cache: "no-store" })
+  const response = await fetchInstagramRequest(
+    url,
+    { cache: "no-store" },
+    account.id
+  )
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload?.access_token) {
@@ -161,7 +166,11 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
   return token
 }
 
-async function fetchMedia(mediaId: string, accessToken: string) {
+async function fetchMedia(
+  mediaId: string,
+  accessToken: string,
+  accountId: string
+) {
   const fieldSets = [
     "id,like_count,comments_count,media_type,media_product_type,permalink,timestamp",
     "id,like_count,comments_count,media_type,permalink,timestamp",
@@ -174,7 +183,11 @@ async function fetchMedia(mediaId: string, accessToken: string) {
     url.searchParams.set("fields", fields)
     url.searchParams.set("access_token", accessToken)
 
-    const response = await fetch(url, { cache: "no-store" })
+    const response = await fetchInstagramRequest(
+      url,
+      { cache: "no-store" },
+      accountId
+    )
     const { payload } = await readJsonResponse(response)
 
     if (response.ok && payload) {
@@ -190,7 +203,8 @@ async function fetchMedia(mediaId: string, accessToken: string) {
 async function fetchInsightMetric(
   mediaId: string,
   accessToken: string,
-  metric: string
+  metric: string,
+  accountId: string
 ) {
   const variants = ["total_value", null] as const
   let lastError: (Error & { metaCode?: number }) | null = null
@@ -201,7 +215,11 @@ async function fetchInsightMetric(
     url.searchParams.set("access_token", accessToken)
     if (metricType) url.searchParams.set("metric_type", metricType)
 
-    const response = await fetch(url, { cache: "no-store" })
+    const response = await fetchInstagramRequest(
+      url,
+      { cache: "no-store" },
+      accountId
+    )
     const { payload } = await readJsonResponse(response)
 
     if (response.ok && payload) {
@@ -221,7 +239,8 @@ async function fetchInsightMetric(
 async function fetchViews(
   mediaId: string,
   accessToken: string,
-  media: InstagramMedia
+  media: InstagramMedia,
+  accountId: string
 ) {
   const mediaType = String(media.media_type || "").toUpperCase()
   const productType = String(media.media_product_type || "").toUpperCase()
@@ -233,7 +252,12 @@ async function fetchViews(
 
   for (const metric of metrics) {
     try {
-      const value = await fetchInsightMetric(mediaId, accessToken, metric)
+      const value = await fetchInsightMetric(
+        mediaId,
+        accessToken,
+        metric,
+        accountId
+      )
       if (value !== null) return { value, metric }
     } catch (error) {
       const metaCode = (error as Error & { metaCode?: number }).metaCode
@@ -321,8 +345,17 @@ export async function GET(request: Request) {
             accessToken: log.instagramAccount.accessToken,
             tokenExpiresAt: log.instagramAccount.tokenExpiresAt,
           })
-          const media = await fetchMedia(log.mediaId, accessToken)
-          const views = await fetchViews(log.mediaId, accessToken, media)
+          const media = await fetchMedia(
+            log.mediaId,
+            accessToken,
+            log.instagramAccount.id
+          )
+          const views = await fetchViews(
+            log.mediaId,
+            accessToken,
+            media,
+            log.instagramAccount.id
+          )
 
           return {
             id: log.id,
