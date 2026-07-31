@@ -14,7 +14,6 @@ import {
   Layers3,
   Loader2,
   Play,
-  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react"
@@ -480,35 +479,6 @@ export default function StoriesPage() {
             )}
           </section>
 
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <ShieldCheck size={16} className="text-green-400" />
-              <h2 className="text-sm font-semibold text-white">
-                Recursos disponíveis pela API oficial
-              </h2>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                "Story com imagem",
-                "Story com vídeo",
-                "Publicação em várias contas",
-                "Publicação imediata ou agendada",
-              ].map((label) => (
-                <div
-                  key={label}
-                  className="flex items-center gap-2 rounded-xl border border-green-500/10 bg-green-500/[0.04] p-3 text-xs text-green-200/80"
-                >
-                  <CheckCircle2 size={14} className="shrink-0 text-green-400" />
-                  {label}
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 rounded-xl border border-yellow-500/15 bg-yellow-500/[0.05] p-4 text-xs leading-5 text-yellow-100/70">
-              A API oficial não adiciona figurinha de link, música, enquete, caixa de perguntas,
-              localização ou outros stickers. Para melhor resultado, use mídia vertical 9:16,
-              preferencialmente em 1080 × 1920.
-            </div>
-          </section>
         </div>
 
         <div className="space-y-6 xl:col-span-2">
