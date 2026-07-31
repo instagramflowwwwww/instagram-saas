@@ -23,6 +23,7 @@ type OAuthState = {
   userId: string
   appConfigId: string
   expectedUsername: string | null
+  redirectUri?: string
   nonce: string
   expiresAt: number
 }
@@ -31,6 +32,20 @@ function redirectWithError(request: NextRequest, error: string) {
   const url = new URL("/dashboard/meta-app", request.url)
   url.searchParams.set("error", error)
   return NextResponse.redirect(url)
+}
+
+function getCallbackErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "Erro ao conectar a conta"
+
+  if (
+    /redirect_uri/i.test(message) ||
+    /verification code/i.test(message)
+  ) {
+    return "A URL de retorno usada no início da conexão ficou diferente da URL usada na confirmação. Inicie a conexão novamente após o novo deploy."
+  }
+
+  return message
 }
 
 export async function GET(request: NextRequest) {
@@ -83,7 +98,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const appSecret = decryptValue(app.appSecretEncrypted)
-    const redirectUri = getInstagramRedirectUri(request)
+    const redirectUri = state.redirectUri || getInstagramRedirectUri(request)
 
     const tokenResponse = await fetch(
       "https://api.instagram.com/oauth/access_token",
@@ -221,10 +236,7 @@ export async function GET(request: NextRequest) {
     console.error("Instagram official callback error", error)
     const url = new URL("/dashboard/meta-app", request.url)
     url.searchParams.set("error", "callback_failed")
-    url.searchParams.set(
-      "message",
-      error instanceof Error ? error.message : "Erro ao conectar a conta"
-    )
+    url.searchParams.set("message", getCallbackErrorMessage(error))
     return NextResponse.redirect(url)
   }
 }

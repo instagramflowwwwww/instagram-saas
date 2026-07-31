@@ -53,6 +53,9 @@ export function getPublicBaseUrl(request?: NextRequest | Request) {
 }
 
 export function getInstagramRedirectUri(request?: NextRequest | Request) {
+  const configured = process.env.INSTAGRAM_REDIRECT_URI?.trim()
+  if (configured) return configured.replace(/\/+$/, "")
+
   return `${getPublicBaseUrl(request)}/api/instagram/callback`
 }
 

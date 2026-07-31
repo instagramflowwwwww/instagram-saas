@@ -43,17 +43,19 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  const redirectUri = getInstagramRedirectUri(request)
   const state = sealPayload({
     userId: session.user.id,
     appConfigId: app.id,
     expectedUsername: username || null,
+    redirectUri,
     nonce: randomBytes(18).toString("hex"),
     expiresAt: Date.now() + 10 * 60 * 1000,
   })
 
   const authorizeUrl = new URL("https://www.instagram.com/oauth/authorize")
   authorizeUrl.searchParams.set("client_id", app.metaAppId)
-  authorizeUrl.searchParams.set("redirect_uri", getInstagramRedirectUri(request))
+  authorizeUrl.searchParams.set("redirect_uri", redirectUri)
   authorizeUrl.searchParams.set("response_type", "code")
   authorizeUrl.searchParams.set("scope", INSTAGRAM_SCOPES.join(","))
   authorizeUrl.searchParams.set("state", state)
