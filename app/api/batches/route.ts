@@ -230,61 +230,67 @@ export async function POST(request: Request) {
       return { caption: singleCaption, hashtags: singleHashtags }
     }
 
-    const batch = await prisma.$transaction(async (tx) => {
-      const createdBatch = await tx.postingBatch.create({
-        data: {
-          userId: session.user.id,
-          name,
-          captionMode,
-          publicationType,
-          intervalMinutes,
-          startAt,
-          totalItems: mediaIds.length,
-          accounts: {
-            create: accounts.map((account) => ({
-              instagramAccountId: account.id,
-            })),
-          },
-        },
-      })
+    const batchItems = mediaIds.map((mediaId, index) => {
+      const media = mediaMap.get(mediaId)
+      if (!media) {
+        throw new Error("Mídia não encontrada durante o agendamento.")
+      }
 
-      for (let index = 0; index < mediaIds.length; index += 1) {
-        const mediaId = mediaIds[index]
-        const media = mediaMap.get(mediaId)
-        if (!media) throw new Error("Mídia não encontrada durante o agendamento.")
-        const scheduledAt = new Date(
-          startAt.getTime() + index * intervalMinutes * 60 * 1000
-        )
-        const text = getCaption(mediaId, index)
-        const coverUrl = media.type === "video" ? itemCoverMap.get(mediaId) || null : null
-        const post = await tx.post.create({
-          data: {
-            userId: session.user.id,
+      const scheduledAt = new Date(
+        startAt.getTime() + index * intervalMinutes * 60 * 1000
+      )
+      const text = getCaption(mediaId, index)
+      const caption = publicationType === "story" ? "" : text.caption
+      const hashtags = publicationType === "story" ? "" : text.hashtags
+      const coverUrl =
+        publicationType === "story" || media.type !== "video"
+          ? null
+          : itemCoverMap.get(mediaId) || null
+
+      return {
+        position: index,
+        caption,
+        hashtags,
+        scheduledAt,
+        media: {
+          connect: { id: media.id },
+        },
+        post: {
+          create: {
+            user: {
+              connect: { id: session.user.id },
+            },
             imageUrl: media.type === "image" ? media.url : null,
             videoUrl: media.type === "video" ? media.url : null,
-            coverUrl: publicationType === "story" ? null : coverUrl,
+            coverUrl,
             publicationType,
-            caption: publicationType === "story" ? "" : text.caption,
-            hashtags: publicationType === "story" ? "" : text.hashtags,
+            caption,
+            hashtags,
             status: "scheduled",
             scheduledAt,
           },
-        })
-
-        await tx.postingBatchItem.create({
-          data: {
-            batchId: createdBatch.id,
-            mediaId: media.id,
-            postId: post.id,
-            position: index,
-            caption: publicationType === "story" ? "" : text.caption,
-            hashtags: publicationType === "story" ? "" : text.hashtags,
-            scheduledAt,
-          },
-        })
+        },
       }
+    })
 
-      return createdBatch
+    const batch = await prisma.postingBatch.create({
+      data: {
+        userId: session.user.id,
+        name,
+        captionMode,
+        publicationType,
+        intervalMinutes,
+        startAt,
+        totalItems: mediaIds.length,
+        accounts: {
+          create: accounts.map((account) => ({
+            instagramAccountId: account.id,
+          })),
+        },
+        items: {
+          create: batchItems,
+        },
+      },
     })
 
     return NextResponse.json({ batch }, { status: 201 })
