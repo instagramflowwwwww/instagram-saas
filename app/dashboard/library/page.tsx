@@ -15,6 +15,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react"
+import { getCloudinaryUploadError } from "@/lib/cloudinary-upload-error"
 
 type MediaItem = {
   id: string
@@ -144,7 +145,9 @@ export default function LibraryPage() {
         const uploaded = (await uploadResponse.json()) as UploadResponse
 
         if (!uploadResponse.ok || !uploaded.secure_url || !uploaded.public_id) {
-          throw new Error(uploaded.error?.message || `Falha ao enviar ${file.name}`)
+          throw new Error(
+            getCloudinaryUploadError(uploaded, `Falha ao enviar ${file.name}`)
+          )
         }
 
         const saveResponse = await fetch("/api/library", {

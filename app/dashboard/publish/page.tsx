@@ -13,6 +13,7 @@ import {
   X,
   XCircle,
 } from "lucide-react"
+import { getCloudinaryUploadError } from "@/lib/cloudinary-upload-error"
 
 type InstagramAccount = {
   id: string
@@ -154,7 +155,7 @@ export default function PublishPage() {
     const data = await response.json()
 
     if (!response.ok || !data.secure_url) {
-      throw new Error(data.error?.message || "Falha ao enviar a mídia")
+      throw new Error(getCloudinaryUploadError(data, "Falha ao enviar a mídia"))
     }
 
     return String(data.secure_url)

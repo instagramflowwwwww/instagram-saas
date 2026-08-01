@@ -18,6 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react"
+import { getCloudinaryUploadError } from "@/lib/cloudinary-upload-error"
 
 type MediaItem = {
   id: string
@@ -296,7 +297,9 @@ export default function SchedulePage() {
     const uploaded = (await response.json()) as UploadResponse
 
     if (!response.ok || !uploaded.secure_url) {
-      throw new Error(uploaded.error?.message || "Falha ao enviar a capa do Reel")
+      throw new Error(
+        getCloudinaryUploadError(uploaded, "Falha ao enviar a capa do Reel")
+      )
     }
 
     return String(uploaded.secure_url)
