@@ -7,6 +7,29 @@ import {
   proxyValueToUrl,
 } from "@/lib/proxy-manager"
 
+const PROXY_CACHE_TTL_MS = 5 * 60 * 1000
+const proxyCache = new Map<
+  string,
+  { promise: Promise<string | null>; expiresAt: number }
+>()
+
+async function getCachedProxyForAccount(accountId: string) {
+  const cached = proxyCache.get(accountId)
+  if (cached && cached.expiresAt > Date.now()) return cached.promise
+
+  const promise = getOrAssignProxyForAccount(accountId).catch((error) => {
+    proxyCache.delete(accountId)
+    throw error
+  })
+
+  proxyCache.set(accountId, {
+    promise,
+    expiresAt: Date.now() + PROXY_CACHE_TTL_MS,
+  })
+
+  return promise
+}
+
 function bodyToBuffer(body: BodyInit | null | undefined, headers: Headers) {
   if (body === undefined || body === null) return null
 
@@ -144,7 +167,7 @@ export async function fetchInstagramRequest(
     return fetch(input, { ...init, cache: "no-store" })
   }
 
-  const proxy = await getOrAssignProxyForAccount(accountId)
+  const proxy = await getCachedProxyForAccount(accountId)
 
   if (!proxy) {
     if (isInstagramProxyRequired()) {

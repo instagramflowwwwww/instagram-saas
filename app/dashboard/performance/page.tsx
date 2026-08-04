@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ExternalLink,
   Heart,
@@ -26,6 +26,8 @@ type PerformancePost = {
   mediaProductType: string | null
   publishedAt: string
   error: string | null
+  performanceUpdatedAt: string | null
+  stale: boolean
 }
 
 type PeriodKey = "today" | "yesterday" | "month" | "total"
@@ -85,57 +87,153 @@ function getPeriodRange(period: PeriodKey) {
   return null
 }
 
-function getPerformanceUrl(period: PeriodKey) {
+function getPerformanceUrl(
+  period: PeriodKey,
+  options: { refresh?: boolean; force?: boolean } = {}
+) {
   const range = getPeriodRange(period)
-  if (!range) return "/api/posts/performance"
+  const params = new URLSearchParams()
 
-  const params = new URLSearchParams({
-    from: range.from.toISOString(),
-    to: range.to.toISOString(),
-  })
+  if (range) {
+    params.set("from", range.from.toISOString())
+    params.set("to", range.to.toISOString())
+  }
 
-  return `/api/posts/performance?${params.toString()}`
+  if (options.refresh) params.set("refresh", "1")
+  if (options.force) params.set("force", "1")
+
+  const query = params.toString()
+  return query ? `/api/posts/performance?${query}` : "/api/posts/performance"
 }
 
 export default function PerformancePage() {
   const [posts, setPosts] = useState<PerformancePost[]>([])
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("today")
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [pageError, setPageError] = useState("")
+  const requestVersionRef = useRef(0)
+  const requestControllerRef = useRef<AbortController | null>(null)
+
+  async function fetchPerformance(
+    period: PeriodKey,
+    options: { refresh?: boolean; force?: boolean; signal: AbortSignal }
+  ) {
+    const response = await fetch(getPerformanceUrl(period, options), {
+      cache: "no-store",
+      signal: options.signal,
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      throw new Error(payload?.error || "Não foi possível carregar as métricas.")
+    }
+
+    if (!Array.isArray(payload)) {
+      throw new Error("A API retornou uma resposta inválida.")
+    }
+
+    return payload as PerformancePost[]
+  }
 
   async function loadPerformance(period: PeriodKey) {
+    const version = requestVersionRef.current + 1
+    requestVersionRef.current = version
+    requestControllerRef.current?.abort()
+
+    const controller = new AbortController()
+    requestControllerRef.current = controller
     setLoading(true)
+    setRefreshing(false)
     setPageError("")
 
     try {
-      const response = await fetch(getPerformanceUrl(period), {
-        cache: "no-store",
+      const cachedPosts = await fetchPerformance(period, {
+        signal: controller.signal,
       })
-      const payload = await response.json()
 
-      if (!response.ok) {
-        throw new Error(payload?.error || "Não foi possível carregar as métricas.")
+      if (requestVersionRef.current !== version) return
+
+      setPosts(cachedPosts)
+      setLoading(false)
+
+      if (!cachedPosts.some((post) => post.stale)) return
+
+      setRefreshing(true)
+
+      try {
+        const refreshedPosts = await fetchPerformance(period, {
+          refresh: true,
+          signal: controller.signal,
+        })
+
+        if (requestVersionRef.current !== version) return
+        setPosts(refreshedPosts)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setPageError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível atualizar as métricas."
+        )
+      } finally {
+        if (requestVersionRef.current === version) {
+          setRefreshing(false)
+        }
       }
-
-      if (!Array.isArray(payload)) {
-        throw new Error("A API retornou uma resposta inválida.")
-      }
-
-      setPosts(payload)
     } catch (error) {
+      if (controller.signal.aborted) return
+      if (requestVersionRef.current !== version) return
+
       setPosts([])
       setPageError(
         error instanceof Error
           ? error.message
           : "Não foi possível carregar as métricas."
       )
-    } finally {
       setLoading(false)
+    }
+  }
+
+  async function forceRefresh() {
+    const version = requestVersionRef.current + 1
+    requestVersionRef.current = version
+    requestControllerRef.current?.abort()
+
+    const controller = new AbortController()
+    requestControllerRef.current = controller
+    setRefreshing(true)
+    setPageError("")
+
+    try {
+      const refreshedPosts = await fetchPerformance(selectedPeriod, {
+        refresh: true,
+        force: true,
+        signal: controller.signal,
+      })
+
+      if (requestVersionRef.current !== version) return
+      setPosts(refreshedPosts)
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar as métricas."
+      )
+    } finally {
+      if (requestVersionRef.current === version) {
+        setRefreshing(false)
+      }
     }
   }
 
   useEffect(() => {
     void loadPerformance(selectedPeriod)
+
+    return () => {
+      requestControllerRef.current?.abort()
+    }
   }, [selectedPeriod])
 
   const selectedPeriodOption =
@@ -152,6 +250,11 @@ export default function PerformancePage() {
         }),
         { likes: 0, comments: 0, views: 0 }
       ),
+    [posts]
+  )
+
+  const hasMetrics = useMemo(
+    () => posts.some((post) => Boolean(post.performanceUpdatedAt && !post.error)),
     [posts]
   )
 
@@ -197,12 +300,15 @@ export default function PerformancePage() {
 
           <button
             type="button"
-            onClick={() => void loadPerformance(selectedPeriod)}
-            disabled={loading}
+            onClick={() => void forceRefresh()}
+            disabled={loading || refreshing}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-medium text-gray-300 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            Atualizar
+            <RefreshCw
+              size={14}
+              className={loading || refreshing ? "animate-spin" : ""}
+            />
+            {refreshing ? "Atualizando" : "Atualizar"}
           </button>
         </div>
       </div>
@@ -228,7 +334,9 @@ export default function PerformancePage() {
             <Heart size={14} className="text-pink-400" />
           </div>
           <p className="text-2xl font-bold text-white">
-            {loading ? "..." : numberFormatter.format(totals.likes)}
+            {loading || (refreshing && !hasMetrics)
+              ? "..."
+              : numberFormatter.format(totals.likes)}
           </p>
         </div>
 
@@ -240,7 +348,9 @@ export default function PerformancePage() {
             <MessageCircle size={14} className="text-blue-400" />
           </div>
           <p className="text-2xl font-bold text-white">
-            {loading ? "..." : numberFormatter.format(totals.comments)}
+            {loading || (refreshing && !hasMetrics)
+              ? "..."
+              : numberFormatter.format(totals.comments)}
           </p>
         </div>
 
@@ -252,7 +362,9 @@ export default function PerformancePage() {
             <Play size={14} className="text-purple-400" />
           </div>
           <p className="text-2xl font-bold text-white">
-            {loading ? "..." : numberFormatter.format(totals.views)}
+            {loading || (refreshing && !hasMetrics)
+              ? "..."
+              : numberFormatter.format(totals.views)}
           </p>
         </div>
       </div>
@@ -260,6 +372,13 @@ export default function PerformancePage() {
       {pageError && (
         <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {pageError}
+        </div>
+      )}
+
+      {refreshing && !loading && (
+        <div className="mb-5 flex items-center gap-2 text-xs text-purple-300/80">
+          <div className="h-3.5 w-3.5 animate-spin rounded-full border border-purple-400 border-t-transparent" />
+          Atualizando as métricas oficiais em segundo plano
         </div>
       )}
 

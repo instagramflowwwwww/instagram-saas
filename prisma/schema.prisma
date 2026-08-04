@@ -143,15 +143,28 @@ model Post {
 }
 
 model PostLog {
-  id                 String           @id @default(cuid())
-  postId             String
-  instagramAccountId String
-  status             String
-  errorMessage       String?
-  mediaId            String?
-  createdAt          DateTime         @default(now())
-  post               Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
-  instagramAccount   InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  id                          String           @id @default(cuid())
+  postId                      String
+  instagramAccountId          String
+  status                      String
+  errorMessage                String?
+  mediaId                     String?
+  performancePermalink        String?
+  performanceLikeCount        Int?
+  performanceCommentsCount    Int?
+  performanceViewsCount       Int?
+  performanceViewsMetric      String?
+  performanceMediaType        String?
+  performanceMediaProductType String?
+  performancePublishedAt      DateTime?
+  performanceUpdatedAt        DateTime?
+  performanceError            String?
+  createdAt                   DateTime         @default(now())
+  post                        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  instagramAccount            InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([instagramAccountId, mediaId])
 }
 
 model MediaLibrary {

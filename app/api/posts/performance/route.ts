@@ -17,7 +17,23 @@ export const maxDuration = 300
 
 const GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`
 const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
-const MAX_CONCURRENCY = 5
+const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000
+const DEFAULT_ERROR_CACHE_TTL_MS = 60 * 1000
+const DEFAULT_META_TIMEOUT_MS = 15_000
+const MAX_CONCURRENCY = 8
+
+const CACHE_TTL_MS = positiveNumber(
+  process.env.PERFORMANCE_CACHE_TTL_MS,
+  DEFAULT_CACHE_TTL_MS
+)
+const ERROR_CACHE_TTL_MS = positiveNumber(
+  process.env.PERFORMANCE_ERROR_CACHE_TTL_MS,
+  DEFAULT_ERROR_CACHE_TTL_MS
+)
+const META_TIMEOUT_MS = positiveNumber(
+  process.env.PERFORMANCE_META_TIMEOUT_MS,
+  DEFAULT_META_TIMEOUT_MS
+)
 
 type InstagramMedia = {
   id?: string
@@ -46,6 +62,16 @@ type PerformanceLog = {
   mediaId: string | null
   instagramAccountId: string
   createdAt: Date
+  performancePermalink: string | null
+  performanceLikeCount: number | null
+  performanceCommentsCount: number | null
+  performanceViewsCount: number | null
+  performanceViewsMetric: string | null
+  performanceMediaType: string | null
+  performanceMediaProductType: string | null
+  performancePublishedAt: Date | null
+  performanceUpdatedAt: Date | null
+  performanceError: string | null
   post: {
     caption: string | null
   }
@@ -56,6 +82,30 @@ type PerformanceLog = {
     accessToken: string | null
     tokenExpiresAt: Date | null
   }
+}
+
+type PerformanceResult = {
+  id: string
+  mediaId: string | null
+  username: string
+  profilePicture: string | null
+  caption: string | null
+  permalink: string | null
+  likeCount: number | null
+  commentsCount: number | null
+  viewsCount: number | null
+  viewsMetric: string | null
+  mediaType: string | null
+  mediaProductType: string | null
+  publishedAt: Date | string
+  error: string | null
+  performanceUpdatedAt: Date | null
+  stale: boolean
+}
+
+function positiveNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
 function toNumber(value: unknown) {
@@ -86,6 +136,32 @@ function extractInsightValue(payload: Record<string, any> | null) {
     const value = toNumber(item?.value)
     return sum + (value ?? 0)
   }, 0)
+}
+
+function isFatalMetaCode(code: number | undefined) {
+  return code === 190 || code === 10 || code === 200
+}
+
+function isRateLimitCode(code: number | undefined) {
+  return code === 4 || code === 17 || code === 32
+}
+
+function metaRequestInit(): RequestInit {
+  return {
+    cache: "no-store",
+    signal: AbortSignal.timeout(META_TIMEOUT_MS),
+  }
+}
+
+function normalizeError(error: unknown) {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return "A Meta demorou para responder. Tente atualizar novamente."
+    }
+    return error.message
+  }
+
+  return "Não foi possível carregar as métricas."
 }
 
 async function mapWithConcurrency<T, R>(
@@ -132,7 +208,7 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
 
   const response = await fetchInstagramRequest(
     url,
-    { cache: "no-store" },
+    metaRequestInit(),
     account.id
   )
   const { payload, raw } = await readJsonResponse(response)
@@ -185,7 +261,7 @@ async function fetchMedia(
 
     const response = await fetchInstagramRequest(
       url,
-      { cache: "no-store" },
+      metaRequestInit(),
       accountId
     )
     const { payload } = await readJsonResponse(response)
@@ -194,10 +270,50 @@ async function fetchMedia(
       return payload as InstagramMedia
     }
 
-    lastError = metaErrorMessage(getMetaError(payload))
+    const metaError = getMetaError(payload)
+    lastError = metaErrorMessage(metaError)
+
+    if (isFatalMetaCode(metaError?.code) || isRateLimitCode(metaError?.code)) {
+      throw Object.assign(new Error(lastError), { metaCode: metaError?.code })
+    }
   }
 
   throw new Error(lastError)
+}
+
+async function requestInsightMetric(
+  mediaId: string,
+  accessToken: string,
+  metric: string,
+  accountId: string,
+  withMetricType: boolean
+) {
+  const url = new URL(`${GRAPH_BASE}/${mediaId}/insights`)
+  url.searchParams.set("metric", metric)
+  url.searchParams.set("access_token", accessToken)
+  if (withMetricType) url.searchParams.set("metric_type", "total_value")
+
+  const response = await fetchInstagramRequest(
+    url,
+    metaRequestInit(),
+    accountId
+  )
+  const { payload } = await readJsonResponse(response)
+
+  if (response.ok && payload) {
+    return {
+      value: extractInsightValue(payload),
+      error: null,
+    }
+  }
+
+  const metaError = getMetaError(payload)
+  return {
+    value: null,
+    error: Object.assign(new Error(metaErrorMessage(metaError)), {
+      metaCode: metaError?.code,
+    }) as Error & { metaCode?: number },
+  }
 }
 
 async function fetchInsightMetric(
@@ -206,49 +322,39 @@ async function fetchInsightMetric(
   metric: string,
   accountId: string
 ) {
-  const variants = ["total_value", null] as const
-  let lastError: (Error & { metaCode?: number }) | null = null
+  const primary = await requestInsightMetric(
+    mediaId,
+    accessToken,
+    metric,
+    accountId,
+    true
+  )
 
-  for (const metricType of variants) {
-    const url = new URL(`${GRAPH_BASE}/${mediaId}/insights`)
-    url.searchParams.set("metric", metric)
-    url.searchParams.set("access_token", accessToken)
-    if (metricType) url.searchParams.set("metric_type", metricType)
+  if (!primary.error) return primary.value
 
-    const response = await fetchInstagramRequest(
-      url,
-      { cache: "no-store" },
-      accountId
-    )
-    const { payload } = await readJsonResponse(response)
-
-    if (response.ok && payload) {
-      return extractInsightValue(payload)
-    }
-
-    const metaError = getMetaError(payload)
-    lastError = new Error(metaErrorMessage(metaError)) as Error & {
-      metaCode?: number
-    }
-    lastError.metaCode = metaError?.code
+  const primaryCode = primary.error.metaCode
+  if (isFatalMetaCode(primaryCode) || isRateLimitCode(primaryCode)) {
+    throw primary.error
   }
 
-  throw lastError || new Error("A Meta não retornou esta métrica.")
+  const fallback = await requestInsightMetric(
+    mediaId,
+    accessToken,
+    metric,
+    accountId,
+    false
+  )
+
+  if (!fallback.error) return fallback.value
+  throw fallback.error
 }
 
 async function fetchViews(
   mediaId: string,
   accessToken: string,
-  media: InstagramMedia,
   accountId: string
 ) {
-  const mediaType = String(media.media_type || "").toUpperCase()
-  const productType = String(media.media_product_type || "").toUpperCase()
-  const metrics = ["views"]
-
-  if (mediaType === "VIDEO" || productType === "REELS") {
-    metrics.push("plays", "ig_reels_aggregated_all_plays_count")
-  }
+  const metrics = ["views", "total_views"]
 
   for (const metric of metrics) {
     try {
@@ -261,13 +367,63 @@ async function fetchViews(
       if (value !== null) return { value, metric }
     } catch (error) {
       const metaCode = (error as Error & { metaCode?: number }).metaCode
-      if (metaCode === 190 || metaCode === 10 || metaCode === 200) {
+      if (isFatalMetaCode(metaCode) || isRateLimitCode(metaCode)) {
         throw error
       }
     }
   }
 
   return { value: null, metric: null }
+}
+
+function cacheAgeLimit(log: PerformanceLog) {
+  return log.performanceError ? ERROR_CACHE_TTL_MS : CACHE_TTL_MS
+}
+
+function isCacheFresh(log: PerformanceLog, now = Date.now()) {
+  return Boolean(
+    log.performanceUpdatedAt &&
+      now - log.performanceUpdatedAt.getTime() < cacheAgeLimit(log)
+  )
+}
+
+function cachedResult(log: PerformanceLog, now = Date.now()): PerformanceResult {
+  return {
+    id: log.id,
+    mediaId: log.mediaId,
+    username: log.instagramAccount.username,
+    profilePicture: log.instagramAccount.profilePicture,
+    caption: log.post.caption,
+    permalink: log.performancePermalink,
+    likeCount: log.performanceLikeCount,
+    commentsCount: log.performanceCommentsCount,
+    viewsCount: log.performanceViewsCount,
+    viewsMetric: log.performanceViewsMetric,
+    mediaType: log.performanceMediaType,
+    mediaProductType: log.performanceMediaProductType,
+    publishedAt: log.performancePublishedAt || log.createdAt,
+    error: log.performanceError,
+    performanceUpdatedAt: log.performanceUpdatedAt,
+    stale: !isCacheFresh(log, now),
+  }
+}
+
+async function savePerformanceResult(result: PerformanceResult) {
+  await prisma.postLog.update({
+    where: { id: result.id },
+    data: {
+      performancePermalink: result.permalink,
+      performanceLikeCount: result.likeCount,
+      performanceCommentsCount: result.commentsCount,
+      performanceViewsCount: result.viewsCount,
+      performanceViewsMetric: result.viewsMetric,
+      performanceMediaType: result.mediaType,
+      performanceMediaProductType: result.mediaProductType,
+      performancePublishedAt: new Date(result.publishedAt),
+      performanceUpdatedAt: result.performanceUpdatedAt,
+      performanceError: result.error,
+    },
+  })
 }
 
 export async function GET(request: Request) {
@@ -283,6 +439,8 @@ export async function GET(request: Request) {
     const rawTo = requestUrl.searchParams.get("to")
     const from = parseDate(rawFrom)
     const to = parseDate(rawTo)
+    const shouldRefresh = requestUrl.searchParams.get("refresh") === "1"
+    const forceRefresh = requestUrl.searchParams.get("force") === "1"
 
     if ((rawFrom && !from) || (rawTo && !to)) {
       return NextResponse.json(
@@ -316,9 +474,35 @@ export async function GET(request: Request) {
           connectionType: "official",
         },
       },
-      include: {
-        post: true,
-        instagramAccount: true,
+      select: {
+        id: true,
+        mediaId: true,
+        instagramAccountId: true,
+        createdAt: true,
+        performancePermalink: true,
+        performanceLikeCount: true,
+        performanceCommentsCount: true,
+        performanceViewsCount: true,
+        performanceViewsMetric: true,
+        performanceMediaType: true,
+        performanceMediaProductType: true,
+        performancePublishedAt: true,
+        performanceUpdatedAt: true,
+        performanceError: true,
+        post: {
+          select: {
+            caption: true,
+          },
+        },
+        instagramAccount: {
+          select: {
+            id: true,
+            username: true,
+            profilePicture: true,
+            accessToken: true,
+            tokenExpiresAt: true,
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     })) as PerformanceLog[]
@@ -331,33 +515,68 @@ export async function GET(request: Request) {
       return true
     })
 
-    const results = await mapWithConcurrency(
-      uniqueLogs,
+    const now = Date.now()
+
+    if (!shouldRefresh) {
+      return NextResponse.json(
+        uniqueLogs.map((log) => cachedResult(log, now)),
+        {
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+          },
+        }
+      )
+    }
+
+    const logsToRefresh = forceRefresh
+      ? uniqueLogs
+      : uniqueLogs.filter((log) => !isCacheFresh(log, now))
+
+    if (logsToRefresh.length === 0) {
+      return NextResponse.json(
+        uniqueLogs.map((log) => cachedResult(log, now)),
+        {
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+          },
+        }
+      )
+    }
+
+    const tokenPromises = new Map<string, Promise<string>>()
+
+    const getAccessToken = (log: PerformanceLog) => {
+      const accountId = log.instagramAccount.id
+      const existing = tokenPromises.get(accountId)
+      if (existing) return existing
+
+      const promise = refreshAccessTokenIfNeeded({
+        id: accountId,
+        accessToken: log.instagramAccount.accessToken,
+        tokenExpiresAt: log.instagramAccount.tokenExpiresAt,
+      })
+      tokenPromises.set(accountId, promise)
+      return promise
+    }
+
+    const refreshedResults = await mapWithConcurrency(
+      logsToRefresh,
       MAX_CONCURRENCY,
-      async (log) => {
+      async (log): Promise<PerformanceResult> => {
+        const updatedAt = new Date()
+
         try {
           if (!log.mediaId) {
             throw new Error("Publicação sem ID oficial da Meta.")
           }
 
-          const accessToken = await refreshAccessTokenIfNeeded({
-            id: log.instagramAccount.id,
-            accessToken: log.instagramAccount.accessToken,
-            tokenExpiresAt: log.instagramAccount.tokenExpiresAt,
-          })
-          const media = await fetchMedia(
-            log.mediaId,
-            accessToken,
-            log.instagramAccount.id
-          )
-          const views = await fetchViews(
-            log.mediaId,
-            accessToken,
-            media,
-            log.instagramAccount.id
-          )
+          const accessToken = await getAccessToken(log)
+          const [media, views] = await Promise.all([
+            fetchMedia(log.mediaId, accessToken, log.instagramAccount.id),
+            fetchViews(log.mediaId, accessToken, log.instagramAccount.id),
+          ])
 
-          return {
+          const result: PerformanceResult = {
             id: log.id,
             mediaId: log.mediaId,
             username: log.instagramAccount.username,
@@ -372,32 +591,44 @@ export async function GET(request: Request) {
             mediaProductType: media.media_product_type || null,
             publishedAt: media.timestamp || log.createdAt,
             error: null,
+            performanceUpdatedAt: updatedAt,
+            stale: false,
           }
+
+          await savePerformanceResult(result)
+          return result
         } catch (error) {
-          return {
-            id: log.id,
-            mediaId: log.mediaId,
-            username: log.instagramAccount.username,
-            profilePicture: log.instagramAccount.profilePicture,
-            caption: log.post.caption,
-            permalink: null,
-            likeCount: null,
-            commentsCount: null,
-            viewsCount: null,
-            viewsMetric: null,
-            mediaType: null,
-            mediaProductType: null,
-            publishedAt: log.createdAt,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Não foi possível carregar as métricas.",
+          const previous = cachedResult(log, now)
+
+          if (log.performanceUpdatedAt && !log.performanceError) {
+            return {
+              ...previous,
+              stale: true,
+            }
           }
+
+          const result: PerformanceResult = {
+            ...previous,
+            error: normalizeError(error),
+            performanceUpdatedAt: updatedAt,
+            stale: false,
+          }
+
+          await savePerformanceResult(result)
+          return result
         }
       }
     )
 
-    return NextResponse.json(results, {
+    const refreshedById = new Map(
+      refreshedResults.map((result) => [result.id, result])
+    )
+
+    const response = uniqueLogs.map(
+      (log) => refreshedById.get(log.id) || cachedResult(log, now)
+    )
+
+    return NextResponse.json(response, {
       headers: {
         "Cache-Control": "private, no-store, max-age=0",
       },
