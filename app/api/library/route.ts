@@ -6,10 +6,21 @@ import {
   isCloudinaryDeliveryUrl,
   type CloudinaryResourceType,
 } from "@/lib/cloudinary"
+import {
+  deleteR2Object,
+  getR2ObjectKeyFromUrl,
+  getR2PublicUrl,
+  headR2Object,
+  isR2DeliveryUrl,
+  isR2ObjectOwnedByUser,
+} from "@/lib/r2"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+const IMAGE_LIMIT = 8 * 1024 * 1024
+const VIDEO_LIMIT = 200 * 1024 * 1024
 
 function toOptionalNumber(value: unknown) {
   const parsed = Number(value)
@@ -19,6 +30,10 @@ function toOptionalNumber(value: unknown) {
 function toOptionalInteger(value: unknown) {
   const parsed = toOptionalNumber(value)
   return parsed === null ? null : Math.round(parsed)
+}
+
+function getFormat(fileName: string) {
+  return fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 30) || null
 }
 
 export async function GET() {
@@ -43,29 +58,39 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const url = String(body.url || "").trim()
+    const objectKey = String(body.objectKey || "").trim()
     const type = String(body.type || "").toLowerCase()
     const fileName = String(body.fileName || "").trim().slice(0, 255)
-    const publicId = String(body.publicId || "").trim()
-    const resourceType = String(body.resourceType || type).toLowerCase()
 
-    if (!isCloudinaryDeliveryUrl(url)) {
+    if (!objectKey || !isR2ObjectOwnedByUser(objectKey, session.user.id)) {
       return NextResponse.json(
-        { error: "O arquivo precisa ter sido enviado ao Cloudinary." },
+        { error: "O arquivo enviado não pertence a este usuário." },
         { status: 400 }
       )
     }
 
-    if (!["image", "video"].includes(type)) {
-      return NextResponse.json(
-        { error: "Tipo de mídia inválido." },
-        { status: 400 }
-      )
-    }
-
-    if (!fileName || !publicId || !["image", "video"].includes(resourceType)) {
+    if (!fileName || !["image", "video"].includes(type)) {
       return NextResponse.json(
         { error: "Os dados do upload estão incompletos." },
+        { status: 400 }
+      )
+    }
+
+    const storedObject = await headR2Object(objectKey)
+    const expectedContentTypes =
+      type === "image"
+        ? ["image/jpeg"]
+        : ["video/mp4", "video/quicktime"]
+    const maxSize = type === "image" ? IMAGE_LIMIT : VIDEO_LIMIT
+
+    if (
+      !expectedContentTypes.includes(storedObject.contentType.toLowerCase()) ||
+      storedObject.contentLength <= 0 ||
+      storedObject.contentLength > maxSize
+    ) {
+      await deleteR2Object(objectKey).catch(() => undefined)
+      return NextResponse.json(
+        { error: "O arquivo armazenado não passou pela validação." },
         { status: 400 }
       )
     }
@@ -73,16 +98,16 @@ export async function POST(request: Request) {
     const media = await prisma.mediaLibrary.create({
       data: {
         userId: session.user.id,
-        url,
+        url: getR2PublicUrl(objectKey),
         type,
         fileName,
-        publicId,
-        resourceType,
-        bytes: toOptionalInteger(body.bytes),
+        publicId: objectKey,
+        resourceType: type,
+        bytes: storedObject.contentLength,
         width: toOptionalInteger(body.width),
         height: toOptionalInteger(body.height),
         duration: toOptionalNumber(body.duration),
-        format: body.format ? String(body.format).slice(0, 30) : null,
+        format: getFormat(fileName),
       },
     })
 
@@ -90,7 +115,12 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Library create error", error)
     return NextResponse.json(
-      { error: "Não foi possível salvar o arquivo na biblioteca." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível salvar o arquivo na biblioteca.",
+      },
       { status: 500 }
     )
   }
@@ -122,6 +152,7 @@ export async function DELETE(request: Request) {
       where: { id: { in: ids }, userId: session.user.id },
       select: {
         id: true,
+        url: true,
         publicId: true,
         resourceType: true,
         type: true,
@@ -146,7 +177,18 @@ export async function DELETE(request: Request) {
     }
 
     for (const item of media) {
-      if (item.publicId) {
+      if (isR2DeliveryUrl(item.url)) {
+        const objectKey = item.publicId || getR2ObjectKeyFromUrl(item.url)
+        if (
+          objectKey &&
+          isR2ObjectOwnedByUser(objectKey, session.user.id)
+        ) {
+          await deleteR2Object(objectKey)
+        }
+        continue
+      }
+
+      if (item.publicId && isCloudinaryDeliveryUrl(item.url)) {
         await destroyCloudinaryAsset({
           publicId: item.publicId,
           resourceType: (item.resourceType || item.type) as CloudinaryResourceType,

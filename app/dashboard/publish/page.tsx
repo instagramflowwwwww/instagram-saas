@@ -13,7 +13,7 @@ import {
   X,
   XCircle,
 } from "lucide-react"
-import { getCloudinaryUploadError } from "@/lib/cloudinary-upload-error"
+import { uploadFileToR2 } from "@/lib/r2-upload"
 
 type InstagramAccount = {
   id: string
@@ -29,14 +29,6 @@ type PublishResult = {
   username: string
   status: "success" | "error"
   error?: string
-}
-
-type CloudinarySignature = {
-  cloudName: string
-  apiKey: string
-  timestamp: number
-  folder: string
-  signature: string
 }
 
 const IMAGE_LIMIT = 8 * 1024 * 1024
@@ -125,40 +117,9 @@ export default function PublishPage() {
     setCoverPreview(file ? URL.createObjectURL(file) : null)
   }
 
-  const getCloudinarySignature = async () => {
-    const response = await fetch("/api/cloudinary/signature", { method: "POST" })
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(data.error || "Não foi possível preparar o upload")
-    }
-
-    return data as CloudinarySignature
-  }
-
-  const uploadToCloudinary = async (
-    file: File,
-    resourceType: "image" | "video",
-    signatureData: CloudinarySignature
-  ) => {
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("api_key", signatureData.apiKey)
-    formData.append("timestamp", String(signatureData.timestamp))
-    formData.append("folder", signatureData.folder)
-    formData.append("signature", signatureData.signature)
-
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/${resourceType}/upload`,
-      { method: "POST", body: formData }
-    )
-    const data = await response.json()
-
-    if (!response.ok || !data.secure_url) {
-      throw new Error(getCloudinaryUploadError(data, "Falha ao enviar a mídia"))
-    }
-
-    return String(data.secure_url)
+  const uploadMedia = async (file: File) => {
+    const uploaded = await uploadFileToR2(file)
+    return uploaded.publicUrl
   }
 
   const publish = async () => {
@@ -197,17 +158,15 @@ export default function PublishPage() {
 
     try {
       setPublishStage("Enviando mídia...")
-      const signatureData = await getCloudinarySignature()
-
       const [videoUrl, imageUrl, coverUrl] = await Promise.all([
         videoFile
-          ? uploadToCloudinary(videoFile, "video", signatureData)
+          ? uploadMedia(videoFile)
           : Promise.resolve(""),
         imageFile
-          ? uploadToCloudinary(imageFile, "image", signatureData)
+          ? uploadMedia(imageFile)
           : Promise.resolve(""),
         coverFile
-          ? uploadToCloudinary(coverFile, "image", signatureData)
+          ? uploadMedia(coverFile)
           : Promise.resolve(""),
       ])
 

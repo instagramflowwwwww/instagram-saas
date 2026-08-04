@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { isCloudinaryDeliveryUrl } from "@/lib/cloudinary"
+import { isMediaDeliveryUrl } from "@/lib/media-storage"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -194,7 +194,7 @@ export async function POST(request: Request) {
       }))
       .filter((entry) => entry.mediaId && entry.coverUrl)
 
-    if (!validCoverEntries.every((entry) => isCloudinaryDeliveryUrl(entry.coverUrl))) {
+    if (!validCoverEntries.every((entry) => isMediaDeliveryUrl(entry.coverUrl))) {
       return NextResponse.json(
         { error: "Uma ou mais capas não foram enviadas corretamente." },
         { status: 400 }

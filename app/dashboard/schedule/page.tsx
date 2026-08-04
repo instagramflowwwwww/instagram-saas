@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react"
-import { getCloudinaryUploadError } from "@/lib/cloudinary-upload-error"
+import { uploadFileToR2 } from "@/lib/r2-upload"
 
 type MediaItem = {
   id: string
@@ -40,19 +40,6 @@ type InstagramAccount = {
 type CaptionDraft = {
   caption: string
   hashtags: string
-}
-
-type CloudinarySignature = {
-  cloudName: string
-  apiKey: string
-  timestamp: number
-  folder: string
-  signature: string
-}
-
-type UploadResponse = {
-  secure_url?: string
-  error?: { message?: string }
 }
 
 type CoverUpload = {
@@ -271,38 +258,9 @@ export default function SchedulePage() {
     }
   }
 
-  const getCloudinarySignature = async () => {
-    const response = await fetch("/api/cloudinary/signature", { method: "POST" })
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(data.error || "Não foi possível preparar o upload")
-    }
-
-    return data as CloudinarySignature
-  }
-
-  const uploadCover = async (file: File, signatureData: CloudinarySignature) => {
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("api_key", signatureData.apiKey)
-    formData.append("timestamp", String(signatureData.timestamp))
-    formData.append("folder", signatureData.folder)
-    formData.append("signature", signatureData.signature)
-
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/image/upload`,
-      { method: "POST", body: formData }
-    )
-    const uploaded = (await response.json()) as UploadResponse
-
-    if (!response.ok || !uploaded.secure_url) {
-      throw new Error(
-        getCloudinaryUploadError(uploaded, "Falha ao enviar a capa do Reel")
-      )
-    }
-
-    return String(uploaded.secure_url)
+  const uploadCover = async (file: File) => {
+    const uploaded = await uploadFileToR2(file)
+    return uploaded.publicUrl
   }
 
   const handleSharedCoverChange = (file: File | null) => {
@@ -370,10 +328,8 @@ export default function SchedulePage() {
       const itemCovers: Array<{ mediaId: string; coverUrl: string }> = []
 
       if (videoItems.length > 0 && coverMode !== "none") {
-        const signatureData = await getCloudinarySignature()
-
         if (coverMode === "single" && sharedCover) {
-          const sharedUrl = await uploadCover(sharedCover.file, signatureData)
+          const sharedUrl = await uploadCover(sharedCover.file)
           videoItems.forEach((item) => {
             itemCovers.push({ mediaId: item.id, coverUrl: sharedUrl })
           })
@@ -384,7 +340,7 @@ export default function SchedulePage() {
             videoItems.map(async (item) => {
               const entry = perVideoCovers[item.id]
               if (!entry) throw new Error(`Adicione uma capa para ${item.fileName}.`)
-              const coverUrl = await uploadCover(entry.file, signatureData)
+              const coverUrl = await uploadCover(entry.file)
               return { mediaId: item.id, coverUrl }
             })
           )

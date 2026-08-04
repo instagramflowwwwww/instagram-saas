@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { isCloudinaryDeliveryUrl } from "@/lib/cloudinary"
+import { isMediaDeliveryUrl } from "@/lib/media-storage"
 import { publishExistingPost } from "@/lib/instagram-publisher"
 import { prisma } from "@/lib/prisma"
 
@@ -36,9 +36,9 @@ export async function POST(request: Request) {
     }
 
     const mediaUrls = [videoUrl, imageUrl, coverUrl].filter(Boolean)
-    if (!mediaUrls.every(isCloudinaryDeliveryUrl)) {
+    if (!mediaUrls.every(isMediaDeliveryUrl)) {
       return NextResponse.json(
-        { error: "Uma das mídias não foi enviada corretamente ao Cloudinary." },
+        { error: "Uma das mídias não foi enviada corretamente ao armazenamento." },
         { status: 400 }
       )
     }

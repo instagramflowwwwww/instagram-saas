@@ -15,7 +15,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react"
-import { getCloudinaryUploadError } from "@/lib/cloudinary-upload-error"
+import { uploadFileToR2 } from "@/lib/r2-upload"
 
 type MediaItem = {
   id: string
@@ -28,26 +28,6 @@ type MediaItem = {
   duration: number | null
   format: string | null
   createdAt: string
-}
-
-type CloudinarySignature = {
-  cloudName: string
-  apiKey: string
-  timestamp: number
-  folder: string
-  signature: string
-}
-
-type UploadResponse = {
-  secure_url?: string
-  public_id?: string
-  resource_type?: string
-  bytes?: number
-  width?: number
-  height?: number
-  duration?: number
-  format?: string
-  error?: { message?: string }
 }
 
 const IMAGE_LIMIT = 8 * 1024 * 1024
@@ -90,13 +70,6 @@ export default function LibraryPage() {
     fetchMedia()
   }, [])
 
-  const getSignature = async () => {
-    const response = await fetch("/api/cloudinary/signature", { method: "POST" })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || "Não foi possível preparar o upload")
-    return data as CloudinarySignature
-  }
-
   const validateFile = (file: File) => {
     if (file.type.startsWith("image/")) {
       if (file.type !== "image/jpeg") {
@@ -124,46 +97,21 @@ export default function LibraryPage() {
     setError(null)
 
     try {
-      const signature = await getSignature()
-
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]
         const type = validateFile(file)
         setUploadProgress(`Enviando ${index + 1} de ${files.length}: ${file.name}`)
 
-        const formData = new FormData()
-        formData.append("file", file)
-        formData.append("api_key", signature.apiKey)
-        formData.append("timestamp", String(signature.timestamp))
-        formData.append("folder", signature.folder)
-        formData.append("signature", signature.signature)
-
-        const uploadResponse = await fetch(
-          `https://api.cloudinary.com/v1_1/${signature.cloudName}/${type}/upload`,
-          { method: "POST", body: formData }
-        )
-        const uploaded = (await uploadResponse.json()) as UploadResponse
-
-        if (!uploadResponse.ok || !uploaded.secure_url || !uploaded.public_id) {
-          throw new Error(
-            getCloudinaryUploadError(uploaded, `Falha ao enviar ${file.name}`)
-          )
-        }
-
+        const uploaded = await uploadFileToR2(file)
         const saveResponse = await fetch("/api/library", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            url: uploaded.secure_url,
+            objectKey: uploaded.objectKey,
             type,
             fileName: file.name,
-            publicId: uploaded.public_id,
-            resourceType: uploaded.resource_type || type,
-            bytes: uploaded.bytes,
-            width: uploaded.width,
-            height: uploaded.height,
-            duration: uploaded.duration,
-            format: uploaded.format,
+            bytes: file.size,
+            format: file.name.split(".").pop()?.toLowerCase() || null,
           }),
         })
         const saved = await saveResponse.json()
@@ -182,7 +130,7 @@ export default function LibraryPage() {
 
   const deleteMedia = async (ids: string[]) => {
     if (ids.length === 0) return
-    if (!confirm(`Apagar ${ids.length} arquivo(s) da biblioteca e do Cloudinary?`)) return
+    if (!confirm(`Apagar ${ids.length} arquivo(s) da biblioteca e do armazenamento?`)) return
 
     setDeleting(true)
     setError(null)
