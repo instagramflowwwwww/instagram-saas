@@ -2,11 +2,6 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import {
-  destroyCloudinaryAsset,
-  isCloudinaryDeliveryUrl,
-  type CloudinaryResourceType,
-} from "@/lib/cloudinary"
-import {
   deleteR2Object,
   getR2ObjectKeyFromUrl,
   getR2PublicUrl,
@@ -154,8 +149,6 @@ export async function DELETE(request: Request) {
         id: true,
         url: true,
         publicId: true,
-        resourceType: true,
-        type: true,
         batchItems: {
           where: { status: { in: ["pending", "processing"] } },
           select: { id: true },
@@ -185,14 +178,6 @@ export async function DELETE(request: Request) {
         ) {
           await deleteR2Object(objectKey)
         }
-        continue
-      }
-
-      if (item.publicId && isCloudinaryDeliveryUrl(item.url)) {
-        await destroyCloudinaryAsset({
-          publicId: item.publicId,
-          resourceType: (item.resourceType || item.type) as CloudinaryResourceType,
-        })
       }
     }
 
