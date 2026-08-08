@@ -71,6 +71,20 @@ export async function POST(request: Request) {
       )
     }
 
+    const requestedFolderId = body.folderId ? String(body.folderId).trim() : null
+    let folderId: string | null = null
+    if (requestedFolderId) {
+      const folder = await prisma.mediaFolder.findFirst({
+        where: { id: requestedFolderId, userId: session.user.id },
+        select: { id: true },
+      })
+      if (!folder) {
+        await deleteR2Object(objectKey).catch(() => undefined)
+        return NextResponse.json({ error: "A pasta selecionada não existe mais." }, { status: 404 })
+      }
+      folderId = folder.id
+    }
+
     const storedObject = await headR2Object(objectKey)
     const expectedContentTypes =
       type === "image"
@@ -93,6 +107,7 @@ export async function POST(request: Request) {
     const media = await prisma.mediaLibrary.create({
       data: {
         userId: session.user.id,
+        folderId,
         url: getR2PublicUrl(objectKey),
         type,
         fileName,
@@ -118,6 +133,49 @@ export async function POST(request: Request) {
       },
       { status: 500 }
     )
+  }
+}
+
+export async function PATCH(request: Request) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  }
+
+  try {
+    const body = await request.json()
+    const ids = Array.from(
+      new Set<string>(
+        Array.isArray(body.ids)
+          ? body.ids.map((id: unknown) => String(id).trim()).filter(Boolean)
+          : []
+      )
+    ).slice(0, 500)
+    const folderId = body.folderId ? String(body.folderId).trim() : null
+
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Selecione pelo menos um arquivo." }, { status: 400 })
+    }
+
+    if (folderId) {
+      const folder = await prisma.mediaFolder.findFirst({
+        where: { id: folderId, userId: session.user.id },
+        select: { id: true },
+      })
+      if (!folder) {
+        return NextResponse.json({ error: "Pasta não encontrada." }, { status: 404 })
+      }
+    }
+
+    const result = await prisma.mediaLibrary.updateMany({
+      where: { id: { in: ids }, userId: session.user.id },
+      data: { folderId },
+    })
+
+    return NextResponse.json({ success: true, moved: result.count })
+  } catch (error) {
+    console.error("Library move error", error)
+    return NextResponse.json({ error: "Não foi possível mover os arquivos." }, { status: 500 })
   }
 }
 
