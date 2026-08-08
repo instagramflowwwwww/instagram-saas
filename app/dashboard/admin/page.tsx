@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  Check,
   Clock3,
   FileText,
   Instagram,
@@ -14,8 +13,9 @@ import {
   UserCheck,
   UserRoundX,
   Users,
-  X,
 } from "lucide-react"
+import toast from "react-hot-toast"
+import { confirmToast } from "@/lib/toast"
 
 type UserStatus = "pending" | "approved" | "rejected" | "expired"
 type PlanId = "vip" | "premium"
@@ -91,20 +91,21 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<"all" | UserStatus>("all")
   const [plans, setPlans] = useState<Record<string, PlanId>>({})
   const [processingId, setProcessingId] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
-  const loadData = useCallback(async () => {
-    setError(null)
+  const loadData = useCallback(async (notifySuccess = false) => {
     try {
       const response = await fetch("/api/admin/stats", { cache: "no-store" })
       if (response.status === 403) {
         setForbidden(true)
+        toast.error("Acesso restrito ao administrador.", { id: "admin-forbidden" })
         return
       }
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || "Erro ao carregar usuários")
       setData(payload)
+      if (notifySuccess) {
+        toast.success("Painel administrativo atualizado.")
+      }
       setPlans((current) => {
         const next = { ...current }
         payload.users.forEach((user: AdminUser) => {
@@ -115,10 +116,11 @@ export default function AdminPage() {
         return next
       })
     } catch (requestError) {
-      setError(
+      toast.error(
         requestError instanceof Error
           ? requestError.message
-          : "Erro ao carregar usuários"
+          : "Erro ao carregar usuários",
+        { id: "admin-load-error" }
       )
     } finally {
       setLoading(false)
@@ -133,16 +135,15 @@ export default function AdminPage() {
     user: AdminUser,
     action: "approve" | "reject"
   ) => {
-    if (
-      action === "reject" &&
-      !confirm(`Recusar o acesso de ${user.name || user.email || "este usuário"}?`)
-    ) {
-      return
+    if (action === "reject") {
+      const confirmed = await confirmToast(
+        `Recusar o acesso de ${user.name || user.email || "este usuário"}?`,
+        { confirmLabel: "Recusar", danger: true }
+      )
+      if (!confirmed) return
     }
 
     setProcessingId(user.id)
-    setMessage(null)
-    setError(null)
 
     try {
       const response = await fetch(`/api/admin/users/${user.id}/access`, {
@@ -155,10 +156,10 @@ export default function AdminPage() {
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || "Não foi possível atualizar")
-      setMessage(payload.message || "Usuário atualizado.")
+      toast.success(payload.message || "Usuário atualizado.")
       await loadData()
     } catch (requestError) {
-      setError(
+      toast.error(
         requestError instanceof Error
           ? requestError.message
           : "Não foi possível atualizar"
@@ -228,23 +229,12 @@ export default function AdminPage() {
           </div>
         </div>
         <button
-          onClick={() => void loadData()}
+          onClick={() => void loadData(true)}
           className="flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-300 hover:border-purple-500/30 hover:text-white"
         >
           <RefreshCw size={15} /> Atualizar
         </button>
       </div>
-
-      {message && (
-        <div className="mb-5 flex items-center gap-2 rounded-xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">
-          <Check size={15} /> {message}
-        </div>
-      )}
-      {error && (
-        <div className="mb-5 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <X size={15} /> {error}
-        </div>
-      )}
 
       <div className="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         {cards.map((card) => (

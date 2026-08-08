@@ -11,8 +11,9 @@ import {
   RefreshCw,
   Trash2,
   UserPlus,
-  XCircle,
 } from "lucide-react"
+import toast from "react-hot-toast"
+import { confirmToast, toastWarning } from "@/lib/toast"
 
 type InstagramAccount = {
   id: string
@@ -87,18 +88,14 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
 
   const fetchAccounts = async (manual = false) => {
     if (manual) {
       setRefreshing(true)
-      setMessage(null)
     } else {
       setLoading(true)
     }
 
-    setError(null)
 
     try {
       const response = await fetch("/api/instagram/accounts", {
@@ -113,13 +110,14 @@ export default function AccountsPage() {
       setAccounts(Array.isArray(data) ? data : [])
 
       if (manual) {
-        setMessage("Dados das contas atualizados pela API oficial.")
+        toast.success("Dados das contas atualizados pela API oficial.")
       }
     } catch (loadError) {
-      setError(
+      toast.error(
         loadError instanceof Error
           ? loadError.message
-          : "Erro ao carregar as contas."
+          : "Erro ao carregar as contas.",
+        { id: "accounts-load-error" }
       )
     } finally {
       setLoading(false)
@@ -132,25 +130,33 @@ export default function AccountsPage() {
   }, [])
 
   const removeAccount = async (id: string) => {
-    if (!confirm("Remover esta conta conectada?")) return
-
-    setError(null)
-    setMessage(null)
-
-    const response = await fetch("/api/instagram/accounts", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+    const confirmed = await confirmToast("Remover esta conta conectada?", {
+      confirmLabel: "Remover",
+      danger: true,
     })
-    const data = await response.json().catch(() => ({}))
+    if (!confirmed) return
 
-    if (!response.ok) {
-      setError(data.error || "Não foi possível remover a conta.")
-      return
+    try {
+      const response = await fetch("/api/instagram/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.error || "Não foi possível remover a conta.")
+      }
+
+      toast.success("Conta removida com sucesso.")
+      await fetchAccounts()
+    } catch (removeError) {
+      toast.error(
+        removeError instanceof Error
+          ? removeError.message
+          : "Não foi possível remover a conta."
+      )
     }
-
-    setMessage("Conta removida com sucesso.")
-    await fetchAccounts()
   }
 
   const officialCount = accounts.filter(
@@ -164,6 +170,15 @@ export default function AccountsPage() {
   ).length
   const reconnectCount = officialCount - connectedCount
   const legacyCount = accounts.length - officialCount
+
+  useEffect(() => {
+    if (loading || legacyCount <= 0) return
+
+    toastWarning(
+      `${legacyCount} conta(s) ainda usam a conexão privada antiga. Remova essas contas e conecte novamente pelo App Meta para publicar pela API oficial.`,
+      "legacy-instagram-accounts"
+    )
+  }, [legacyCount, loading])
 
   return (
     <div>
@@ -197,34 +212,6 @@ export default function AccountsPage() {
           </Link>
         </div>
       </div>
-
-      {message && (
-        <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6">
-          <CheckCircle size={16} className="text-green-400" />
-          <p className="text-green-300 text-sm font-medium">{message}</p>
-        </div>
-      )}
-
-      {error && (
-        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
-          <XCircle size={16} className="text-red-400" />
-          <p className="text-red-300 text-sm font-medium">{error}</p>
-        </div>
-      )}
-
-      {legacyCount > 0 && (
-        <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mb-6">
-          <AlertCircle size={17} className="text-yellow-400 mt-0.5" />
-          <div>
-            <p className="text-yellow-300 text-sm font-medium">
-              {legacyCount} conta(s) ainda usam a conexão privada antiga.
-            </p>
-            <p className="text-yellow-200/60 text-xs mt-1">
-              Remova essas contas e conecte novamente pelo App Meta para publicar pela API oficial.
-            </p>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

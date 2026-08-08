@@ -2,15 +2,14 @@
 
 import { type ChangeEvent, useCallback, useEffect, useState } from "react"
 import {
-  Check,
   Database,
   Loader2,
   Network,
   RefreshCw,
   ShieldOff,
   Upload,
-  X,
 } from "lucide-react"
+import toast from "react-hot-toast"
 
 type ProxyStats = {
   total: number
@@ -31,12 +30,8 @@ export default function AdminProxiesPage() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [forbidden, setForbidden] = useState(false)
-  const [message, setMessage] = useState("")
-  const [error, setError] = useState("")
 
-  const loadStats = useCallback(async () => {
-    setError("")
-
+  const loadStats = useCallback(async (notifySuccess = false) => {
     try {
       const response = await fetch("/api/admin/proxies", {
         cache: "no-store",
@@ -44,6 +39,7 @@ export default function AdminProxiesPage() {
 
       if (response.status === 403) {
         setForbidden(true)
+        toast.error("Acesso restrito ao administrador.", { id: "proxy-pool-forbidden" })
         return
       }
 
@@ -53,11 +49,15 @@ export default function AdminProxiesPage() {
       }
 
       setStats(payload)
+      if (notifySuccess) {
+        toast.success("Dados do pool de proxies atualizados.")
+      }
     } catch (requestError) {
-      setError(
+      toast.error(
         requestError instanceof Error
           ? requestError.message
-          : "Não foi possível carregar o pool."
+          : "Não foi possível carregar o pool.",
+        { id: "proxy-pool-load-error" }
       )
     } finally {
       setLoading(false)
@@ -69,8 +69,6 @@ export default function AdminProxiesPage() {
   }, [loadStats])
 
   const selectFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    setMessage("")
-    setError("")
     setProxies([])
 
     const file = event.target.files?.[0]
@@ -93,7 +91,7 @@ export default function AdminProxiesPage() {
       setProxies(values as string[])
     } catch (fileError) {
       setFileName("")
-      setError(
+      toast.error(
         fileError instanceof Error
           ? fileError.message
           : "Não foi possível ler o arquivo."
@@ -105,9 +103,6 @@ export default function AdminProxiesPage() {
     if (proxies.length === 0) return
 
     setImporting(true)
-    setMessage("")
-    setError("")
-
     try {
       const response = await fetch("/api/admin/proxies", {
         method: "POST",
@@ -121,13 +116,13 @@ export default function AdminProxiesPage() {
       }
 
       setStats(payload.stats)
-      setMessage(
+      toast.success(
         `${payload.inserted} proxies adicionadas. ${payload.duplicates} já existiam no banco.`
       )
       setProxies([])
       setFileName("")
     } catch (requestError) {
-      setError(
+      toast.error(
         requestError instanceof Error
           ? requestError.message
           : "Não foi possível importar as proxies."
@@ -179,24 +174,12 @@ export default function AdminProxiesPage() {
           </div>
         </div>
         <button
-          onClick={() => void loadStats()}
+          onClick={() => void loadStats(true)}
           className="flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-300 hover:border-purple-500/30 hover:text-white"
         >
           <RefreshCw size={15} /> Atualizar
         </button>
       </div>
-
-      {message && (
-        <div className="mb-5 flex items-center gap-2 rounded-xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">
-          <Check size={15} /> {message}
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-5 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <X size={15} /> {error}
-        </div>
-      )}
 
       <div className="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {cards.map((card) => (

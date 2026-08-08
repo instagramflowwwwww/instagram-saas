@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
-  Check,
-  CheckCircle2,
   ChevronRight,
   Copy,
   Film,
@@ -22,7 +20,9 @@ import {
   Upload,
   X,
 } from "lucide-react"
+import toast from "react-hot-toast"
 import { uploadFileToR2 } from "@/lib/r2-upload"
+import { confirmToast } from "@/lib/toast"
 
 type MediaItem = {
   id: string
@@ -67,20 +67,16 @@ export default function LibraryPage() {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState("")
   const [deleting, setDeleting] = useState(false)
   const [moving, setMoving] = useState(false)
   const [folderSaving, setFolderSaving] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [filter, setFilter] = useState<"all" | "video" | "image">("all")
-  const [error, setError] = useState<string | null>(null)
   const [folderEditor, setFolderEditor] = useState<FolderEditor>(null)
   const [moveOpen, setMoveOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const fetchLibrary = async () => {
-    setError(null)
     try {
       const [mediaResponse, foldersResponse] = await Promise.all([
         fetch("/api/library", { cache: "no-store" }),
@@ -101,7 +97,10 @@ export default function LibraryPage() {
       setMedia(Array.isArray(mediaData) ? mediaData : [])
       setFolders(Array.isArray(foldersData) ? foldersData : [])
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Erro ao carregar a biblioteca")
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Erro ao carregar a biblioteca",
+        { id: "library-load-error" }
+      )
     } finally {
       setLoading(false)
     }
@@ -153,13 +152,13 @@ export default function LibraryPage() {
   const uploadFiles = async (files: File[]) => {
     if (files.length === 0) return
     setUploading(true)
-    setError(null)
+    const toastId = toast.loading(`Enviando 1 de ${files.length}...`)
 
     try {
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]
         const type = validateFile(file)
-        setUploadProgress(`Enviando ${index + 1} de ${files.length}: ${file.name}`)
+        toast.loading(`Enviando ${index + 1} de ${files.length}: ${file.name}`, { id: toastId })
 
         const uploaded = await uploadFileToR2(file)
         const saveResponse = await fetch("/api/library", {
@@ -179,21 +178,30 @@ export default function LibraryPage() {
       }
 
       await fetchLibrary()
+      toast.success(
+        `${files.length} arquivo${files.length === 1 ? "" : "s"} enviado${files.length === 1 ? "" : "s"} com sucesso.`,
+        { id: toastId }
+      )
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Erro ao enviar arquivos")
+      toast.error(
+        uploadError instanceof Error ? uploadError.message : "Erro ao enviar arquivos",
+        { id: toastId }
+      )
     } finally {
       setUploading(false)
-      setUploadProgress("")
       if (fileRef.current) fileRef.current.value = ""
     }
   }
 
   const deleteMedia = async (ids: string[]) => {
     if (ids.length === 0) return
-    if (!confirm(`Apagar ${ids.length} arquivo(s) da biblioteca e do armazenamento?`)) return
+    const confirmed = await confirmToast(
+      `Apagar ${ids.length} arquivo(s) da biblioteca e do armazenamento?`,
+      { confirmLabel: "Apagar", danger: true }
+    )
+    if (!confirmed) return
 
     setDeleting(true)
-    setError(null)
     try {
       const response = await fetch("/api/library", {
         method: "DELETE",
@@ -204,17 +212,21 @@ export default function LibraryPage() {
       if (!response.ok) throw new Error(data.error || "Não foi possível apagar")
       setSelected((current) => current.filter((id) => !ids.includes(id)))
       await fetchLibrary()
+      toast.success(`${ids.length} arquivo${ids.length === 1 ? "" : "s"} apagado${ids.length === 1 ? "" : "s"}.`)
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Não foi possível apagar")
+      toast.error(deleteError instanceof Error ? deleteError.message : "Não foi possível apagar")
     } finally {
       setDeleting(false)
     }
   }
 
   const saveFolder = async () => {
-    if (!folderEditor || !folderEditor.name.trim()) return
+    if (!folderEditor) return
+    if (!folderEditor.name.trim()) {
+      toast.error("Informe o nome da pasta.")
+      return
+    }
     setFolderSaving(true)
-    setError(null)
 
     try {
       const isRename = folderEditor.mode === "rename"
@@ -231,8 +243,9 @@ export default function LibraryPage() {
       if (!response.ok) throw new Error(data.error || "Não foi possível salvar a pasta")
       setFolderEditor(null)
       await fetchLibrary()
+      toast.success(isRename ? "Pasta renomeada." : "Pasta criada.")
     } catch (folderError) {
-      setError(folderError instanceof Error ? folderError.message : "Não foi possível salvar a pasta")
+      toast.error(folderError instanceof Error ? folderError.message : "Não foi possível salvar a pasta")
     } finally {
       setFolderSaving(false)
     }
@@ -243,9 +256,9 @@ export default function LibraryPage() {
       folder._count.media > 0
         ? `Apagar a pasta “${folder.name}”? As ${folder._count.media} mídia(s) voltarão para a Biblioteca e não serão excluídas.`
         : `Apagar a pasta “${folder.name}”?`
-    if (!confirm(message)) return
+    const confirmed = await confirmToast(message, { confirmLabel: "Apagar", danger: true })
+    if (!confirmed) return
 
-    setError(null)
     try {
       const response = await fetch("/api/library/folders", {
         method: "DELETE",
@@ -259,15 +272,15 @@ export default function LibraryPage() {
         setSelected([])
       }
       await fetchLibrary()
+      toast.success("Pasta apagada.")
     } catch (folderError) {
-      setError(folderError instanceof Error ? folderError.message : "Não foi possível apagar a pasta")
+      toast.error(folderError instanceof Error ? folderError.message : "Não foi possível apagar a pasta")
     }
   }
 
   const moveSelected = async (folderId: string | null) => {
     if (selected.length === 0) return
     setMoving(true)
-    setError(null)
 
     try {
       const response = await fetch("/api/library", {
@@ -280,8 +293,9 @@ export default function LibraryPage() {
       setSelected([])
       setMoveOpen(false)
       await fetchLibrary()
+      toast.success("Mídias movidas com sucesso.")
     } catch (moveError) {
-      setError(moveError instanceof Error ? moveError.message : "Não foi possível mover os arquivos")
+      toast.error(moveError instanceof Error ? moveError.message : "Não foi possível mover os arquivos")
     } finally {
       setMoving(false)
     }
@@ -294,9 +308,12 @@ export default function LibraryPage() {
   }
 
   const copyUrl = async (url: string) => {
-    await navigator.clipboard.writeText(url)
-    setCopied(url)
-    setTimeout(() => setCopied(null), 1800)
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success("Link copiado.")
+    } catch {
+      toast.error("Não foi possível copiar o link.")
+    }
   }
 
   const openFolder = (folderId: string | null) => {
@@ -373,17 +390,6 @@ export default function LibraryPage() {
           </button>
         </div>
       </div>
-
-      {uploadProgress && (
-        <div className="mb-5 rounded-xl border border-purple-500/20 bg-purple-500/10 px-4 py-3 text-sm text-purple-200">
-          {uploadProgress}
-        </div>
-      )}
-      {error && (
-        <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
 
       <div className="mb-5 flex flex-wrap items-center gap-2 text-sm">
         {activeFolder && (
@@ -559,7 +565,7 @@ export default function LibraryPage() {
                       className="rounded-lg bg-black/70 p-2 text-white backdrop-blur hover:bg-black/90"
                       title="Copiar URL"
                     >
-                      {copied === item.url ? <CheckCircle2 size={15} className="text-green-400" /> : <Copy size={15} />}
+                      <Copy size={15} />
                     </button>
                     <button
                       onClick={() => deleteMedia([item.id])}

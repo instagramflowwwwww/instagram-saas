@@ -10,6 +10,7 @@ import {
   RefreshCw,
   TrendingUp,
 } from "lucide-react"
+import toast from "react-hot-toast"
 
 type PerformancePost = {
   id: string
@@ -140,6 +141,7 @@ export default function PerformancePage() {
     const version = requestVersionRef.current + 1
     requestVersionRef.current = version
     requestControllerRef.current?.abort()
+    toast.dismiss("performance-refresh")
 
     const controller = new AbortController()
     requestControllerRef.current = controller
@@ -160,6 +162,7 @@ export default function PerformancePage() {
       if (!cachedPosts.some((post) => post.stale)) return
 
       setRefreshing(true)
+      toast.loading("Atualizando as métricas oficiais...", { id: "performance-refresh" })
 
       try {
         const refreshedPosts = await fetchPerformance(period, {
@@ -169,13 +172,19 @@ export default function PerformancePage() {
 
         if (requestVersionRef.current !== version) return
         setPosts(refreshedPosts)
+        setPageError("")
+        toast.success("Métricas atualizadas.", { id: "performance-refresh" })
       } catch (error) {
-        if (controller.signal.aborted) return
-        setPageError(
+        if (controller.signal.aborted) {
+          toast.dismiss("performance-refresh")
+          return
+        }
+        const message =
           error instanceof Error
             ? error.message
             : "Não foi possível atualizar as métricas."
-        )
+        setPageError(message)
+        toast.error(message, { id: "performance-refresh" })
       } finally {
         if (requestVersionRef.current === version) {
           setRefreshing(false)
@@ -186,11 +195,12 @@ export default function PerformancePage() {
       if (requestVersionRef.current !== version) return
 
       setPosts([])
-      setPageError(
+      const message =
         error instanceof Error
           ? error.message
           : "Não foi possível carregar as métricas."
-      )
+      setPageError(message)
+      toast.error(message, { id: "performance-load-error" })
       setLoading(false)
     }
   }
@@ -204,6 +214,7 @@ export default function PerformancePage() {
     requestControllerRef.current = controller
     setRefreshing(true)
     setPageError("")
+    toast.loading("Atualizando as métricas oficiais...", { id: "performance-refresh" })
 
     try {
       const refreshedPosts = await fetchPerformance(selectedPeriod, {
@@ -214,13 +225,18 @@ export default function PerformancePage() {
 
       if (requestVersionRef.current !== version) return
       setPosts(refreshedPosts)
+      toast.success("Métricas atualizadas.", { id: "performance-refresh" })
     } catch (error) {
-      if (controller.signal.aborted) return
-      setPageError(
+      if (controller.signal.aborted) {
+        toast.dismiss("performance-refresh")
+        return
+      }
+      const message =
         error instanceof Error
           ? error.message
           : "Não foi possível atualizar as métricas."
-      )
+      setPageError(message)
+      toast.error(message, { id: "performance-refresh" })
     } finally {
       if (requestVersionRef.current === version) {
         setRefreshing(false)
@@ -368,19 +384,6 @@ export default function PerformancePage() {
           </p>
         </div>
       </div>
-
-      {pageError && (
-        <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {pageError}
-        </div>
-      )}
-
-      {refreshing && !loading && (
-        <div className="mb-5 flex items-center gap-2 text-xs text-purple-300/80">
-          <div className="h-3.5 w-3.5 animate-spin rounded-full border border-purple-400 border-t-transparent" />
-          Atualizando as métricas oficiais em segundo plano
-        </div>
-      )}
 
       {loading && (
         <div className="flex items-center justify-center py-20">

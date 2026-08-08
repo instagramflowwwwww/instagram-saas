@@ -2,9 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
-  AlertCircle,
-  Check,
-  CheckCircle,
   Clipboard,
   ExternalLink,
   Eye,
@@ -18,6 +15,8 @@ import {
   Trash2,
   UserPlus,
 } from "lucide-react"
+import toast from "react-hot-toast"
+import { confirmToast } from "@/lib/toast"
 
 type MetaAppData = {
   configured: boolean
@@ -73,9 +72,6 @@ export default function MetaAppPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [copying, setCopying] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   const configured = Boolean(app?.configured)
   const canConnect = configured && /^[a-zA-Z0-9._]{1,30}$/.test(username.replace(/^@/, ""))
@@ -108,10 +104,11 @@ export default function MetaAppPage() {
       setAppId(appData.appId || "")
       setAccounts(Array.isArray(accountsData) ? accountsData : [])
     } catch (loadError) {
-      setError(
+      toast.error(
         loadError instanceof Error
           ? loadError.message
-          : "Não foi possível carregar a configuração."
+          : "Não foi possível carregar a configuração.",
+        { id: "meta-app-load-error" }
       )
     } finally {
       setLoading(false)
@@ -130,7 +127,7 @@ export default function MetaAppPage() {
     const connected = params.get("connected")
 
     if (success === "connected") {
-      setMessage(
+      toast.success(
         connectedUsername
           ? `@${connectedUsername} conectada com sucesso pelo App Meta.`
           : "Conta conectada com sucesso pelo App Meta."
@@ -139,11 +136,11 @@ export default function MetaAppPage() {
 
     if (errorCode) {
       if (errorCode === "wrong_account") {
-        setError(
+        toast.error(
           `Você informou @${expected || "outra_conta"}, mas autorizou @${connected || "outra_conta"}. Tente novamente com a conta correta.`
         )
       } else {
-        setError(callbackMessage || errorMessages[errorCode] || "Erro ao conectar a conta.")
+        toast.error(callbackMessage || errorMessages[errorCode] || "Erro ao conectar a conta.")
       }
     }
 
@@ -155,9 +152,6 @@ export default function MetaAppPage() {
   const saveApp = async (event: React.FormEvent) => {
     event.preventDefault()
     setSaving(true)
-    setError(null)
-    setMessage(null)
-
     try {
       const response = await fetch("/api/instagram/meta-app", {
         method: "POST",
@@ -171,10 +165,10 @@ export default function MetaAppPage() {
       }
 
       setAppSecret("")
-      setMessage("App Meta salvo. Agora adicione a Redirect URI e os Instagram Testers no painel da Meta.")
+      toast.success("App Meta salvo. Agora adicione a Redirect URI e os Instagram Testers no painel da Meta.")
       await loadData()
     } catch (saveError) {
-      setError(
+      toast.error(
         saveError instanceof Error
           ? saveError.message
           : "Não foi possível salvar o App Meta."
@@ -185,12 +179,13 @@ export default function MetaAppPage() {
   }
 
   const deleteApp = async () => {
-    if (!confirm("Excluir a configuração do App Meta?")) return
+    const confirmed = await confirmToast("Excluir a configuração do App Meta?", {
+      confirmLabel: "Excluir",
+      danger: true,
+    })
+    if (!confirmed) return
 
     setDeleting(true)
-    setError(null)
-    setMessage(null)
-
     try {
       const response = await fetch("/api/instagram/meta-app", {
         method: "DELETE",
@@ -203,10 +198,10 @@ export default function MetaAppPage() {
 
       setAppId("")
       setAppSecret("")
-      setMessage("Configuração do App Meta removida.")
+      toast.success("Configuração do App Meta removida.")
       await loadData()
     } catch (deleteError) {
-      setError(
+      toast.error(
         deleteError instanceof Error
           ? deleteError.message
           : "Não foi possível excluir o App Meta."
@@ -219,36 +214,55 @@ export default function MetaAppPage() {
   const copyRedirectUri = async () => {
     if (!app?.redirectUri) return
 
-    await navigator.clipboard.writeText(app.redirectUri)
-    setCopying(true)
-    window.setTimeout(() => setCopying(false), 1500)
+    try {
+      await navigator.clipboard.writeText(app.redirectUri)
+      toast.success("Redirect URI copiada.")
+    } catch {
+      toast.error("Não foi possível copiar a Redirect URI.")
+    }
   }
 
   const connectAccount = () => {
-    if (!canConnect) return
+    if (!configured) {
+      toast.error("Salve o App Meta antes de conectar uma conta.")
+      return
+    }
+    if (!canConnect) {
+      toast.error("Informe um usuário do Instagram válido.")
+      return
+    }
     const normalized = username.trim().replace(/^@/, "").toLowerCase()
     window.location.href = `/api/instagram/oauth/start?username=${encodeURIComponent(normalized)}`
   }
 
   const removeAccount = async (id: string) => {
-    if (!confirm("Remover esta conta conectada?")) return
-
-    setError(null)
-
-    const response = await fetch("/api/instagram/accounts", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+    const confirmed = await confirmToast("Remover esta conta conectada?", {
+      confirmLabel: "Remover",
+      danger: true,
     })
-    const data = await response.json().catch(() => ({}))
+    if (!confirmed) return
 
-    if (!response.ok) {
-      setError(data.error || "Não foi possível remover a conta.")
-      return
+    try {
+      const response = await fetch("/api/instagram/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.error || "Não foi possível remover a conta.")
+      }
+
+      toast.success("Conta removida.")
+      await loadData()
+    } catch (removeError) {
+      toast.error(
+        removeError instanceof Error
+          ? removeError.message
+          : "Não foi possível remover a conta."
+      )
     }
-
-    setMessage("Conta removida.")
-    await loadData()
   }
 
   if (loading) {
@@ -267,20 +281,6 @@ export default function MetaAppPage() {
           Use o App Meta de Development do seu negócio para conectar contas profissionais em modo de teste.
         </p>
       </div>
-
-      {message && (
-        <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6">
-          <CheckCircle size={17} className="text-green-400" />
-          <p className="text-green-300 text-sm">{message}</p>
-        </div>
-      )}
-
-      {error && (
-        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
-          <AlertCircle size={17} className="text-red-400" />
-          <p className="text-red-300 text-sm">{error}</p>
-        </div>
-      )}
 
       <div className="space-y-5">
         <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
@@ -319,8 +319,8 @@ export default function MetaAppPage() {
                   onClick={copyRedirectUri}
                   className="inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300"
                 >
-                  {copying ? <Check size={13} /> : <Clipboard size={13} />}
-                  {copying ? "Copiada" : "Copiar"}
+                  <Clipboard size={13} />
+                  Copiar
                 </button>
               </div>
               <p className="text-xs sm:text-sm text-gray-300 break-all font-mono">

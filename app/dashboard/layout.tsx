@@ -3,6 +3,7 @@ import { useSession, signOut } from "next-auth/react"
 import { useRouter, usePathname } from "next/navigation"
 import { useEffect, useRef } from "react"
 import Link from "next/link"
+import toast from "react-hot-toast"
 import { isAdminEmail } from "@/lib/account-access"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
@@ -63,6 +64,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     if (status === "authenticated" && !session?.user?.id) {
+      toast.error("Sua sessão é inválida. Faça login novamente.", { id: "invalid-session" })
       void signOut({ callbackUrl: "/login" })
     }
   }, [session?.user?.id, status, router])
@@ -77,13 +79,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       queueTickRunning.current = true
 
       try {
-        await fetch("/api/queue/process", {
+        const response = await fetch("/api/queue/process", {
           method: "POST",
           cache: "no-store",
           keepalive: true,
         })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || "Não foi possível processar a fila de publicações.")
+        }
+
+        toast.dismiss("queue-heartbeat-error")
       } catch (error) {
         console.error("[queue-dashboard] Heartbeat failed", error)
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível processar a fila de publicações.",
+          { id: "queue-heartbeat-error" }
+        )
       } finally {
         queueTickRunning.current = false
       }
@@ -173,7 +188,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => {
+              toast.success("Sessão encerrada.")
+              void signOut({ callbackUrl: "/login" })
+            }}
             className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
           >
             <LogOut size={13} />

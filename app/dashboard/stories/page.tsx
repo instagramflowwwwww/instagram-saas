@@ -17,6 +17,8 @@ import {
   Sparkles,
   X,
 } from "lucide-react"
+import toast from "react-hot-toast"
+import { toastWarning } from "@/lib/toast"
 
 type MediaItem = {
   id: string
@@ -74,7 +76,6 @@ export default function StoriesPage() {
   const [name, setName] = useState("")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -117,10 +118,11 @@ export default function StoriesPage() {
         )
       })
       .catch((loadError) => {
-        setError(
+        toast.error(
           loadError instanceof Error
             ? loadError.message
-            : "Não foi possível carregar os dados."
+            : "Não foi possível carregar os dados.",
+          { id: "stories-load-error" }
         )
       })
       .finally(() => setLoading(false))
@@ -188,18 +190,16 @@ export default function StoriesPage() {
   }
 
   async function submit() {
-    setError(null)
-
     if (selectedMedia.length === 0) {
-      setError("Selecione pelo menos uma mídia para o Story.")
+      toast.error("Selecione pelo menos uma mídia para o Story.")
       return
     }
     if (selectedAccounts.length === 0) {
-      setError("Selecione pelo menos uma conta do Instagram.")
+      toast.error("Selecione pelo menos uma conta do Instagram.")
       return
     }
     if (publishMode === "scheduled" && !startAt) {
-      setError("Informe a data e a hora da primeira publicação.")
+      toast.error("Informe a data e a hora da primeira publicação.")
       return
     }
 
@@ -239,13 +239,37 @@ export default function StoriesPage() {
         throw new Error(payload.error || "Não foi possível criar a sequência de Stories.")
       }
 
+      let immediateProcessingWarning = ""
       if (publishMode === "now") {
-        await fetch("/api/queue/process", { method: "POST" }).catch(() => null)
+        try {
+          const processResponse = await fetch("/api/queue/process", { method: "POST" })
+          const processPayload = await processResponse.json().catch(() => ({}))
+          if (!processResponse.ok) {
+            immediateProcessingWarning =
+              processPayload.error || "O processamento imediato não pôde ser iniciado."
+          }
+        } catch (processError) {
+          immediateProcessingWarning =
+            processError instanceof Error
+              ? processError.message
+              : "O processamento imediato não pôde ser iniciado."
+        }
       }
 
+      if (immediateProcessingWarning) {
+        toastWarning(
+          `Sequência criada e mantida na fila, mas houve um aviso: ${immediateProcessingWarning}`
+        )
+      } else {
+        toast.success(
+          publishMode === "now"
+            ? "Sequência de Stories enviada para publicação."
+            : "Sequência de Stories agendada com sucesso."
+        )
+      }
       router.push("/dashboard/queue")
     } catch (submitError) {
-      setError(
+      toast.error(
         submitError instanceof Error
           ? submitError.message
           : "Não foi possível publicar os Stories."
@@ -280,12 +304,6 @@ export default function StoriesPage() {
           <CalendarClock size={15} /> Ver fila
         </button>
       </div>
-
-      {error && (
-        <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
 
       <div className="mb-6 grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">

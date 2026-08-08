@@ -18,6 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react"
+import toast from "react-hot-toast"
 import { uploadFileToR2 } from "@/lib/r2-upload"
 
 type MediaItem = {
@@ -93,7 +94,6 @@ export default function SchedulePage() {
   const [name, setName] = useState("")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -126,7 +126,10 @@ export default function SchedulePage() {
         setSelectedMedia(existing)
       })
       .catch((requestError) =>
-        setError(requestError instanceof Error ? requestError.message : "Erro ao carregar dados")
+        toast.error(
+          requestError instanceof Error ? requestError.message : "Erro ao carregar dados",
+          { id: "schedule-load-error" }
+        )
       )
       .finally(() => setLoading(false))
   }, [])
@@ -266,13 +269,12 @@ export default function SchedulePage() {
   const handleSharedCoverChange = (file: File | null) => {
     try {
       if (file) validateCoverFile(file)
-      setError(null)
       setSharedCover((current) => {
         if (current?.preview) URL.revokeObjectURL(current.preview)
         return file ? { file, preview: URL.createObjectURL(file) } : null
       })
     } catch (coverError) {
-      setError(
+      toast.error(
         coverError instanceof Error
           ? coverError.message
           : "Não foi possível usar esta capa."
@@ -283,7 +285,6 @@ export default function SchedulePage() {
   const handlePerVideoCoverChange = (mediaId: string, file: File | null) => {
     try {
       if (file) validateCoverFile(file)
-      setError(null)
       setPerVideoCovers((current) => {
         const existing = current[mediaId]
         if (existing?.preview) URL.revokeObjectURL(existing.preview)
@@ -296,7 +297,7 @@ export default function SchedulePage() {
         return next
       })
     } catch (coverError) {
-      setError(
+      toast.error(
         coverError instanceof Error
           ? coverError.message
           : "Não foi possível usar esta capa."
@@ -305,21 +306,19 @@ export default function SchedulePage() {
   }
 
   const submit = async () => {
-    setError(null)
-
-    if (selectedMedia.length === 0) return setError("Selecione pelo menos uma mídia.")
-    if (selectedAccounts.length === 0) return setError("Selecione pelo menos uma conta.")
-    if (!startAt) return setError("Informe quando a sequência deve começar.")
+    if (selectedMedia.length === 0) return toast.error("Selecione pelo menos uma mídia.")
+    if (selectedAccounts.length === 0) return toast.error("Selecione pelo menos uma conta.")
+    if (!startAt) return toast.error("Informe quando a sequência deve começar.")
 
     if (videoItems.length > 0) {
       if (coverMode === "single" && !sharedCover) {
-        return setError("Adicione a capa compartilhada para os vídeos.")
+        return toast.error("Adicione a capa compartilhada para os vídeos.")
       }
       if (
         coverMode === "per_video" &&
         videoItems.some((item) => !perVideoCovers[item.id])
       ) {
-        return setError("Adicione uma capa para cada vídeo selecionado.")
+        return toast.error("Adicione uma capa para cada vídeo selecionado.")
       }
     }
 
@@ -371,9 +370,10 @@ export default function SchedulePage() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || "Não foi possível criar a automação")
+      toast.success("Automação criada com sucesso.")
       router.push("/dashboard/queue")
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Não foi possível criar a automação")
+      toast.error(submitError instanceof Error ? submitError.message : "Não foi possível criar a automação")
     } finally {
       setSubmitting(false)
     }
@@ -395,12 +395,6 @@ export default function SchedulePage() {
           Monte uma sequência de mídias, legendas, capas e intervalos para publicar automaticamente.
         </p>
       </div>
-
-      {error && (
-        <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         <div className="space-y-6 xl:col-span-3">

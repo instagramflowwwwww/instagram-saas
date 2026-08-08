@@ -29,6 +29,7 @@ import {
   useMemo,
   useState,
 } from "react"
+import toast from "react-hot-toast"
 
 type Account = {
   id: string
@@ -262,7 +263,6 @@ export default function HistoryPage() {
   const [data, setData] = useState<HistoryData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState("all")
@@ -275,7 +275,6 @@ export default function HistoryPage() {
 
   const loadHistory = useCallback(
     async (showRefresh = false) => {
-      setError(null)
       setRefreshing(showRefresh)
 
       try {
@@ -303,11 +302,13 @@ export default function HistoryPage() {
         }
 
         setData(payload)
+        if (showRefresh) toast.success("Histórico atualizado.")
       } catch (loadError) {
-        setError(
+        toast.error(
           loadError instanceof Error
             ? loadError.message
-            : "Não foi possível carregar o histórico."
+            : "Não foi possível carregar o histórico.",
+          { id: "history-load-error" }
         )
       } finally {
         setLoading(false)
@@ -519,16 +520,6 @@ export default function HistoryPage() {
           </div>
         </div>
       </section>
-
-      {error && (
-        <div className="flex items-start gap-3 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <div>
-            <p className="font-semibold">Não foi possível carregar os logs</p>
-            <p className="mt-1 text-red-300/80">{error}</p>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="flex min-h-72 items-center justify-center rounded-2xl border border-white/[0.07] bg-[#111]">

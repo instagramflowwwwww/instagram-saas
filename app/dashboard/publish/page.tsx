@@ -13,6 +13,8 @@ import {
   X,
   XCircle,
 } from "lucide-react"
+import toast from "react-hot-toast"
+import { toastWarning } from "@/lib/toast"
 import { uploadFileToR2 } from "@/lib/r2-upload"
 
 type InstagramAccount = {
@@ -45,7 +47,6 @@ export default function PublishPage() {
   const [hashtags, setHashtags] = useState("")
   const [publishing, setPublishing] = useState(false)
   const [publishStage, setPublishStage] = useState("")
-  const [publishError, setPublishError] = useState<string | null>(null)
   const [results, setResults] = useState<PublishResult[]>([])
   const videoRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLInputElement>(null)
@@ -68,7 +69,11 @@ export default function PublishPage() {
         setAccounts(accountList)
         setSelectedAccounts(accountList.map((account: InstagramAccount) => account.id))
       })
-      .catch((error) => setPublishError(error.message))
+      .catch((error) =>
+        toast.error(error instanceof Error ? error.message : "Erro ao carregar as contas", {
+          id: "publish-accounts-load-error",
+        })
+      )
   }, [])
 
   useEffect(() => {
@@ -124,37 +129,37 @@ export default function PublishPage() {
 
   const publish = async () => {
     if (!videoFile && !imageFile) {
-      setPublishError("Adicione uma imagem ou um vídeo")
+      toast.error("Adicione uma imagem ou um vídeo")
       return
     }
     if (selectedAccounts.length === 0) {
-      setPublishError("Selecione pelo menos uma conta")
+      toast.error("Selecione pelo menos uma conta")
       return
     }
     if (imageFile && imageFile.type !== "image/jpeg") {
-      setPublishError("A API oficial aceita somente imagem JPEG no feed")
+      toast.error("A API oficial aceita somente imagem JPEG no feed")
       return
     }
     if (coverFile && coverFile.type !== "image/jpeg") {
-      setPublishError("A capa do Reel deve ser uma imagem JPEG")
+      toast.error("A capa do Reel deve ser uma imagem JPEG")
       return
     }
     if (imageFile && imageFile.size > IMAGE_LIMIT) {
-      setPublishError("A imagem JPEG pode ter no máximo 8 MB")
+      toast.error("A imagem JPEG pode ter no máximo 8 MB")
       return
     }
     if (coverFile && coverFile.size > IMAGE_LIMIT) {
-      setPublishError("A capa JPEG pode ter no máximo 8 MB")
+      toast.error("A capa JPEG pode ter no máximo 8 MB")
       return
     }
     if (videoFile && videoFile.size > VIDEO_LIMIT) {
-      setPublishError("O vídeo pode ter no máximo 200 MB")
+      toast.error("O vídeo pode ter no máximo 200 MB")
       return
     }
 
     setPublishing(true)
-    setPublishError(null)
     setResults([])
+    const toastId = toast.loading("Enviando mídia...")
 
     try {
       setPublishStage("Enviando mídia...")
@@ -171,6 +176,7 @@ export default function PublishPage() {
       ])
 
       setPublishStage("Publicando no Instagram...")
+      toast.loading("Publicando no Instagram...", { id: toastId })
       const response = await fetch("/api/posts/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -189,9 +195,27 @@ export default function PublishPage() {
         throw new Error(data.error || "Não foi possível publicar")
       }
 
-      setResults(data.results || [])
-    } catch (error: any) {
-      setPublishError(error.message || "Não foi possível publicar")
+      const publishResults = Array.isArray(data.results) ? (data.results as PublishResult[]) : []
+      setResults(publishResults)
+
+      const successCount = publishResults.filter((result) => result.status === "success").length
+      const errorCount = publishResults.length - successCount
+
+      if (publishResults.length > 0 && errorCount === 0) {
+        toast.success(`Publicado com sucesso em ${successCount} conta(s).`, { id: toastId })
+      } else if (successCount > 0) {
+        toast.dismiss(toastId)
+        toastWarning(
+          `Publicado em ${successCount} conta(s), com falha em ${errorCount}.`
+        )
+      } else {
+        toast.error("A publicação falhou em todas as contas selecionadas.", { id: toastId })
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível publicar",
+        { id: toastId }
+      )
     } finally {
       setPublishing(false)
       setPublishStage("")
@@ -212,13 +236,6 @@ export default function PublishPage() {
           <Layers3 size={15} /> Automatizar várias mídias
         </Link>
       </div>
-
-      {publishError && (
-        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
-          <XCircle size={16} className="text-red-400" />
-          <p className="text-red-400 text-sm font-medium">{publishError}</p>
-        </div>
-      )}
 
       <div className="grid grid-cols-5 gap-6">
         <div className="col-span-3 space-y-4">

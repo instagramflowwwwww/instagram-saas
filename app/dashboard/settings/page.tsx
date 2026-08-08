@@ -2,68 +2,77 @@
 import { useState } from "react"
 import { useSession, signOut } from "next-auth/react"
 import { User, Lock, LogOut, Save, Eye, EyeOff } from "lucide-react"
+import toast from "react-hot-toast"
 
 export default function SettingsPage() {
   const { data: session, update } = useSession()
   const [name, setName] = useState(session?.user?.name || "")
   const [savingName, setSavingName] = useState(false)
-  const [nameSuccess, setNameSuccess] = useState(false)
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
-  const [passwordSuccess, setPasswordSuccess] = useState(false)
-  const [passwordError, setPasswordError] = useState("")
 
   const saveName = async () => {
-    if (!name.trim()) return
-    setSavingName(true)
-    const res = await fetch("/api/user/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    })
-    if (res.ok) {
-      await update({ name })
-      setNameSuccess(true)
-      setTimeout(() => setNameSuccess(false), 3000)
+    if (!name.trim()) {
+      toast.error("Informe um nome.")
+      return
     }
-    setSavingName(false)
+
+    setSavingName(true)
+    try {
+      const res = await fetch("/api/user/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar o nome.")
+
+      await update({ name })
+      toast.success("Nome salvo com sucesso.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o nome.")
+    } finally {
+      setSavingName(false)
+    }
   }
 
   const savePassword = async () => {
-    setPasswordError("")
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordError("Preencha todos os campos")
+      toast.error("Preencha todos os campos")
       return
     }
     if (newPassword.length < 6) {
-      setPasswordError("A nova senha deve ter pelo menos 6 caracteres")
+      toast.error("A nova senha deve ter pelo menos 6 caracteres")
       return
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError("As senhas não coincidem")
+      toast.error("As senhas não coincidem")
       return
     }
+
     setSavingPassword(true)
-    const res = await fetch("/api/user/change-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentPassword, newPassword }),
-    })
-    const data = await res.json()
-    if (res.ok) {
-      setPasswordSuccess(true)
+    try {
+      const res = await fetch("/api/user/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Erro ao alterar senha")
+
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
-      setTimeout(() => setPasswordSuccess(false), 3000)
-    } else {
-      setPasswordError(data.error || "Erro ao alterar senha")
+      toast.success("Senha alterada com sucesso.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao alterar senha")
+    } finally {
+      setSavingPassword(false)
     }
-    setSavingPassword(false)
   }
 
   return (
@@ -104,7 +113,7 @@ export default function SettingsPage() {
               className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
             >
               <Save size={14} />
-              {savingName ? "Salvando..." : nameSuccess ? "Salvo!" : "Salvar nome"}
+              {savingName ? "Salvando..." : "Salvar nome"}
             </button>
           </div>
         </div>
@@ -154,18 +163,13 @@ export default function SettingsPage() {
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
               />
             </div>
-            {passwordError && (
-              <p className="text-red-400 text-xs bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
-                {passwordError}
-              </p>
-            )}
             <button
               onClick={savePassword}
               disabled={savingPassword}
               className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
             >
               <Save size={14} />
-              {savingPassword ? "Salvando..." : passwordSuccess ? "Senha alterada!" : "Alterar senha"}
+              {savingPassword ? "Salvando..." : "Alterar senha"}
             </button>
           </div>
         </div>
@@ -176,7 +180,10 @@ export default function SettingsPage() {
           </div>
           <p className="text-sm text-gray-500 mb-4">Você será desconectado e redirecionado para a página de login.</p>
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => {
+              toast.success("Sessão encerrada.")
+              void signOut({ callbackUrl: "/login" })
+            }}
             className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
           >
             <LogOut size={14} />

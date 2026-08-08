@@ -3,6 +3,7 @@ import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { Instagram } from "lucide-react"
+import toast from "react-hot-toast"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -10,14 +11,10 @@ export default function LoginPage() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError("")
-    setSuccess("")
     setLoading(true)
 
     try {
@@ -29,13 +26,13 @@ export default function LoginPage() {
         })
         const data = await res.json()
         if (!res.ok) {
-          setError(data.error || "Erro ao criar conta")
+          toast.error(data.error || "Erro ao criar conta")
           setLoading(false)
           return
         }
         setIsRegister(false)
         setPassword("")
-        setSuccess(
+        toast.success(
           data.message ||
             "Cadastro enviado para análise. Aguarde a aprovação do administrador."
         )
@@ -53,24 +50,25 @@ export default function LoginPage() {
         const authError = decodeURIComponent(result.error)
 
         if (authError.includes("ACCOUNT_PENDING")) {
-          setError("Seu cadastro ainda está aguardando aprovação do administrador.")
+          toast.error("Seu cadastro ainda está aguardando aprovação do administrador.")
         } else if (authError.includes("ACCOUNT_REJECTED")) {
-          setError("Seu cadastro foi recusado. Entre em contato com o administrador.")
+          toast.error("Seu cadastro foi recusado. Entre em contato com o administrador.")
         } else if (authError.includes("ACCOUNT_EXPIRED")) {
-          setError("Seu plano expirou. Solicite a renovação ao administrador.")
+          toast.error("Seu plano expirou. Solicite a renovação ao administrador.")
         } else if (authError.includes("Usuário não encontrado")) {
-          setError("Email não cadastrado")
+          toast.error("Email não cadastrado")
         } else if (authError.includes("Senha incorreta")) {
-          setError("Senha incorreta")
+          toast.error("Senha incorreta")
         } else {
-          setError("Email ou senha inválidos")
+          toast.error("Email ou senha inválidos")
         }
       } else {
+        toast.success("Login realizado com sucesso.")
         router.push("/dashboard")
         router.refresh()
       }
     } catch {
-      setError("Erro inesperado. Tente novamente.")
+      toast.error("Erro inesperado. Tente novamente.")
     } finally {
       setLoading(false)
     }
@@ -138,18 +136,6 @@ export default function LoginPage() {
               />
             </div>
 
-            {success && (
-              <p className="text-green-300 text-sm bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">
-                {success}
-              </p>
-            )}
-
-            {error && (
-              <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
-                {error}
-              </p>
-            )}
-
             <button
               type="submit"
               disabled={loading}
@@ -168,8 +154,6 @@ export default function LoginPage() {
             <button
               onClick={() => {
                 setIsRegister(!isRegister)
-                setError("")
-                setSuccess("")
               }}
               className="text-purple-400 hover:text-purple-300 transition-colors font-medium"
             >

@@ -22,6 +22,8 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react"
+import toast from "react-hot-toast"
+import { confirmToast, toastWarning } from "@/lib/toast"
 
 type BatchItem = {
   id: string
@@ -160,19 +162,21 @@ export default function QueuePage() {
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<"all" | "active" | "done">("all")
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false, notifySuccess = false) => {
     if (!silent) setLoading(true)
     try {
       const response = await fetch("/api/batches", { cache: "no-store" })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || "Erro ao carregar a fila")
       setData(payload)
-      setError(null)
+      if (notifySuccess) toast.success("Fila atualizada.")
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Erro ao carregar a fila")
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Erro ao carregar a fila",
+        { id: "queue-load-error" }
+      )
     } finally {
       if (!silent) setLoading(false)
     }
@@ -184,16 +188,29 @@ export default function QueuePage() {
     return () => window.clearInterval(interval)
   }, [load])
 
+  useEffect(() => {
+    if (loading || data.executorConfigured) return
+    toastWarning(
+      "O processamento manual funciona, mas o automático ainda precisa da variável QUEUE_CRON_SECRET na Vercel e dos secrets do workflow no GitHub.",
+      "queue-executor-warning"
+    )
+  }, [data.executorConfigured, loading])
+
   const callAction = async (key: string, url: string, method = "POST") => {
     setWorking(key)
-    setError(null)
     try {
       const response = await fetch(url, { method })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || "A ação não foi concluída")
       await load(true)
+      const successMessage = key.startsWith("retry-")
+        ? "Falhas colocadas novamente na fila."
+        : key.startsWith("cancel-")
+          ? "Automação cancelada."
+          : "Fila processada com sucesso."
+      toast.success(successMessage)
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "A ação não foi concluída")
+      toast.error(actionError instanceof Error ? actionError.message : "A ação não foi concluída")
     } finally {
       setWorking(null)
     }
@@ -247,7 +264,7 @@ export default function QueuePage() {
             Processar agora
           </button>
           <button
-            onClick={() => load()}
+            onClick={() => load(false, true)}
             className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 hover:bg-white/10"
           >
             <RefreshCw size={15} /> Atualizar
@@ -266,18 +283,6 @@ export default function QueuePage() {
           </Link>
         </div>
       </div>
-
-      {error && (
-        <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
-
-      {!data.executorConfigured && !loading && (
-        <div className="mb-5 rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-          O processamento manual funciona, mas o automático ainda precisa da variável QUEUE_CRON_SECRET na Vercel e dos secrets do workflow no GitHub.
-        </div>
-      )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
@@ -375,7 +380,15 @@ export default function QueuePage() {
                       )}
                       {canCancel && (
                         <button
-                          onClick={() => confirm("Cancelar todas as publicações pendentes desta automação?") && callAction(`cancel-${batch.id}`, `/api/batches/${batch.id}`, "DELETE")}
+                          onClick={async () => {
+                            const confirmed = await confirmToast(
+                              "Cancelar todas as publicações pendentes desta automação?",
+                              { confirmLabel: "Cancelar automação", danger: true }
+                            )
+                            if (confirmed) {
+                              await callAction(`cancel-${batch.id}`, `/api/batches/${batch.id}`, "DELETE")
+                            }
+                          }}
                           disabled={working === `cancel-${batch.id}`}
                           className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 disabled:opacity-50"
                         >

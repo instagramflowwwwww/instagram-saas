@@ -10,7 +10,6 @@ import {
   Calendar,
   CalendarClock,
   CheckCircle2,
-  CircleAlert,
   ImageIcon,
   Instagram,
   Loader2,
@@ -29,6 +28,8 @@ import {
   useRef,
   useState,
 } from "react"
+import toast from "react-hot-toast"
+import { toastWarning } from "@/lib/toast"
 
 type Metric = {
   value: number
@@ -288,21 +289,33 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [dateFrom, setDateFrom] = useState(getInitialDateFrom)
   const [dateTo, setDateTo] = useState(getToday)
   const initialLoad = useRef(true)
 
   const loadDashboard = useCallback(
     async (syncAccounts = false) => {
-      setError(null)
       setRefreshing(syncAccounts)
 
       try {
+        let accountSyncWarning = ""
+
         if (syncAccounts) {
-          await fetch("/api/instagram/accounts", {
-            cache: "no-store",
-          }).catch(() => null)
+          try {
+            const accountResponse = await fetch("/api/instagram/accounts", {
+              cache: "no-store",
+            })
+            const accountPayload = await accountResponse.json().catch(() => ({}))
+            if (!accountResponse.ok) {
+              accountSyncWarning =
+                accountPayload.error || "Não foi possível atualizar os dados das contas."
+            }
+          } catch (syncError) {
+            accountSyncWarning =
+              syncError instanceof Error
+                ? syncError.message
+                : "Não foi possível atualizar os dados das contas."
+          }
         }
 
         const params = new URLSearchParams({
@@ -319,11 +332,19 @@ export default function DashboardPage() {
         }
 
         setData(payload)
+        if (syncAccounts) {
+          if (accountSyncWarning) {
+            toastWarning(`Dashboard atualizado, mas a sincronização das contas falhou: ${accountSyncWarning}`)
+          } else {
+            toast.success("Dashboard atualizado.")
+          }
+        }
       } catch (loadError) {
-        setError(
+        toast.error(
           loadError instanceof Error
             ? loadError.message
-            : "Não foi possível carregar o dashboard."
+            : "Não foi possível carregar o dashboard.",
+          { id: "dashboard-load-error" }
         )
       } finally {
         setLoading(false)
@@ -401,22 +422,6 @@ export default function DashboardPage() {
           </button>
         </div>
       </header>
-
-      {error && (
-        <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
-          <CircleAlert size={17} className="mt-0.5 shrink-0 text-red-400" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-red-300">{error}</p>
-            <button
-              type="button"
-              onClick={() => loadDashboard(true)}
-              className="mt-2 text-xs font-medium text-red-200/70 underline underline-offset-4 hover:text-red-200"
-            >
-              Tentar novamente
-            </button>
-          </div>
-        </div>
-      )}
 
       {loading && !data ? (
         <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-white/[0.06] bg-[#111]">
