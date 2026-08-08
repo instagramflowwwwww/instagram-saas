@@ -1,710 +1,839 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
 import {
-  ArrowLeft,
-  Check,
+  AlertCircle,
+  CalendarClock,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
   ChevronRight,
-  Copy,
+  CircleDashed,
+  Clock3,
+  FileText,
   Film,
-  Folder,
-  FolderOpen,
-  FolderPlus,
+  Filter,
   ImageIcon,
-  Layers3,
+  Instagram,
   Loader2,
-  Move,
-  Pencil,
-  Play,
-  Trash2,
-  Upload,
-  X,
+  RefreshCw,
+  Search,
+  Send,
+  Sparkles,
+  Ban,
+  XCircle,
 } from "lucide-react"
+import {
+  type ElementType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 import toast from "react-hot-toast"
-import { uploadFileToR2 } from "@/lib/r2-upload"
-import { confirmToast } from "@/lib/toast"
 
-type MediaItem = {
+type Account = {
   id: string
-  folderId: string | null
-  url: string
-  type: "image" | "video"
-  fileName: string
-  bytes: number | null
-  width: number | null
-  height: number | null
-  duration: number | null
-  format: string | null
-  createdAt: string
+  username: string
+  profilePicture: string | null
+  isActive: boolean
 }
 
-type MediaFolder = {
+type PostLog = {
   id: string
-  name: string
+  status: string
+  errorMessage: string | null
+  mediaId: string | null
   createdAt: string
-  updatedAt: string
-  _count: { media: number }
+  instagramAccount: {
+    id: string
+    username: string
+    name: string | null
+    profilePicture: string | null
+    isActive: boolean
+  }
 }
 
-type FolderEditor =
-  | { mode: "create"; name: string }
-  | { mode: "rename"; id: string; name: string }
-  | null
+type HistoryPost = {
+  id: string
+  caption: string | null
+  hashtags: string | null
+  imageUrl: string | null
+  videoUrl: string | null
+  thumbnailUrl: string | null
+  type: "image" | "reel" | "story"
+  status: string
+  scheduledAt: string | null
+  publishedAt: string | null
+  createdAt: string
+  successCount: number
+  errorCount: number
+  accountCount: number
+  logs: PostLog[]
+}
 
-const IMAGE_LIMIT = 8 * 1024 * 1024
-const VIDEO_LIMIT = 200 * 1024 * 1024
+type HistoryData = {
+  posts: HistoryPost[]
+  summary: {
+    total: number
+    published: number
+    partial: number
+    failed: number
+    scheduled: number
+    publishing: number
+    draft: number
+    cancelled: number
+  }
+  accounts: Account[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+  generatedAt: string
+}
 
-function formatBytes(value: number | null) {
+type SummaryCardProps = {
+  label: string
+  value: number
+  icon: ElementType
+  iconClassName: string
+  iconBackground: string
+}
+
+const STATUS_CONFIG: Record<
+  string,
+  {
+    label: string
+    className: string
+    dotClassName: string
+    icon: ElementType
+  }
+> = {
+  published: {
+    label: "Publicado",
+    className: "border-green-500/20 bg-green-500/10 text-green-300",
+    dotClassName: "bg-green-400",
+    icon: CheckCircle2,
+  },
+  partial: {
+    label: "Parcial",
+    className: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
+    dotClassName: "bg-yellow-400",
+    icon: AlertCircle,
+  },
+  failed: {
+    label: "Falhou",
+    className: "border-red-500/20 bg-red-500/10 text-red-300",
+    dotClassName: "bg-red-400",
+    icon: XCircle,
+  },
+  scheduled: {
+    label: "Agendado",
+    className: "border-blue-500/20 bg-blue-500/10 text-blue-300",
+    dotClassName: "bg-blue-400",
+    icon: CalendarClock,
+  },
+  publishing: {
+    label: "Publicando",
+    className: "border-purple-500/20 bg-purple-500/10 text-purple-300",
+    dotClassName: "bg-purple-400",
+    icon: Loader2,
+  },
+  cancelled: {
+    label: "Cancelado",
+    className: "border-white/10 bg-white/[0.04] text-gray-400",
+    dotClassName: "bg-gray-500",
+    icon: Ban,
+  },
+  draft: {
+    label: "Rascunho",
+    className: "border-white/10 bg-white/[0.04] text-gray-400",
+    dotClassName: "bg-gray-500",
+    icon: FileText,
+  },
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("pt-BR").format(value)
+}
+
+function formatDate(value: string | null) {
   if (!value) return "—"
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value))
 }
 
-export default function LibraryPage() {
-  const router = useRouter()
-  const [media, setMedia] = useState<MediaItem[]>([])
-  const [folders, setFolders] = useState<MediaFolder[]>([])
-  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [moving, setMoving] = useState(false)
-  const [folderSaving, setFolderSaving] = useState(false)
-  const [selected, setSelected] = useState<string[]>([])
-  const [filter, setFilter] = useState<"all" | "video" | "image">("all")
-  const [folderEditor, setFolderEditor] = useState<FolderEditor>(null)
-  const [moveOpen, setMoveOpen] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+function formatRelativeDate(value: string) {
+  const elapsed = Date.now() - new Date(value).getTime()
+  const minutes = Math.floor(elapsed / 60_000)
 
-  const fetchLibrary = async () => {
-    try {
-      const [mediaResponse, foldersResponse] = await Promise.all([
-        fetch("/api/library", { cache: "no-store" }),
-        fetch("/api/library/folders", { cache: "no-store" }),
-      ])
-      const [mediaData, foldersData] = await Promise.all([
-        mediaResponse.json(),
-        foldersResponse.json(),
-      ])
+  if (minutes < 1) return "agora"
+  if (minutes < 60) return `há ${minutes} min`
 
-      if (!mediaResponse.ok) {
-        throw new Error(mediaData.error || "Erro ao carregar a biblioteca")
-      }
-      if (!foldersResponse.ok) {
-        throw new Error(foldersData.error || "Erro ao carregar as pastas")
-      }
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `há ${hours}h`
 
-      setMedia(Array.isArray(mediaData) ? mediaData : [])
-      setFolders(Array.isArray(foldersData) ? foldersData : [])
-    } catch (requestError) {
-      toast.error(
-        requestError instanceof Error ? requestError.message : "Erro ao carregar a biblioteca",
-        { id: "library-load-error" }
-      )
-    } finally {
-      setLoading(false)
-    }
-  }
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `há ${days}d`
 
-  useEffect(() => {
-    fetchLibrary()
-  }, [])
+  return formatDate(value)
+}
 
-  const activeFolder = useMemo(
-    () => folders.find((folder) => folder.id === activeFolderId) || null,
-    [activeFolderId, folders]
-  )
+function AccountAvatar({
+  src,
+  username,
+  size = "md",
+}: {
+  src: string | null
+  username: string
+  size?: "sm" | "md"
+}) {
+  const [failed, setFailed] = useState(false)
+  const classes = size === "sm" ? "h-8 w-8" : "h-10 w-10"
 
-  const currentMedia = useMemo(
-    () => media.filter((item) => item.folderId === activeFolderId),
-    [activeFolderId, media]
-  )
-
-  const filtered = useMemo(
-    () => (filter === "all" ? currentMedia : currentMedia.filter((item) => item.type === filter)),
-    [currentMedia, filter]
-  )
-
-  const allFilteredSelected =
-    filtered.length > 0 && filtered.every((item) => selected.includes(item.id))
-
-  const validateFile = (file: File) => {
-    if (file.type.startsWith("image/")) {
-      if (file.type !== "image/jpeg") {
-        throw new Error(`${file.name}: use uma imagem JPEG para publicar pela API oficial.`)
-      }
-      if (file.size > IMAGE_LIMIT) {
-        throw new Error(`${file.name}: a imagem pode ter no máximo 8 MB.`)
-      }
-      return "image" as const
-    }
-
-    if (["video/mp4", "video/quicktime"].includes(file.type)) {
-      if (file.size > VIDEO_LIMIT) {
-        throw new Error(`${file.name}: o vídeo pode ter no máximo 200 MB.`)
-      }
-      return "video" as const
-    }
-
-    throw new Error(`${file.name}: formato não suportado.`)
-  }
-
-  const uploadFiles = async (files: File[]) => {
-    if (files.length === 0) return
-    setUploading(true)
-    const toastId = toast.loading(`Enviando 1 de ${files.length}...`)
-
-    try {
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index]
-        const type = validateFile(file)
-        toast.loading(`Enviando ${index + 1} de ${files.length}: ${file.name}`, { id: toastId })
-
-        const uploaded = await uploadFileToR2(file)
-        const saveResponse = await fetch("/api/library", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            objectKey: uploaded.objectKey,
-            type,
-            fileName: file.name,
-            folderId: activeFolderId,
-            bytes: file.size,
-            format: file.name.split(".").pop()?.toLowerCase() || null,
-          }),
-        })
-        const saved = await saveResponse.json()
-        if (!saveResponse.ok) throw new Error(saved.error || "Falha ao salvar a mídia")
-      }
-
-      await fetchLibrary()
-      toast.success(
-        `${files.length} arquivo${files.length === 1 ? "" : "s"} enviado${files.length === 1 ? "" : "s"} com sucesso.`,
-        { id: toastId }
-      )
-    } catch (uploadError) {
-      toast.error(
-        uploadError instanceof Error ? uploadError.message : "Erro ao enviar arquivos",
-        { id: toastId }
-      )
-    } finally {
-      setUploading(false)
-      if (fileRef.current) fileRef.current.value = ""
-    }
-  }
-
-  const deleteMedia = async (ids: string[]) => {
-    if (ids.length === 0) return
-    const confirmed = await confirmToast(
-      `Apagar ${ids.length} arquivo(s) da biblioteca e do armazenamento?`,
-      { confirmLabel: "Apagar", danger: true }
-    )
-    if (!confirmed) return
-
-    setDeleting(true)
-    try {
-      const response = await fetch("/api/library", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Não foi possível apagar")
-      setSelected((current) => current.filter((id) => !ids.includes(id)))
-      await fetchLibrary()
-      toast.success(`${ids.length} arquivo${ids.length === 1 ? "" : "s"} apagado${ids.length === 1 ? "" : "s"}.`)
-    } catch (deleteError) {
-      toast.error(deleteError instanceof Error ? deleteError.message : "Não foi possível apagar")
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  const saveFolder = async () => {
-    if (!folderEditor) return
-    if (!folderEditor.name.trim()) {
-      toast.error("Informe o nome da pasta.")
-      return
-    }
-    setFolderSaving(true)
-
-    try {
-      const isRename = folderEditor.mode === "rename"
-      const response = await fetch("/api/library/folders", {
-        method: isRename ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          isRename
-            ? { id: folderEditor.id, name: folderEditor.name }
-            : { name: folderEditor.name }
-        ),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Não foi possível salvar a pasta")
-      setFolderEditor(null)
-      await fetchLibrary()
-      toast.success(isRename ? "Pasta renomeada." : "Pasta criada.")
-    } catch (folderError) {
-      toast.error(folderError instanceof Error ? folderError.message : "Não foi possível salvar a pasta")
-    } finally {
-      setFolderSaving(false)
-    }
-  }
-
-  const deleteFolder = async (folder: MediaFolder) => {
-    const message =
-      folder._count.media > 0
-        ? `Apagar a pasta “${folder.name}”? As ${folder._count.media} mídia(s) voltarão para a Biblioteca e não serão excluídas.`
-        : `Apagar a pasta “${folder.name}”?`
-    const confirmed = await confirmToast(message, { confirmLabel: "Apagar", danger: true })
-    if (!confirmed) return
-
-    try {
-      const response = await fetch("/api/library/folders", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: folder.id }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Não foi possível apagar a pasta")
-      if (activeFolderId === folder.id) {
-        setActiveFolderId(null)
-        setSelected([])
-      }
-      await fetchLibrary()
-      toast.success("Pasta apagada.")
-    } catch (folderError) {
-      toast.error(folderError instanceof Error ? folderError.message : "Não foi possível apagar a pasta")
-    }
-  }
-
-  const moveSelected = async (folderId: string | null) => {
-    if (selected.length === 0) return
-    setMoving(true)
-
-    try {
-      const response = await fetch("/api/library", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selected, folderId }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Não foi possível mover os arquivos")
-      setSelected([])
-      setMoveOpen(false)
-      await fetchLibrary()
-      toast.success("Mídias movidas com sucesso.")
-    } catch (moveError) {
-      toast.error(moveError instanceof Error ? moveError.message : "Não foi possível mover os arquivos")
-    } finally {
-      setMoving(false)
-    }
-  }
-
-  const toggleSelected = (id: string) => {
-    setSelected((current) =>
-      current.includes(id) ? current.filter((itemId) => itemId !== id) : [...current, id]
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt={`Foto de @${username}`}
+        className={`${classes} shrink-0 rounded-full border border-white/10 object-cover`}
+        onError={() => setFailed(true)}
+      />
     )
   }
-
-  const copyUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success("Link copiado.")
-    } catch {
-      toast.error("Não foi possível copiar o link.")
-    }
-  }
-
-  const openFolder = (folderId: string | null) => {
-    setActiveFolderId(folderId)
-    setSelected([])
-    setFilter("all")
-  }
-
-  const startAutomation = () => {
-    const params = new URLSearchParams({ media: selected.join(",") })
-    router.push(`/dashboard/schedule?${params.toString()}`)
-  }
-
-  const uncategorizedCount = media.filter((item) => item.folderId === null).length
 
   return (
-    <div>
-      <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
+    <div
+      className={`${classes} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white`}
+    >
+      <Instagram size={size === "sm" ? 13 : 16} />
+    </div>
+  )
+}
+
+function SummaryCard({
+  label,
+  value,
+  icon: Icon,
+  iconClassName,
+  iconBackground,
+}: SummaryCardProps) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Biblioteca</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {activeFolder
-              ? `${currentMedia.length} arquivo${currentMedia.length !== 1 ? "s" : ""} em ${activeFolder.name}`
-              : `${media.length} arquivo${media.length !== 1 ? "s" : ""} salvo${media.length !== 1 ? "s" : ""} • ${folders.length} pasta${folders.length !== 1 ? "s" : ""}`}
+          <p className="text-xs text-gray-500">{label}</p>
+          <p className="mt-1 text-2xl font-bold tracking-tight text-white">
+            {formatNumber(value)}
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          {selected.length > 0 && (
-            <>
-              <button
-                onClick={() => setMoveOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2.5 text-sm font-medium text-gray-200 ring-1 ring-white/10 hover:bg-white/10"
-              >
-                <Move size={15} /> Mover ({selected.length})
-              </button>
-              <button
-                onClick={startAutomation}
-                className="flex items-center gap-2 rounded-lg bg-purple-500/15 px-4 py-2.5 text-sm font-medium text-purple-300 ring-1 ring-purple-500/30 hover:bg-purple-500/20"
-              >
-                <Layers3 size={15} /> Criar sequência ({selected.length})
-              </button>
-              <button
-                onClick={() => deleteMedia(selected)}
-                disabled={deleting}
-                className="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-300 ring-1 ring-red-500/20 hover:bg-red-500/15 disabled:opacity-50"
-              >
-                {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                Apagar
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => setFolderEditor({ mode: "create", name: "" })}
-            className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-gray-200 hover:bg-white/10"
-          >
-            <FolderPlus size={15} /> Nova pasta
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            accept="image/jpeg,video/mp4,video/quicktime"
-            className="hidden"
-            onChange={(event) => uploadFiles(Array.from(event.target.files || []))}
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-            {uploading ? "Enviando..." : "Adicionar arquivos"}
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-5 flex flex-wrap items-center gap-2 text-sm">
-        {activeFolder && (
-          <button
-            onClick={() => openFolder(null)}
-            className="mr-1 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white"
-            title="Voltar para a Biblioteca"
-          >
-            <ArrowLeft size={15} />
-          </button>
-        )}
-        <button
-          onClick={() => openFolder(null)}
-          className={`${activeFolder ? "text-gray-500 hover:text-white" : "font-medium text-white"}`}
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBackground}`}
         >
-          Biblioteca
-        </button>
-        {activeFolder && (
-          <>
-            <ChevronRight size={14} className="text-gray-700" />
-            <span className="font-medium text-white">{activeFolder.name}</span>
-          </>
-        )}
+          <Icon size={16} className={iconClassName} />
+        </div>
       </div>
+    </div>
+  )
+}
 
-      {!loading && !activeFolder && folders.length > 0 && (
-        <div className="mb-8">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-600">Pastas</p>
-            <span className="text-xs text-gray-700">{uncategorizedCount} arquivo(s) fora de pastas</span>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {folders.map((folder) => (
-              <div
-                key={folder.id}
-                className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/[0.07] bg-[#111] p-4 transition-colors hover:border-purple-500/25 hover:bg-[#141414]"
-                onClick={() => openFolder(folder.id)}
-              >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
-                  <Folder size={21} fill="currentColor" className="fill-purple-500/15" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-white">{folder.name}</p>
-                  <p className="mt-1 text-xs text-gray-600">
-                    {folder._count.media} arquivo{folder._count.media !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setFolderEditor({ mode: "rename", id: folder.id, name: folder.name })
-                    }}
-                    className="rounded-lg p-2 text-gray-500 hover:bg-white/5 hover:text-white"
-                    title="Renomear pasta"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      deleteFolder(folder)
-                    }}
-                    className="rounded-lg p-2 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
-                    title="Apagar pasta"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+function StatusBadge({ status }: { status: string }) {
+  const config = STATUS_CONFIG[status] || STATUS_CONFIG.draft
+  const Icon = config.icon
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2">
-          {(["all", "video", "image"] as const).map((value) => (
-            <button
-              key={value}
-              onClick={() => setFilter(value)}
-              className={`rounded-lg border px-4 py-1.5 text-sm transition-colors ${
-                filter === value
-                  ? "border-purple-500/30 bg-purple-500/20 text-purple-300"
-                  : "border-white/5 bg-white/5 text-gray-500 hover:text-white"
-              }`}
-            >
-              {value === "all" ? "Todos" : value === "video" ? "Vídeos" : "Imagens"}
-            </button>
-          ))}
-        </div>
-        {filtered.length > 0 && (
-          <button
-            onClick={() =>
-              setSelected((current) =>
-                allFilteredSelected
-                  ? current.filter((id) => !filtered.some((item) => item.id === id))
-                  : Array.from(new Set<string>([...current, ...filtered.map((item) => item.id)]))
-              )
-            }
-            className="text-xs font-medium text-purple-400 hover:text-purple-300"
-          >
-            {allFilteredSelected ? "Limpar seleção" : "Selecionar todos"}
-          </button>
-        )}
-      </div>
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${config.className}`}
+    >
+      <Icon
+        size={12}
+        className={status === "publishing" ? "animate-spin" : ""}
+      />
+      {config.label}
+    </span>
+  )
+}
 
-      {loading && (
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="animate-spin text-purple-400" size={24} />
-        </div>
-      )}
+export default function HistoryPage() {
+  const [data, setData] = useState<HistoryData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [status, setStatus] = useState("all")
+  const [type, setType] = useState("all")
+  const [accountId, setAccountId] = useState("")
+  const [search, setSearch] = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
 
-      {!loading && filtered.length === 0 && (
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-16 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
-            <FolderOpen size={24} className="text-purple-400" />
-          </div>
-          <h3 className="mb-2 font-semibold text-white">
-            {activeFolder
-              ? "Esta pasta está vazia"
-              : folders.length > 0 && media.length > 0
-                ? "Nenhum arquivo fora das pastas"
-                : "Nenhum arquivo ainda"}
-          </h3>
-          <p className="mx-auto max-w-sm text-sm text-gray-500">
-            {activeFolder
-              ? "Adicione novos arquivos aqui ou selecione mídias em outra pasta e use Mover."
-              : folders.length > 0 && media.length > 0
-                ? "Abra uma pasta acima ou adicione novos arquivos diretamente à Biblioteca."
-                : "Adicione imagens JPEG e vídeos MP4/MOV. Você também pode criar pastas para organizar as mídias."}
+  const loadHistory = useCallback(
+    async (showRefresh = false) => {
+      setRefreshing(showRefresh)
+
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: "20",
+          status,
+          type,
+          from: dateFrom,
+          to: dateTo,
+        })
+
+        if (accountId) params.set("accountId", accountId)
+        if (search) params.set("search", search)
+
+        const response = await fetch(`/api/posts/history?${params}`, {
+          cache: "no-store",
+        })
+        const payload = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "Não foi possível carregar o histórico."
+          )
+        }
+
+        setData(payload)
+        if (showRefresh) toast.success("Histórico atualizado.")
+      } catch (loadError) {
+        toast.error(
+          loadError instanceof Error
+            ? loadError.message
+            : "Não foi possível carregar o histórico.",
+          { id: "history-load-error" }
+        )
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    },
+    [accountId, dateFrom, dateTo, page, search, status, type]
+  )
+
+  useEffect(() => {
+    setLoading(true)
+    void loadHistory()
+  }, [loadHistory])
+
+  const activeFilterCount = useMemo(
+    () =>
+      [
+        status !== "all",
+        type !== "all",
+        Boolean(accountId),
+        Boolean(search),
+      ].filter(Boolean).length,
+    [accountId, search, status, type]
+  )
+
+  function applySearch() {
+    setPage(1)
+    setSearch(searchInput.trim())
+  }
+
+  function clearFilters() {
+    setPage(1)
+    setStatus("all")
+    setType("all")
+    setAccountId("")
+    setSearch("")
+    setSearchInput("")
+    setDateFrom("")
+    setDateTo("")
+  }
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Histórico</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Logs completos das publicações, entregas e falhas por conta.
           </p>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={() => void loadHistory(true)}
+          disabled={refreshing}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-gray-300 transition hover:border-purple-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+          Atualizar logs
+        </button>
+      </header>
 
-      {!loading && filtered.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {filtered.map((item) => {
-            const isSelected = selected.includes(item.id)
-            return (
-              <div
-                key={item.id}
-                className={`group overflow-hidden rounded-2xl border bg-[#111] transition-colors ${
-                  isSelected ? "border-purple-500/50" : "border-white/[0.07] hover:border-white/15"
-                }`}
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <SummaryCard
+          label="Total no período"
+          value={data?.summary.total || 0}
+          icon={FileText}
+          iconClassName="text-purple-300"
+          iconBackground="bg-purple-500/10"
+        />
+        <SummaryCard
+          label="Publicadas"
+          value={data?.summary.published || 0}
+          icon={CheckCircle2}
+          iconClassName="text-green-300"
+          iconBackground="bg-green-500/10"
+        />
+        <SummaryCard
+          label="Parciais"
+          value={data?.summary.partial || 0}
+          icon={AlertCircle}
+          iconClassName="text-yellow-300"
+          iconBackground="bg-yellow-500/10"
+        />
+        <SummaryCard
+          label="Com falha"
+          value={data?.summary.failed || 0}
+          icon={XCircle}
+          iconClassName="text-red-300"
+          iconBackground="bg-red-500/10"
+        />
+        <SummaryCard
+          label="Agendadas"
+          value={data?.summary.scheduled || 0}
+          icon={CalendarClock}
+          iconClassName="text-blue-300"
+          iconBackground="bg-blue-500/10"
+        />
+      </section>
+
+      <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,190px))]">
+          <div className="flex h-10 items-center rounded-xl border border-white/10 bg-black/20 px-3 focus-within:border-purple-500/40">
+            <Search size={15} className="shrink-0 text-gray-600" />
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") applySearch()
+              }}
+              placeholder="Legenda, @conta ou erro..."
+              className="h-full min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none placeholder:text-gray-600"
+            />
+            <button
+              type="button"
+              onClick={applySearch}
+              className="text-xs font-medium text-purple-300 hover:text-purple-200"
+            >
+              Buscar
+            </button>
+          </div>
+
+          <select
+            value={status}
+            onChange={(event) => {
+              setPage(1)
+              setStatus(event.target.value)
+            }}
+            className="h-10 rounded-xl border border-white/10 bg-[#161616] px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
+          >
+            <option value="all">Todos os status</option>
+            <option value="published">Publicado</option>
+            <option value="partial">Parcial</option>
+            <option value="failed">Falhou</option>
+            <option value="scheduled">Agendado</option>
+            <option value="publishing">Publicando</option>
+            <option value="draft">Rascunho</option>
+            <option value="cancelled">Cancelado</option>
+          </select>
+
+          <select
+            value={type}
+            onChange={(event) => {
+              setPage(1)
+              setType(event.target.value)
+            }}
+            className="h-10 rounded-xl border border-white/10 bg-[#161616] px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
+          >
+            <option value="all">Todos os conteúdos</option>
+            <option value="image">Imagens</option>
+            <option value="reel">Reels</option>
+            <option value="story">Stories</option>
+          </select>
+
+          <select
+            value={accountId}
+            onChange={(event) => {
+              setPage(1)
+              setAccountId(event.target.value)
+            }}
+            className="h-10 rounded-xl border border-white/10 bg-[#161616] px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
+          >
+            <option value="">Todas as contas</option>
+            {(data?.accounts || []).map((account) => (
+              <option key={account.id} value={account.id}>
+                @{account.username}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-3 flex flex-col gap-3 border-t border-white/[0.06] pt-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <Filter size={13} />
+              {activeFilterCount > 0
+                ? `${activeFilterCount} filtro${activeFilterCount > 1 ? "s" : ""} ativo${activeFilterCount > 1 ? "s" : ""}`
+                : "Sem filtros adicionais"}
+            </div>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-xs font-medium text-purple-300 hover:text-purple-200"
               >
-                <div className="relative aspect-square bg-black">
-                  {item.type === "video" ? (
-                    <video src={item.url} className="h-full w-full object-cover" muted preload="metadata" />
-                  ) : (
-                    <img src={item.url} alt={item.fileName} className="h-full w-full object-cover" />
-                  )}
+                Limpar filtros
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                setPage(1)
+                setDateFrom(event.target.value)
+              }}
+              className="h-9 rounded-lg border border-white/10 bg-[#161616] px-2.5 text-xs text-gray-300 outline-none focus:border-purple-500/40"
+            />
+            <span className="text-xs text-gray-600">até</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                setPage(1)
+                setDateTo(event.target.value)
+              }}
+              className="h-9 rounded-lg border border-white/10 bg-[#161616] px-2.5 text-xs text-gray-300 outline-none focus:border-purple-500/40"
+            />
+          </div>
+        </div>
+      </section>
+
+      {loading ? (
+        <div className="flex min-h-72 items-center justify-center rounded-2xl border border-white/[0.07] bg-[#111]">
+          <div className="text-center">
+            <Loader2 size={26} className="mx-auto animate-spin text-purple-400" />
+            <p className="mt-3 text-sm text-gray-500">Carregando histórico...</p>
+          </div>
+        </div>
+      ) : data?.posts.length ? (
+        <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111]">
+          <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
+            <div>
+              <h2 className="text-sm font-semibold text-white">Logs de publicação</h2>
+              <p className="mt-0.5 text-xs text-gray-600">
+                {formatNumber(data.pagination.total)} registro
+                {data.pagination.total === 1 ? "" : "s"} encontrado
+                {data.pagination.total === 1 ? "" : "s"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-gray-600">
+              <span className="h-2 w-2 rounded-full bg-green-400" />
+              Atualizado {formatRelativeDate(data.generatedAt)}
+            </div>
+          </div>
+
+          <div className="divide-y divide-white/[0.06]">
+            {data.posts.map((post) => {
+              const expanded = expandedId === post.id
+              const config = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
+              const accounts = Array.from(
+                new Map(
+                  post.logs.map((log) => [
+                    log.instagramAccount.id,
+                    log.instagramAccount,
+                  ])
+                ).values()
+              )
+
+              return (
+                <article key={post.id} className="group">
                   <button
-                    onClick={() => toggleSelected(item.id)}
-                    className={`absolute left-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg border backdrop-blur ${
-                      isSelected
-                        ? "border-purple-400 bg-purple-500 text-white"
-                        : "border-white/20 bg-black/50 text-transparent hover:text-white"
-                    }`}
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : post.id)}
+                    className="grid w-full gap-4 p-5 text-left transition hover:bg-white/[0.02] lg:grid-cols-[auto_minmax(0,1fr)_auto]"
                   >
-                    <Check size={15} />
+                    <div className="relative hidden pt-1 sm:block">
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-xl border ${config.className}`}
+                      >
+                        {post.type === "story" ? (
+                          <Sparkles size={17} />
+                        ) : post.type === "reel" ? (
+                          <Film size={17} />
+                        ) : (
+                          <ImageIcon size={17} />
+                        )}
+                      </div>
+                      <span
+                        className={`absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#111] ${config.dotClassName}`}
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge status={post.status} />
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600">
+                          {post.type === "story" ? "Story" : post.type === "reel" ? "Reel" : "Imagem"}
+                        </span>
+                        <span className="text-[11px] text-gray-700">#{post.id.slice(-7)}</span>
+                      </div>
+
+                      <p className="mt-3 line-clamp-2 text-sm leading-6 text-gray-300">
+                        {post.type === "story" ? "Story publicado pela API oficial" : post.caption || post.hashtags || "Publicação sem legenda"}
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-gray-600">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Clock3 size={12} />
+                          Criada {formatDate(post.createdAt)}
+                        </span>
+                        {post.publishedAt && (
+                          <span className="inline-flex items-center gap-1.5 text-green-500/70">
+                            <Send size={12} />
+                            Publicada {formatDate(post.publishedAt)}
+                          </span>
+                        )}
+                        {post.scheduledAt && (
+                          <span className="inline-flex items-center gap-1.5 text-blue-400/70">
+                            <CalendarClock size={12} />
+                            Agendada {formatDate(post.scheduledAt)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 lg:justify-end">
+                      <div className="flex -space-x-2">
+                        {accounts.slice(0, 4).map((account) => (
+                          <AccountAvatar
+                            key={account.id}
+                            src={account.profilePicture}
+                            username={account.username}
+                            size="sm"
+                          />
+                        ))}
+                        {accounts.length > 4 && (
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#111] bg-[#242424] text-[10px] font-semibold text-gray-400">
+                            +{accounts.length - 4}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="hidden min-w-28 text-right sm:block">
+                        <p className="text-xs font-medium text-gray-300">
+                          {post.successCount} sucesso
+                          {post.successCount === 1 ? "" : "s"}
+                        </p>
+                        <p
+                          className={`mt-1 text-[11px] ${
+                            post.errorCount > 0 ? "text-red-400" : "text-gray-600"
+                          }`}
+                        >
+                          {post.errorCount} falha{post.errorCount === 1 ? "" : "s"}
+                        </p>
+                      </div>
+
+                      <ChevronDown
+                        size={17}
+                        className={`text-gray-600 transition-transform ${
+                          expanded ? "rotate-180 text-purple-300" : ""
+                        }`}
+                      />
+                    </div>
                   </button>
-                  {item.type === "video" && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur">
-                        <Play size={17} fill="currentColor" />
+
+                  {expanded && (
+                    <div className="border-t border-white/[0.06] bg-black/20 px-5 py-5">
+                      <div className="grid gap-5 xl:grid-cols-[240px_minmax(0,1fr)]">
+                        <div>
+                          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+                            Conteúdo
+                          </p>
+                          <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#141414]">
+                            {post.thumbnailUrl ? (
+                              <img
+                                src={post.thumbnailUrl}
+                                alt="Prévia da publicação"
+                                className="aspect-video w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex aspect-video items-center justify-center bg-white/[0.03]">
+                                {post.type === "story" ? (
+                                  <Sparkles size={26} className="text-pink-400" />
+                                ) : post.type === "reel" ? (
+                                  <Film size={26} className="text-purple-400" />
+                                ) : (
+                                  <ImageIcon size={26} className="text-pink-400" />
+                                )}
+                              </div>
+                            )}
+                            <div className="space-y-2 p-3">
+                              <p className="line-clamp-3 text-xs leading-5 text-gray-400">
+                                {post.type === "story" ? "Stories não recebem legenda pela API oficial." : post.caption || "Sem legenda"}
+                              </p>
+                              {post.hashtags && (
+                                <p className="line-clamp-2 text-[11px] leading-5 text-purple-300/70">
+                                  {post.hashtags}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+                            Entregas por conta
+                          </p>
+
+                          {post.logs.length > 0 ? (
+                            <div className="space-y-2">
+                              {post.logs.map((log, index) => {
+                                const success = log.status === "success"
+                                return (
+                                  <div
+                                    key={log.id}
+                                    className="relative flex gap-3 rounded-xl border border-white/[0.07] bg-[#141414] p-3"
+                                  >
+                                    {index < post.logs.length - 1 && (
+                                      <span className="absolute bottom-[-9px] left-[28px] top-[44px] w-px bg-white/[0.08]" />
+                                    )}
+                                    <AccountAvatar
+                                      src={log.instagramAccount.profilePicture}
+                                      username={log.instagramAccount.username}
+                                      size="sm"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                          <p className="text-sm font-medium text-white">
+                                            @{log.instagramAccount.username}
+                                          </p>
+                                          {log.instagramAccount.name && (
+                                            <p className="mt-0.5 text-[11px] text-gray-600">
+                                              {log.instagramAccount.name}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <span
+                                          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                                            success
+                                              ? "border-green-500/20 bg-green-500/10 text-green-300"
+                                              : "border-red-500/20 bg-red-500/10 text-red-300"
+                                          }`}
+                                        >
+                                          {success ? (
+                                            <CheckCircle2 size={11} />
+                                          ) : (
+                                            <XCircle size={11} />
+                                          )}
+                                          {success ? "Entregue" : "Erro"}
+                                        </span>
+                                      </div>
+
+                                      {log.errorMessage && (
+                                        <div className="mt-3 rounded-lg border border-red-500/15 bg-red-500/[0.07] px-3 py-2 text-xs leading-5 text-red-300">
+                                          {log.errorMessage}
+                                        </div>
+                                      )}
+
+                                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-600">
+                                        <span>{formatDate(log.createdAt)}</span>
+                                        {log.mediaId && (
+                                          <span className="font-mono">
+                                            Media ID: {log.mediaId}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] text-center">
+                              <CircleDashed size={22} className="text-gray-600" />
+                              <p className="mt-3 text-sm font-medium text-gray-400">
+                                Nenhuma tentativa registrada
+                              </p>
+                              <p className="mt-1 max-w-sm text-xs text-gray-600">
+                                Rascunhos e agendamentos ainda não possuem logs por conta.
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
-                  <div className="absolute bottom-3 right-3 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={() => copyUrl(item.url)}
-                      className="rounded-lg bg-black/70 p-2 text-white backdrop-blur hover:bg-black/90"
-                      title="Copiar URL"
-                    >
-                      <Copy size={15} />
-                    </button>
-                    <button
-                      onClick={() => deleteMedia([item.id])}
-                      className="rounded-lg bg-red-500/80 p-2 text-white backdrop-blur hover:bg-red-500"
-                      title="Apagar arquivo"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-                <div className="p-3.5">
-                  <div className="mb-2 flex items-center gap-2">
-                    {item.type === "video" ? (
-                      <Film size={13} className="text-purple-400" />
-                    ) : (
-                      <ImageIcon size={13} className="text-pink-400" />
-                    )}
-                    <p className="truncate text-sm font-medium text-white">{item.fileName}</p>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-gray-600">
-                    <span>{formatBytes(item.bytes)}</span>
-                    <span>{new Date(item.createdAt).toLocaleDateString("pt-BR")}</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+                </article>
+              )
+            })}
+          </div>
 
-      {folderEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-white">
-                  {folderEditor.mode === "create" ? "Criar nova pasta" : "Renomear pasta"}
-                </h2>
-                <p className="mt-1 text-xs text-gray-500">Use um nome fácil de encontrar depois.</p>
-              </div>
+          <div className="flex flex-col gap-3 border-t border-white/[0.06] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-gray-600">
+              Página {data.pagination.page} de {data.pagination.totalPages}
+            </p>
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setFolderEditor(null)}
-                className="rounded-lg p-2 text-gray-500 hover:bg-white/5 hover:text-white"
+                type="button"
+                disabled={data.pagination.page <= 1}
+                onClick={() => {
+                  setExpandedId(null)
+                  setPage((current) => Math.max(1, current - 1))
+                }}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-xs text-gray-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <X size={16} />
-              </button>
-            </div>
-            <input
-              autoFocus
-              maxLength={80}
-              value={folderEditor.name}
-              onChange={(event) =>
-                setFolderEditor((current) =>
-                  current ? { ...current, name: event.target.value } : current
-                )
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter") saveFolder()
-              }}
-              placeholder="Ex.: MÍDIAS DO DIA 02"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-gray-700 focus:border-purple-500/50"
-            />
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setFolderEditor(null)}
-                className="rounded-lg px-4 py-2.5 text-sm text-gray-400 hover:bg-white/5 hover:text-white"
-              >
-                Cancelar
+                <ChevronLeft size={14} />
+                Anterior
               </button>
               <button
-                onClick={saveFolder}
-                disabled={folderSaving || !folderEditor.name.trim()}
-                className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+                type="button"
+                disabled={data.pagination.page >= data.pagination.totalPages}
+                onClick={() => {
+                  setExpandedId(null)
+                  setPage((current) => current + 1)
+                }}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-xs text-gray-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {folderSaving && <Loader2 size={14} className="animate-spin" />}
-                {folderEditor.mode === "create" ? "Criar pasta" : "Salvar nome"}
+                Próxima
+                <ChevronRight size={14} />
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {moveOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-white">Mover arquivos</h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  Escolha o destino de {selected.length} arquivo{selected.length !== 1 ? "s" : ""}.
-                </p>
-              </div>
-              <button
-                onClick={() => setMoveOpen(false)}
-                disabled={moving}
-                className="rounded-lg p-2 text-gray-500 hover:bg-white/5 hover:text-white disabled:opacity-50"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-              <button
-                onClick={() => moveSelected(null)}
-                disabled={moving || activeFolderId === null}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-left hover:border-purple-500/30 hover:bg-purple-500/5 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 text-gray-400">
-                  <FolderOpen size={17} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">Biblioteca</p>
-                  <p className="text-xs text-gray-600">Sem pasta</p>
-                </div>
-              </button>
-
-              {folders.map((folder) => (
-                <button
-                  key={folder.id}
-                  onClick={() => moveSelected(folder.id)}
-                  disabled={moving || activeFolderId === folder.id}
-                  className="flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-left hover:border-purple-500/30 hover:bg-purple-500/5 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400">
-                    {moving ? <Folder size={17} /> : <Folder size={17} />}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-white">{folder.name}</p>
-                    <p className="text-xs text-gray-600">{folder._count.media} arquivo(s)</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {folders.length === 0 && activeFolderId === null && (
-              <p className="mt-4 text-center text-xs text-gray-600">Crie uma pasta primeiro para mover os arquivos.</p>
-            )}
+        </section>
+      ) : (
+        <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-white/[0.07] bg-[#111] px-5 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
+            <FileText size={24} className="text-purple-400" />
           </div>
+          <h2 className="mt-5 text-base font-semibold text-white">
+            Nenhum log encontrado
+          </h2>
+          <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">
+            As publicações e erros aparecerão aqui assim que você enviar conteúdo para alguma conta.
+          </p>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mt-5 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-purple-500"
+            >
+              Limpar filtros
+            </button>
+          )}
         </div>
       )}
     </div>
