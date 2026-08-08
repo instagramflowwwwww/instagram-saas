@@ -2,6 +2,12 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import {
+  INSTAGRAM_OFFICIAL_CONNECTION,
+  isInstagramDisconnectError,
+  maintainInstagramAccounts,
+  markInstagramAccountDisconnected,
+} from "@/lib/instagram-account-lifecycle"
+import {
   getMetaError,
   INSTAGRAM_GRAPH_VERSION,
   metaErrorMessage,
@@ -219,9 +225,17 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
       status: response.status,
       body: raw.slice(0, 1000),
     })
-    throw new Error(
-      "O acesso desta conta expirou. Reconecte a conta pelo App Meta."
-    )
+    const metaError = getMetaError(payload)
+    if (metaError?.code === 190) {
+      await markInstagramAccountDisconnected(account.id)
+    }
+    const error = new Error(
+      metaError
+        ? metaErrorMessage(metaError)
+        : "Não foi possível renovar o acesso desta conta agora. Tente novamente."
+    ) as Error & { metaCode?: number }
+    error.metaCode = metaError?.code
+    throw error
   }
 
   token = String(payload.access_token)
@@ -234,6 +248,7 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
     data: {
       accessToken: encryptValue(token),
       tokenExpiresAt: expiresAt,
+      connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
       isActive: true,
       lastActiveAt: new Date(),
     },
@@ -434,6 +449,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    await maintainInstagramAccounts(session.user.id)
     const requestUrl = new URL(request.url)
     const rawFrom = requestUrl.searchParams.get("from")
     const rawTo = requestUrl.searchParams.get("to")
@@ -472,6 +488,10 @@ export async function GET(request: Request) {
         post: { userId: session.user.id, publicationType: "post" },
         instagramAccount: {
           connectionType: "official",
+          isActive: true,
+          accessToken: { not: null },
+          appConfigId: { not: null },
+          tokenExpiresAt: { gt: new Date() },
         },
       },
       select: {
@@ -598,6 +618,10 @@ export async function GET(request: Request) {
           await savePerformanceResult(result)
           return result
         } catch (error) {
+          if (isInstagramDisconnectError(error)) {
+            await markInstagramAccountDisconnected(log.instagramAccount.id)
+          }
+
           const previous = cachedResult(log, now)
 
           if (log.performanceUpdatedAt && !log.performanceError) {
@@ -624,9 +648,26 @@ export async function GET(request: Request) {
       refreshedResults.map((result) => [result.id, result])
     )
 
-    const response = uniqueLogs.map(
-      (log) => refreshedById.get(log.id) || cachedResult(log, now)
+    const activeAccountIds = new Set(
+      (
+        await prisma.instagramAccount.findMany({
+          where: {
+            id: { in: uniqueLogs.map((log) => log.instagramAccountId) },
+            userId: session.user.id,
+            connectionType: "official",
+            isActive: true,
+            accessToken: { not: null },
+            appConfigId: { not: null },
+            tokenExpiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        })
+      ).map((account) => account.id)
     )
+
+    const response = uniqueLogs
+      .filter((log) => activeAccountIds.has(log.instagramAccountId))
+      .map((log) => refreshedById.get(log.id) || cachedResult(log, now))
 
     return NextResponse.json(response, {
       headers: {

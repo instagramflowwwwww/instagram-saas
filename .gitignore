@@ -3,3 +3,5 @@ node_modules
 prisma/dev.db
 .env
 .env.local
+
+tsconfig.tsbuildinfo

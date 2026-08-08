@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { markInstagramAccountDisconnected } from "@/lib/instagram-account-lifecycle"
 import {
   fetchInstagramProfile,
   getInstagramRedirectUri,
@@ -242,10 +243,7 @@ export async function GET(request: NextRequest) {
     const assignedProxy = await assignProxyToAccount(connectedAccount.id)
 
     if (!assignedProxy && isInstagramProxyRequired()) {
-      await prisma.instagramAccount.update({
-        where: { id: connectedAccount.id },
-        data: { isActive: false },
-      })
+      await markInstagramAccountDisconnected(connectedAccount.id)
       throw new Error(
         "Não há proxy disponível para esta conta. Importe novas proxies antes de conectar outra conta."
       )

@@ -24,12 +24,12 @@ export async function POST(
   }
 
   const failedItems = await prisma.postingBatchItem.findMany({
-    where: { batchId: batch.id, status: "failed" },
+    where: { batchId: batch.id, status: { in: ["failed", "partial"] } },
     select: { id: true, postId: true },
   })
   if (failedItems.length === 0) {
     return NextResponse.json(
-      { error: "Não existem itens totalmente falhos para repetir." },
+      { error: "Não existem itens com falha para repetir." },
       { status: 409 }
     )
   }
@@ -55,7 +55,7 @@ export async function POST(
       ? [
           prisma.post.updateMany({
             where: { id: { in: postIds } },
-            data: { status: "scheduled", publishedAt: null },
+            data: { status: "scheduled" },
           }),
         ]
       : []),

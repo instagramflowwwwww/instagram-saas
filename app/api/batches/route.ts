@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { isMediaDeliveryUrl } from "@/lib/media-storage"
 import { prisma } from "@/lib/prisma"
 
@@ -24,12 +25,14 @@ function cleanText(value: unknown, max = 2200) {
   return String(value || "").trim().slice(0, max)
 }
 
-function uniqueStrings(value: unknown, limit: number): string[] {
+function uniqueStrings(value: unknown, limit?: number): string[] {
   if (!Array.isArray(value)) return []
 
-  return Array.from(
+  const values = Array.from(
     new Set<string>(value.map((item: unknown) => String(item)))
-  ).slice(0, limit)
+  )
+
+  return typeof limit === "number" ? values.slice(0, limit) : values
 }
 
 export async function GET() {
@@ -38,12 +41,24 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
+  await maintainInstagramAccounts(session.user.id)
+  const now = new Date()
+
   const batches = await prisma.postingBatch.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "desc" },
     take: 30,
     include: {
       accounts: {
+        where: {
+          instagramAccount: {
+            connectionType: "official",
+            isActive: true,
+            accessToken: { not: null },
+            appConfigId: { not: null },
+            tokenExpiresAt: { gt: now },
+          },
+        },
         include: {
           instagramAccount: {
             select: {
@@ -92,10 +107,11 @@ export async function POST(request: Request) {
   }
 
   try {
+    await maintainInstagramAccounts(session.user.id)
     const body = await request.json()
 
     const mediaIds = uniqueStrings(body.mediaIds, 50)
-    const accountIds = uniqueStrings(body.accountIds, 20)
+    const accountIds = uniqueStrings(body.accountIds)
 
     const publicationType = String(body.publicationType || "post").toLowerCase()
     const captionMode = publicationType === "story" ? "none" : String(body.captionMode || "single")
@@ -153,6 +169,8 @@ export async function POST(request: Request) {
           userId: session.user.id,
           isActive: true,
           connectionType: "official",
+          accessToken: { not: null },
+          tokenExpiresAt: { gt: new Date() },
           appConfigId: { not: null },
         },
         select: { id: true },

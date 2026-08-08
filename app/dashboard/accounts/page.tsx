@@ -27,6 +27,7 @@ type InstagramAccount = {
   requiresReconnect: boolean
   tokenExpiresAt: string | null
   lastActiveAt: string
+  autoDeleteAt: string | null
   appId: string | null
   syncError: string | null
 }
@@ -155,6 +156,13 @@ export default function AccountsPage() {
   const officialCount = accounts.filter(
     (account) => account.connectionType === "official"
   ).length
+  const connectedCount = accounts.filter(
+    (account) =>
+      account.connectionType === "official" &&
+      account.isActive &&
+      !account.requiresReconnect
+  ).length
+  const reconnectCount = officialCount - connectedCount
   const legacyCount = accounts.length - officialCount
 
   return (
@@ -163,7 +171,8 @@ export default function AccountsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Contas do Instagram</h1>
           <p className="text-gray-500 mt-1">
-            {officialCount} conta(s) conectada(s) pela API oficial
+            {connectedCount} conectada(s) pela API oficial
+            {reconnectCount > 0 ? ` · ${reconnectCount} aguardando reconexão` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -320,7 +329,9 @@ export default function AccountsPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-gray-600">Última atualização</span>
+                    <span className="text-gray-600">
+                      {connected ? "Última atualização" : "Desconectada em"}
+                    </span>
                     <span className="text-gray-400">
                       {formatDate(account.lastActiveAt)}
                     </span>
@@ -331,6 +342,14 @@ export default function AccountsPage() {
                       {formatDate(account.tokenExpiresAt)}
                     </span>
                   </div>
+                  {!connected && account.autoDeleteAt && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-red-400/70">Remoção automática</span>
+                      <span className="text-red-300/80">
+                        {formatDate(account.autoDeleteAt)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2">

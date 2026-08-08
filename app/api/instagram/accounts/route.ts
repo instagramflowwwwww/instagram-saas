@@ -2,28 +2,21 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import {
-  fetchInstagramProfile,
-  parseMetaCount,
-} from "@/lib/instagram-meta"
+  INSTAGRAM_DISCONNECTED_CONNECTION,
+  INSTAGRAM_OFFICIAL_CONNECTION,
+  instagramDisconnectDeadline,
+  isInstagramAccountUsable,
+  isInstagramDisconnectError,
+  maintainInstagramAccounts,
+  markInstagramAccountDisconnected,
+  requiresInstagramReconnect,
+} from "@/lib/instagram-account-lifecycle"
+import { fetchInstagramProfile, parseMetaCount } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
 import { decryptValue } from "@/lib/secure-store"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-
-function requiresReconnect(account: {
-  connectionType: string
-  isActive: boolean
-  tokenExpiresAt: Date | null
-}) {
-  return (
-    account.connectionType !== "official" ||
-    !account.isActive ||
-    !account.tokenExpiresAt ||
-    account.tokenExpiresAt.getTime() <= Date.now()
-  )
-}
-
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -55,14 +48,14 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
+  await maintainInstagramAccounts(session.user.id)
+
   const accounts = await prisma.instagramAccount.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "desc" },
     include: {
       appConfig: {
-        select: {
-          metaAppId: true,
-        },
+        select: { metaAppId: true },
       },
     },
   })
@@ -74,14 +67,9 @@ export async function GET() {
       let currentAccount = account
       let syncError: string | null = null
 
-      if (
-        account.connectionType === "official" &&
-        account.isActive &&
-        account.accessToken &&
-        (!account.tokenExpiresAt || account.tokenExpiresAt.getTime() > Date.now())
-      ) {
+      if (isInstagramAccountUsable(account)) {
         try {
-          const accessToken = decryptValue(account.accessToken)
+          const accessToken = decryptValue(account.accessToken!)
           const profile = await fetchInstagramProfile(accessToken, account.id)
           const username = String(profile.username || account.username)
           const followerCount = parseMetaCount(profile.followers_count)
@@ -101,13 +89,13 @@ export async function GET() {
               followerCount:
                 followerCount === null ? account.followerCount : followerCount,
               mediaCount: mediaCount === null ? account.mediaCount : mediaCount,
+              connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
+              isActive: true,
               lastActiveAt: new Date(),
             },
             include: {
               appConfig: {
-                select: {
-                  metaAppId: true,
-                },
+                select: { metaAppId: true },
               },
             },
           })
@@ -116,8 +104,24 @@ export async function GET() {
             error instanceof Error
               ? error.message
               : "Não foi possível atualizar os dados da conta."
+
+          if (isInstagramDisconnectError(error)) {
+            const disconnected = await markInstagramAccountDisconnected(account.id)
+            currentAccount = {
+              ...account,
+              ...disconnected,
+              appConfig: account.appConfig,
+            }
+          }
         }
       }
+
+      const reconnect = requiresInstagramReconnect(currentAccount)
+      const autoDeleteAt = instagramDisconnectDeadline(currentAccount)
+      const exposedConnectionType =
+        currentAccount.connectionType === INSTAGRAM_DISCONNECTED_CONNECTION
+          ? INSTAGRAM_OFFICIAL_CONNECTION
+          : currentAccount.connectionType
 
       return {
         id: currentAccount.id,
@@ -127,7 +131,7 @@ export async function GET() {
         profilePicture: currentAccount.profilePicture,
         followerCount: currentAccount.followerCount,
         mediaCount: currentAccount.mediaCount,
-        connectionType: currentAccount.connectionType,
+        connectionType: exposedConnectionType,
         isActive: currentAccount.isActive,
         tokenExpiresAt: currentAccount.tokenExpiresAt,
         proxyAssignedAt: currentAccount.proxyAssignedAt,
@@ -135,7 +139,8 @@ export async function GET() {
         lastActiveAt: currentAccount.lastActiveAt,
         createdAt: currentAccount.createdAt,
         appId: currentAccount.appConfig?.metaAppId || null,
-        requiresReconnect: requiresReconnect(currentAccount),
+        requiresReconnect: reconnect,
+        autoDeleteAt,
         syncError,
       }
     }

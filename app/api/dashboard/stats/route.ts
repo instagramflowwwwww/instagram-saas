@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -79,6 +80,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
+  await maintainInstagramAccounts(session.user.id)
   const period = getPeriod(request)
 
   if (!period) {
@@ -112,6 +114,10 @@ export async function GET(request: Request) {
         where: {
           userId,
           connectionType: "official",
+          isActive: true,
+          accessToken: { not: null },
+          appConfigId: { not: null },
+          tokenExpiresAt: { gt: new Date() },
         },
         select: {
           id: true,
@@ -165,6 +171,13 @@ export async function GET(request: Request) {
           status: "error",
           createdAt: currentRange,
           post: { userId },
+          instagramAccount: {
+            connectionType: "official",
+            isActive: true,
+            accessToken: { not: null },
+            appConfigId: { not: null },
+            tokenExpiresAt: { gt: new Date() },
+          },
         },
       }),
       prisma.postLog.count({
@@ -172,12 +185,23 @@ export async function GET(request: Request) {
           status: "error",
           createdAt: previousRange,
           post: { userId },
+          instagramAccount: {
+            connectionType: "official",
+            isActive: true,
+            accessToken: { not: null },
+            appConfigId: { not: null },
+            tokenExpiresAt: { gt: new Date() },
+          },
         },
       }),
       prisma.instagramAccount.count({
         where: {
           userId,
           connectionType: "official",
+          isActive: true,
+          accessToken: { not: null },
+          appConfigId: { not: null },
+          tokenExpiresAt: { gt: new Date() },
           createdAt: currentRange,
         },
       }),
@@ -185,6 +209,10 @@ export async function GET(request: Request) {
         where: {
           userId,
           connectionType: "official",
+          isActive: true,
+          accessToken: { not: null },
+          appConfigId: { not: null },
+          tokenExpiresAt: { gt: new Date() },
           createdAt: previousRange,
         },
       }),
@@ -208,6 +236,15 @@ export async function GET(request: Request) {
           publishedAt: true,
           scheduledAt: true,
           logs: {
+            where: {
+              instagramAccount: {
+                connectionType: "official",
+                isActive: true,
+                accessToken: { not: null },
+                appConfigId: { not: null },
+                tokenExpiresAt: { gt: new Date() },
+              },
+            },
             select: {
               status: true,
               errorMessage: true,
@@ -227,11 +264,7 @@ export async function GET(request: Request) {
       }),
     ])
 
-    const activeAccounts = accounts.filter(
-      (account) =>
-        account.isActive &&
-        (!account.tokenExpiresAt || account.tokenExpiresAt.getTime() > Date.now())
-    )
+    const activeAccounts = accounts
     const totalFollowers = activeAccounts.reduce(
       (sum, account) => sum + (account.followerCount || 0),
       0
@@ -276,12 +309,7 @@ export async function GET(request: Request) {
       },
       accounts: accounts.slice(0, 6).map((account) => ({
         ...account,
-        requiresReconnect:
-          !account.isActive ||
-          Boolean(
-            account.tokenExpiresAt &&
-              account.tokenExpiresAt.getTime() <= Date.now()
-          ),
+        requiresReconnect: false,
       })),
       recentPosts: recentPosts.map((post) => {
         const successCount = post.logs.filter(

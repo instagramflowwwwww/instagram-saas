@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import type { Prisma } from "@prisma/client"
 import { authOptions } from "@/lib/auth"
+import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -18,12 +19,20 @@ const ALLOWED_STATUSES = new Set([
   "cancelled",
 ])
 
+function activeAccountFilter(now = new Date()): Prisma.InstagramAccountWhereInput {
+  return {
+    connectionType: "official",
+    isActive: true,
+    accessToken: { not: null },
+    appConfigId: { not: null },
+    tokenExpiresAt: { gt: now },
+  }
+}
+
 function parseDate(value: string | null, endOfDay = false) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-
   const time = endOfDay ? "23:59:59.999" : "00:00:00.000"
   const date = new Date(`${value}T${time}${BRAZIL_OFFSET}`)
-
   return Number.isNaN(date.getTime()) ? null : date
 }
 
@@ -41,9 +50,7 @@ function buildBaseWhere(params: {
   accountId: string
   search: string
 }): Prisma.PostWhereInput {
-  const where: Prisma.PostWhereInput = {
-    userId: params.userId,
-  }
+  const where: Prisma.PostWhereInput = { userId: params.userId }
 
   if (params.from || params.to) {
     where.createdAt = {
@@ -56,20 +63,17 @@ function buildBaseWhere(params: {
     where.publicationType = "post"
     where.imageUrl = { not: null }
   }
-
   if (params.type === "reel") {
     where.publicationType = "post"
     where.videoUrl = { not: null }
   }
-
-  if (params.type === "story") {
-    where.publicationType = "story"
-  }
+  if (params.type === "story") where.publicationType = "story"
 
   if (params.accountId) {
     where.logs = {
       some: {
         instagramAccountId: params.accountId,
+        instagramAccount: activeAccountFilter(),
       },
     }
   }
@@ -82,6 +86,7 @@ function buildBaseWhere(params: {
         logs: {
           some: {
             instagramAccount: {
+              ...activeAccountFilter(),
               username: {
                 contains: params.search.replace(/^@/, ""),
                 mode: "insensitive",
@@ -94,6 +99,7 @@ function buildBaseWhere(params: {
         logs: {
           some: {
             errorMessage: { contains: params.search, mode: "insensitive" },
+            instagramAccount: activeAccountFilter(),
           },
         },
       },
@@ -105,10 +111,11 @@ function buildBaseWhere(params: {
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions)
-
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
+
+  await maintainInstagramAccounts(session.user.id)
 
   const { searchParams } = new URL(request.url)
   const page = readPositiveInteger(searchParams.get("page"), 1, 100_000)
@@ -121,24 +128,13 @@ export async function GET(request: Request) {
   const to = parseDate(searchParams.get("to"), true)
 
   if (from && to && from.getTime() > to.getTime()) {
-    return NextResponse.json(
-      { error: "O período informado é inválido." },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "O período informado é inválido." }, { status: 400 })
   }
-
   if (!["all", "image", "reel", "story"].includes(type)) {
-    return NextResponse.json(
-      { error: "O tipo de conteúdo informado é inválido." },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "O tipo de conteúdo informado é inválido." }, { status: 400 })
   }
-
   if (status !== "all" && !ALLOWED_STATUSES.has(status)) {
-    return NextResponse.json(
-      { error: "O status informado é inválido." },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "O status informado é inválido." }, { status: 400 })
   }
 
   const baseWhere = buildBaseWhere({
@@ -153,6 +149,7 @@ export async function GET(request: Request) {
     ...baseWhere,
     ...(status !== "all" ? { status } : {}),
   }
+  const activeAccounts = activeAccountFilter()
 
   try {
     const [posts, total, groupedStatuses, accounts] = await Promise.all([
@@ -170,6 +167,7 @@ export async function GET(request: Request) {
           publishedAt: true,
           createdAt: true,
           logs: {
+            where: { instagramAccount: activeAccounts },
             select: {
               id: true,
               status: true,
@@ -200,17 +198,14 @@ export async function GET(request: Request) {
         _count: { _all: true },
       }),
       prisma.instagramAccount.findMany({
-        where: {
-          userId: session.user.id,
-          connectionType: "official",
-        },
+        where: { userId: session.user.id, ...activeAccounts },
         select: {
           id: true,
           username: true,
           profilePicture: true,
           isActive: true,
         },
-        orderBy: [{ isActive: "desc" }, { username: "asc" }],
+        orderBy: { username: "asc" },
       }),
     ])
 
@@ -235,12 +230,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       posts: posts.map((post) => {
-        const successCount = post.logs.filter(
-          (log) => log.status === "success"
-        ).length
-        const errorCount = post.logs.filter(
-          (log) => log.status === "error"
-        ).length
+        const successCount = post.logs.filter((log) => log.status === "success").length
+        const errorCount = post.logs.filter((log) => log.status === "error").length
 
         return {
           ...post,
@@ -248,9 +239,7 @@ export async function GET(request: Request) {
           thumbnailUrl: post.imageUrl,
           successCount,
           errorCount,
-          accountCount: new Set(
-            post.logs.map((log) => log.instagramAccount.id)
-          ).size,
+          accountCount: new Set(post.logs.map((log) => log.instagramAccount.id)).size,
         }
       }),
       summary,

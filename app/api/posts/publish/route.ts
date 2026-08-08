@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { isMediaDeliveryUrl } from "@/lib/media-storage"
 import { publishExistingPost } from "@/lib/instagram-publisher"
 import { prisma } from "@/lib/prisma"
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await maintainInstagramAccounts(session.user.id)
     const body = await request.json()
     const videoUrl = String(body.videoUrl || "")
     const imageUrl = String(body.imageUrl || "")
@@ -47,6 +49,28 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Selecione pelo menos uma conta." },
         { status: 400 }
+      )
+    }
+
+    const connectedAccounts = await prisma.instagramAccount.count({
+      where: {
+        id: { in: accountIds },
+        userId: session.user.id,
+        connectionType: "official",
+        isActive: true,
+        accessToken: { not: null },
+        appConfigId: { not: null },
+        tokenExpiresAt: { gt: new Date() },
+      },
+    })
+
+    if (connectedAccounts !== accountIds.length) {
+      return NextResponse.json(
+        {
+          error:
+            "Uma ou mais contas foram desconectadas. Atualize a página e selecione somente contas conectadas.",
+        },
+        { status: 409 }
       )
     }
 

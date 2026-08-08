@@ -162,7 +162,11 @@ export async function fetchInstagramProfile(
       body: raw.slice(0, 1000),
     })
 
-    throw new Error(metaErrorMessage(error))
+    const requestError = new Error(metaErrorMessage(error)) as Error & {
+      metaCode?: number
+    }
+    requestError.metaCode = error?.code
+    throw requestError
   }
 
   return payload as InstagramProfile

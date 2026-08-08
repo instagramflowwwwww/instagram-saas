@@ -1,4 +1,11 @@
 import {
+  INSTAGRAM_OFFICIAL_CONNECTION,
+  isInstagramAccountUsable,
+  isInstagramDisconnectError,
+  maintainInstagramAccounts,
+  markInstagramAccountDisconnected,
+} from "@/lib/instagram-account-lifecycle"
+import {
   getMetaError,
   INSTAGRAM_GRAPH_VERSION,
   metaErrorMessage,
@@ -13,6 +20,7 @@ export type PublishResult = {
   username: string
   status: "success" | "error"
   error?: string
+  alreadyPublished?: boolean
 }
 
 type OfficialAccount = {
@@ -21,6 +29,7 @@ type OfficialAccount = {
   igUserId: string
   accessToken: string | null
   tokenExpiresAt: Date | null
+  appConfigId: string | null
   connectionType: string
   isActive: boolean
 }
@@ -29,9 +38,34 @@ const GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`
 const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
 const WAIT_INTERVAL = 4_000
 const MAX_STATUS_CHECKS = 35
+const MAX_ACCOUNT_ATTEMPTS = 3
+const ACCOUNT_CONCURRENCY = 4
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+) {
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+
+  async function run() {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await worker(items[index], index)
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => run())
+  )
+
+  return results
 }
 
 async function metaRequest(
@@ -48,10 +82,7 @@ async function metaRequest(
   const { searchParams: _searchParams, ...requestOptions } = options
   const response = await fetchInstagramRequest(
     url,
-    {
-      ...requestOptions,
-      cache: "no-store",
-    },
+    { ...requestOptions, cache: "no-store" },
     accountId
   )
   const { payload, raw } = await readJsonResponse(response)
@@ -102,7 +133,14 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
       status: response.status,
       body: raw.slice(0, 1000),
     })
-    throw new Error("O acesso desta conta expirou. Reconecte a conta pelo App Meta.")
+    const metaError = getMetaError(payload)
+    const error = new Error(
+      metaError
+        ? metaErrorMessage(metaError)
+        : "Não foi possível renovar o acesso desta conta agora. Tente novamente."
+    ) as Error & { metaCode?: number }
+    error.metaCode = metaError?.code
+    throw error
   }
 
   token = String(payload.access_token)
@@ -115,6 +153,7 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
     data: {
       accessToken: encryptValue(token),
       tokenExpiresAt: expiresAt,
+      connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
       isActive: true,
       lastActiveAt: new Date(),
     },
@@ -132,17 +171,12 @@ async function createContainer(params: {
   caption: string
   publicationType: string
 }) {
-  const body = new URLSearchParams({
-    access_token: params.token,
-  })
+  const body = new URLSearchParams({ access_token: params.token })
 
   if (params.publicationType === "story") {
     body.set("media_type", "STORIES")
-    if (params.videoUrl) {
-      body.set("video_url", params.videoUrl)
-    } else {
-      body.set("image_url", params.imageUrl)
-    }
+    if (params.videoUrl) body.set("video_url", params.videoUrl)
+    else body.set("image_url", params.imageUrl)
   } else if (params.videoUrl) {
     body.set("media_type", "REELS")
     body.set("video_url", params.videoUrl)
@@ -164,10 +198,7 @@ async function createContainer(params: {
     }
   )
 
-  if (!payload.id) {
-    throw new Error("A Meta não retornou o contêiner da publicação.")
-  }
-
+  if (!payload.id) throw new Error("A Meta não retornou o contêiner da publicação.")
   return String(payload.id)
 }
 
@@ -218,11 +249,109 @@ async function publishContainer(
     }
   )
 
-  if (!payload.id) {
-    throw new Error("A Meta não retornou o ID da publicação.")
+  if (!payload.id) throw new Error("A Meta não retornou o ID da publicação.")
+  return String(payload.id)
+}
+
+function isRetryablePrePublishError(error: unknown) {
+  const metaCode = (error as Error & { metaCode?: number })?.metaCode
+  if ([4, 17, 32].includes(metaCode || -1)) return true
+
+  const message = error instanceof Error ? error.message.toLowerCase() : ""
+  return [
+    "tempo limite",
+    "demorou demais",
+    "proxy",
+    "temporário",
+    "temporariamente",
+    "timeout",
+    "fetch failed",
+  ].some((fragment) => message.includes(fragment))
+}
+
+async function publishToAccount(params: {
+  account: OfficialAccount
+  post: {
+    id: string
+    imageUrl: string | null
+    videoUrl: string | null
+    coverUrl: string | null
+    publicationType: string
+  }
+  coverUrl?: string
+  caption: string
+}) {
+  let lastError: unknown = null
+
+  for (let attempt = 1; attempt <= MAX_ACCOUNT_ATTEMPTS; attempt += 1) {
+    let stage: "prepare" | "publish" = "prepare"
+
+    try {
+      const token = await refreshAccessTokenIfNeeded(params.account)
+      const containerId = await createContainer({
+        account: params.account,
+        token,
+        imageUrl: params.post.imageUrl || "",
+        videoUrl: params.post.videoUrl || "",
+        coverUrl: params.coverUrl || params.post.coverUrl || "",
+        caption: params.post.publicationType === "story" ? "" : params.caption,
+        publicationType: params.post.publicationType,
+      })
+
+      await waitUntilReady(containerId, token, params.account.id)
+      stage = "publish"
+      const mediaId = await publishContainer(params.account, containerId, token)
+
+      await prisma.$transaction([
+        prisma.instagramAccount.update({
+          where: { id: params.account.id },
+          data: {
+            connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
+            isActive: true,
+            lastActiveAt: new Date(),
+          },
+        }),
+        prisma.postLog.deleteMany({
+          where: {
+            postId: params.post.id,
+            instagramAccountId: params.account.id,
+            status: "error",
+          },
+        }),
+        prisma.postLog.create({
+          data: {
+            postId: params.post.id,
+            instagramAccountId: params.account.id,
+            status: "success",
+            mediaId,
+          },
+        }),
+      ])
+
+      return
+    } catch (error) {
+      lastError = error
+
+      if (isInstagramDisconnectError(error)) {
+        await markInstagramAccountDisconnected(params.account.id)
+        break
+      }
+
+      // Depois de media_publish não repetimos automaticamente: se a resposta
+      // se perder, uma nova tentativa poderia criar uma publicação duplicada.
+      const canRetry =
+        stage === "prepare" &&
+        attempt < MAX_ACCOUNT_ATTEMPTS &&
+        isRetryablePrePublishError(error)
+
+      if (!canRetry) break
+      await sleep(attempt * 1_500)
+    }
   }
 
-  return String(payload.id)
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Erro ao publicar no Instagram.")
 }
 
 export async function publishExistingPost(params: {
@@ -231,6 +360,8 @@ export async function publishExistingPost(params: {
   accountIds: string[]
   coverUrl?: string
 }) {
+  await maintainInstagramAccounts(params.userId)
+
   const post = await prisma.post.findFirst({
     where: { id: params.postId, userId: params.userId },
     select: {
@@ -249,34 +380,42 @@ export async function publishExistingPost(params: {
     throw new Error("A publicação precisa ter exatamente uma mídia.")
   }
 
-  const requestedAccountIds = Array.from(
-    new Set<string>(params.accountIds)
-  )
-  const accounts = await prisma.instagramAccount.findMany({
-    where: {
-      id: { in: requestedAccountIds },
-      userId: params.userId,
-      connectionType: "official",
-      appConfigId: { not: null },
-    },
-    select: {
-      id: true,
-      username: true,
-      igUserId: true,
-      accessToken: true,
-      tokenExpiresAt: true,
-      connectionType: true,
-      isActive: true,
-    },
-  })
-
-  if (accounts.length === 0) {
-    throw new Error(
-      "Nenhuma conta oficial foi encontrada. Conecte a conta pelo App Meta."
-    )
+  const requestedAccountIds = Array.from(new Set<string>(params.accountIds))
+  if (requestedAccountIds.length === 0) {
+    throw new Error("Nenhuma conta conectada foi selecionada.")
   }
 
+  const [accounts, successfulLogs] = await Promise.all([
+    prisma.instagramAccount.findMany({
+      where: {
+        id: { in: requestedAccountIds },
+        userId: params.userId,
+      },
+      select: {
+        id: true,
+        username: true,
+        igUserId: true,
+        accessToken: true,
+        tokenExpiresAt: true,
+        appConfigId: true,
+        connectionType: true,
+        isActive: true,
+      },
+    }),
+    prisma.postLog.findMany({
+      where: {
+        postId: post.id,
+        instagramAccountId: { in: requestedAccountIds },
+        status: "success",
+      },
+      select: { instagramAccountId: true },
+    }),
+  ])
+
   const accountMap = new Map(accounts.map((account) => [account.id, account]))
+  const alreadyPublishedIds = new Set(
+    successfulLogs.map((log) => log.instagramAccountId)
+  )
 
   await prisma.post.update({
     where: { id: post.id },
@@ -287,9 +426,21 @@ export async function publishExistingPost(params: {
     .filter(Boolean)
     .join("\n\n")
 
-  const results = await Promise.all(
-    requestedAccountIds.map(async (accountId): Promise<PublishResult> => {
+  const results = await mapWithConcurrency(
+    requestedAccountIds,
+    ACCOUNT_CONCURRENCY,
+    async (accountId): Promise<PublishResult> => {
       const account = accountMap.get(accountId)
+
+      if (alreadyPublishedIds.has(accountId)) {
+        return {
+          accountId,
+          username: account?.username || "conta-publicada",
+          status: "success",
+          alreadyPublished: true,
+        }
+      }
+
       if (!account) {
         return {
           accountId,
@@ -299,53 +450,22 @@ export async function publishExistingPost(params: {
         }
       }
 
-      if (!account.isActive || !account.accessToken) {
-        const message = "Esta conta precisa ser reconectada pelo App Meta."
-        await prisma.postLog.create({
-          data: {
-            postId: post.id,
-            instagramAccountId: account.id,
-            status: "error",
-            errorMessage: message,
-          },
-        })
+      if (!isInstagramAccountUsable(account)) {
         return {
           accountId: account.id,
           username: account.username,
           status: "error",
-          error: message,
+          error: "Esta conta está desconectada e não será usada para publicar.",
         }
       }
 
       try {
-        const token = await refreshAccessTokenIfNeeded(account)
-        const containerId = await createContainer({
+        await publishToAccount({
           account,
-          token,
-          imageUrl: post.imageUrl || "",
-          videoUrl: post.videoUrl || "",
-          coverUrl: params.coverUrl || post.coverUrl || "",
-          caption: post.publicationType === "story" ? "" : fullCaption,
-          publicationType: post.publicationType,
+          post,
+          coverUrl: params.coverUrl,
+          caption: fullCaption,
         })
-
-        await waitUntilReady(containerId, token, account.id)
-        const mediaId = await publishContainer(account, containerId, token)
-
-        await Promise.all([
-          prisma.instagramAccount.update({
-            where: { id: account.id },
-            data: { isActive: true, lastActiveAt: new Date() },
-          }),
-          prisma.postLog.create({
-            data: {
-              postId: post.id,
-              instagramAccountId: account.id,
-              status: "success",
-              mediaId,
-            },
-          }),
-        ])
 
         return {
           accountId: account.id,
@@ -353,24 +473,26 @@ export async function publishExistingPost(params: {
           status: "success",
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Erro ao publicar"
-        const metaCode = (error as Error & { metaCode?: number }).metaCode
+        const message =
+          error instanceof Error ? error.message : "Erro ao publicar"
 
-        if (metaCode === 190 || message.includes("expirou")) {
-          await prisma.instagramAccount.update({
-            where: { id: account.id },
-            data: { isActive: false },
-          })
-        }
-
-        await prisma.postLog.create({
-          data: {
-            postId: post.id,
-            instagramAccountId: account.id,
-            status: "error",
-            errorMessage: message,
-          },
-        })
+        await prisma.$transaction([
+          prisma.postLog.deleteMany({
+            where: {
+              postId: post.id,
+              instagramAccountId: account.id,
+              status: "error",
+            },
+          }),
+          prisma.postLog.create({
+            data: {
+              postId: post.id,
+              instagramAccountId: account.id,
+              status: "error",
+              errorMessage: message,
+            },
+          }),
+        ])
 
         return {
           accountId: account.id,
@@ -379,10 +501,12 @@ export async function publishExistingPost(params: {
           error: message,
         }
       }
-    })
+    }
   )
 
-  const successCount = results.filter((result) => result.status === "success").length
+  const successCount = results.filter(
+    (result) => result.status === "success"
+  ).length
   const finalStatus =
     successCount === results.length
       ? "published"

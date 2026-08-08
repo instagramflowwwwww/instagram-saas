@@ -1,4 +1,8 @@
 import { ADMIN_EMAIL } from "@/lib/account-access"
+import {
+  isInstagramAccountUsable,
+  maintainInstagramAccounts,
+} from "@/lib/instagram-account-lifecycle"
 import { publishExistingPost } from "@/lib/instagram-publisher"
 import { prisma } from "@/lib/prisma"
 
@@ -97,6 +101,7 @@ export async function processDueQueue(options: {
   userId?: string
   limit?: number
 } = {}) {
+  await maintainInstagramAccounts(options.userId)
   await recoverStuckItems(options.userId)
 
   const dueItems = await prisma.postingBatchItem.findMany({
@@ -154,7 +159,20 @@ export async function processDueQueue(options: {
       include: {
         batch: {
           include: {
-            accounts: { select: { instagramAccountId: true } },
+            accounts: {
+              include: {
+                instagramAccount: {
+                  select: {
+                    id: true,
+                    connectionType: true,
+                    isActive: true,
+                    accessToken: true,
+                    tokenExpiresAt: true,
+                    appConfigId: true,
+                  },
+                },
+              },
+            },
           },
         },
         post: { select: { id: true } },
@@ -177,10 +195,37 @@ export async function processDueQueue(options: {
     }
 
     try {
+      const activeAccountIds = item.batch.accounts
+        .filter((account) => isInstagramAccountUsable(account.instagramAccount))
+        .map((account) => account.instagramAccountId)
+
+      if (activeAccountIds.length === 0) {
+        const message =
+          "Nenhuma conta conectada está disponível para esta publicação."
+        await prisma.$transaction([
+          prisma.postingBatchItem.update({
+            where: { id: item.id },
+            data: {
+              status: "failed",
+              processedAt: new Date(),
+              processingStartedAt: null,
+              lastError: message,
+            },
+          }),
+          prisma.post.update({
+            where: { id: item.post.id },
+            data: { status: "failed", publishedAt: null },
+          }),
+        ])
+        processed.push({ itemId: item.id, status: "failed", error: message })
+        await refreshBatchStats(item.batchId)
+        continue
+      }
+
       const result = await publishExistingPost({
         postId: item.post.id,
         userId: item.batch.userId,
-        accountIds: item.batch.accounts.map((account) => account.instagramAccountId),
+        accountIds: activeAccountIds,
       })
       const postStatus = result.post.status
       const message = result.results
@@ -188,7 +233,10 @@ export async function processDueQueue(options: {
         .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
         .join(" | ")
 
-      if (postStatus === "failed" && item.attempts < MAX_ATTEMPTS) {
+      if (
+        ["failed", "partial"].includes(postStatus) &&
+        item.attempts < MAX_ATTEMPTS
+      ) {
         const nextAttemptAt = retryDate(item.attempts)
         await prisma.$transaction([
           prisma.postingBatchItem.update({
@@ -202,7 +250,7 @@ export async function processDueQueue(options: {
           }),
           prisma.post.update({
             where: { id: item.post.id },
-            data: { status: "scheduled", publishedAt: null },
+            data: { status: "scheduled" },
           }),
         ])
         processed.push({ itemId: item.id, status: "retrying", error: message })

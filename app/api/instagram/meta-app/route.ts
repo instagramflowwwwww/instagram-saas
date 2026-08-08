@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { getInstagramRedirectUri } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
 import { encryptValue } from "@/lib/secure-store"
@@ -13,6 +14,8 @@ export async function GET(request: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
+
+  await maintainInstagramAccounts(session.user.id)
 
   const [app, accountsCount] = await Promise.all([
     prisma.instagramApp.findUnique({
@@ -28,7 +31,7 @@ export async function GET(request: Request) {
     prisma.instagramAccount.count({
       where: {
         userId: session.user.id,
-        connectionType: "official",
+        appConfigId: { not: null },
       },
     }),
   ])

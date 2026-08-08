@@ -40,6 +40,7 @@ type InstagramAccount = {
   isActive: boolean
   requiresReconnect: boolean
   tokenExpiresAt: string | null
+  autoDeleteAt: string | null
   appId: string | null
 }
 
@@ -483,6 +484,11 @@ export default function MetaAppPage() {
                         ? ` · ${account.followerCount.toLocaleString("pt-BR")} seguidores`
                         : ""}
                     </p>
+                    {account.requiresReconnect && account.autoDeleteAt && (
+                      <p className="text-[10px] text-red-300/70 mt-0.5 truncate">
+                        Reconecte até {formatDate(account.autoDeleteAt)} ou a conta será removida.
+                      </p>
+                    )}
                   </div>
                   <span
                     className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] ${

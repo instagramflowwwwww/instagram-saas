@@ -5,6 +5,7 @@ import {
   isAdminEmail,
 } from "@/lib/account-access"
 import { authOptions } from "@/lib/auth"
+import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -14,6 +15,9 @@ export async function GET() {
   if (!isAdminEmail(session?.user?.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
+
+  await maintainInstagramAccounts()
+  const now = new Date()
 
   const users = await prisma.user.findMany({
     select: {
@@ -28,7 +32,16 @@ export async function GET() {
       accessExpiresAt: true,
       approvedAt: true,
       rejectedAt: true,
-      igAccounts: { select: { id: true } },
+      igAccounts: {
+        where: {
+          connectionType: "official",
+          isActive: true,
+          accessToken: { not: null },
+          appConfigId: { not: null },
+          tokenExpiresAt: { gt: now },
+        },
+        select: { id: true },
+      },
       posts: { select: { id: true, status: true } },
     },
     orderBy: [{ accessStatus: "asc" }, { createdAt: "desc" }],
