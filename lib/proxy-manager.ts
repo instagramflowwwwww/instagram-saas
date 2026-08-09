@@ -50,6 +50,10 @@ function fingerprint(value: string) {
   return createHash("sha256").update(value).digest("hex")
 }
 
+function proxyFingerprint(value: string) {
+  return fingerprint(normalizeProxy(value).normalized)
+}
+
 function isPrismaUniqueError(error: unknown) {
   return (
     typeof error === "object" &&
@@ -122,6 +126,21 @@ export async function importInstagramProxies(values: unknown) {
   }
 }
 
+export async function clearInstagramProxyPool() {
+  return prisma.$transaction(async (tx) => {
+    const deleted = await tx.instagramProxy.deleteMany({})
+
+    await tx.instagramAccount.updateMany({
+      data: {
+        proxy: null,
+        proxyAssignedAt: null,
+      },
+    })
+
+    return { deleted: deleted.count }
+  })
+}
+
 export async function getProxyPoolStats(): Promise<ProxyPoolStats> {
   const [total, available, assigned, consumed, inactive] = await Promise.all([
     prisma.instagramProxy.count(),
@@ -150,6 +169,44 @@ export async function getProxyForAccount(accountId: string) {
 
   if (!assigned?.isActive) return null
   return decryptValue(assigned.encryptedValue)
+}
+
+/**
+ * Coloca em quarentena somente a proxy que realmente falhou.
+ * O fingerprint evita que uma requisição concorrente desative uma proxy nova
+ * que já tenha sido atribuída à mesma conta.
+ */
+export async function quarantineFailedProxyForAccount(
+  accountId: string,
+  failedProxyValue: string
+) {
+  const failedFingerprint = proxyFingerprint(failedProxyValue)
+
+  return prisma.$transaction(async (tx) => {
+    const assigned = await tx.instagramProxy.findUnique({
+      where: { assignedAccountId: accountId },
+      select: { id: true, fingerprint: true },
+    })
+
+    if (!assigned || assigned.fingerprint !== failedFingerprint) {
+      return false
+    }
+
+    await tx.instagramProxy.update({
+      where: { id: assigned.id },
+      data: {
+        isActive: false,
+        assignedAccountId: null,
+      },
+    })
+
+    await tx.instagramAccount.updateMany({
+      where: { id: accountId },
+      data: { proxyAssignedAt: null },
+    })
+
+    return true
+  })
 }
 
 async function assignInTransaction(accountId: string) {

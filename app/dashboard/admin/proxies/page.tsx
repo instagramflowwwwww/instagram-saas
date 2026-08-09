@@ -7,6 +7,7 @@ import {
   Network,
   RefreshCw,
   ShieldOff,
+  Trash2,
   Upload,
 } from "lucide-react"
 import toast from "react-hot-toast"
@@ -29,6 +30,7 @@ export default function AdminProxiesPage() {
   const [fileName, setFileName] = useState("")
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [forbidden, setForbidden] = useState(false)
 
   const loadStats = useCallback(async (notifySuccess = false) => {
@@ -132,6 +134,40 @@ export default function AdminProxiesPage() {
     }
   }
 
+  const clearPool = async () => {
+    if (clearing) return
+
+    const confirmed = window.confirm(
+      "Isso vai apagar TODAS as proxies do pool e remover as atribuições atuais das contas. Deseja continuar?"
+    )
+    if (!confirmed) return
+
+    setClearing(true)
+    try {
+      const response = await fetch("/api/admin/proxies", {
+        method: "DELETE",
+      })
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Não foi possível limpar as proxies.")
+      }
+
+      setStats(payload.stats)
+      setProxies([])
+      setFileName("")
+      toast.success(`${payload.deleted} proxies removidas. As contas estão sem proxy e receberão novas automaticamente.`)
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof Error
+          ? requestError.message
+          : "Não foi possível limpar as proxies."
+      )
+    } finally {
+      setClearing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -173,12 +209,22 @@ export default function AdminProxiesPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => void loadStats(true)}
-          className="flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-300 hover:border-purple-500/30 hover:text-white"
-        >
-          <RefreshCw size={15} /> Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void clearPool()}
+            disabled={clearing || (stats?.total || 0) === 0}
+            className="flex items-center gap-2 rounded-lg border border-red-500/20 px-4 py-2.5 text-sm text-red-300 hover:border-red-500/40 hover:bg-red-500/5 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {clearing ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+            Limpar pool
+          </button>
+          <button
+            onClick={() => void loadStats(true)}
+            className="flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-300 hover:border-purple-500/30 hover:text-white"
+          >
+            <RefreshCw size={15} /> Atualizar
+          </button>
+        </div>
       </div>
 
       <div className="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -198,7 +244,7 @@ export default function AdminProxiesPage() {
           <div>
             <h2 className="text-sm font-semibold text-white">Importar arquivo JSON</h2>
             <p className="mt-1 text-xs text-gray-500">
-              Proxies já usadas continuam consumidas mesmo após excluir uma conta.
+              Proxies com falha são desativadas automaticamente e a conta recebe outra disponível.
             </p>
           </div>
         </div>

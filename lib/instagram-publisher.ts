@@ -265,6 +265,9 @@ function isRetryablePrePublishError(error: unknown) {
     "temporário",
     "temporariamente",
     "timeout",
+    "etimedout",
+    "econnreset",
+    "econnrefused",
     "fetch failed",
   ].some((fragment) => message.includes(fragment))
 }

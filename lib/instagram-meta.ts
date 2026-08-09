@@ -97,7 +97,7 @@ export function getMetaError(payload: unknown): MetaApiError | null {
 }
 
 export function metaErrorMessage(error: MetaApiError | null) {
-  if (!error) return "A Meta não concluiu a solicitação"
+  if (!error) return "A Meta retornou uma resposta vazia ou inválida para a solicitação."
 
   if (error.code === 190) {
     return "O acesso desta conta expirou. Reconecte a conta pelo App Meta."

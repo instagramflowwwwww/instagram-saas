@@ -5,13 +5,38 @@ import {
   getOrAssignProxyForAccount,
   isInstagramProxyRequired,
   proxyValueToUrl,
+  quarantineFailedProxyForAccount,
 } from "@/lib/proxy-manager"
 
-const PROXY_CACHE_TTL_MS = 5 * 60 * 1000
+const PROXY_CACHE_TTL_MS = 30 * 1000
+const DEFAULT_PROXY_ROTATION_ATTEMPTS = 4
+const PROXY_ERROR_CODES = new Set([
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTDOWN",
+  "EHOSTUNREACH",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "EPIPE",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+])
+
 const proxyCache = new Map<
   string,
   { promise: Promise<string | null>; expiresAt: number }
 >()
+
+export function clearInstagramProxyCache(accountId?: string) {
+  if (accountId) {
+    proxyCache.delete(accountId)
+    return
+  }
+
+  proxyCache.clear()
+}
 
 async function getCachedProxyForAccount(accountId: string) {
   const cached = proxyCache.get(accountId)
@@ -70,6 +95,38 @@ function responseHeaders(headers: http.IncomingHttpHeaders) {
   return result
 }
 
+function proxyTimeoutError() {
+  return Object.assign(
+    new Error("A proxy excedeu o tempo limite da requisição."),
+    { code: "ETIMEDOUT" }
+  )
+}
+
+function isProxyTransportError(error: unknown) {
+  if (!(error instanceof Error)) return false
+
+  const code = String((error as NodeJS.ErrnoException).code || "").toUpperCase()
+  if (PROXY_ERROR_CODES.has(code)) return true
+
+  const message = error.message.toLowerCase()
+  return [
+    "proxy connection ended",
+    "proxy response",
+    "socket hang up",
+    "tunneling socket",
+    "connect timeout",
+    "connection timeout",
+  ].some((fragment) => message.includes(fragment))
+}
+
+function getProxyRotationAttempts() {
+  const configured = Number(process.env.INSTAGRAM_PROXY_ROTATION_ATTEMPTS)
+  if (Number.isInteger(configured) && configured > 0 && configured <= 10) {
+    return configured
+  }
+  return DEFAULT_PROXY_ROTATION_ATTEMPTS
+}
+
 async function requestThroughProxy(
   input: string | URL,
   init: RequestInit,
@@ -96,11 +153,18 @@ async function requestThroughProxy(
 
   return new Promise<Response>((resolve, reject) => {
     let settled = false
+    let overallTimer: NodeJS.Timeout | null = null
+
+    const cleanup = () => {
+      if (overallTimer) clearTimeout(overallTimer)
+      overallTimer = null
+      agent.destroy()
+    }
 
     const finishError = (error: Error) => {
       if (settled) return
       settled = true
-      agent.destroy()
+      cleanup()
       reject(error)
     }
 
@@ -123,7 +187,7 @@ async function requestThroughProxy(
         incoming.on("end", () => {
           if (settled) return
           settled = true
-          agent.destroy()
+          cleanup()
           resolve(
             new Response(Buffer.concat(chunks), {
               status: incoming.statusCode || 500,
@@ -135,9 +199,11 @@ async function requestThroughProxy(
       }
     )
 
-    request.setTimeout(timeoutMs, () => {
-      request.destroy(new Error("A proxy excedeu o tempo limite da requisição."))
-    })
+    // Timeout total: cobre inclusive DNS/conexão com o host da proxy, não só
+    // o tempo de socket depois do CONNECT.
+    overallTimer = setTimeout(() => {
+      request.destroy(proxyTimeoutError())
+    }, timeoutMs)
 
     request.on("error", finishError)
 
@@ -158,6 +224,14 @@ async function requestThroughProxy(
   })
 }
 
+async function retireFailedProxy(accountId: string, proxyValue: string) {
+  try {
+    await quarantineFailedProxyForAccount(accountId, proxyValue)
+  } finally {
+    clearInstagramProxyCache(accountId)
+  }
+}
+
 export async function fetchInstagramRequest(
   input: string | URL,
   init: RequestInit = {},
@@ -167,17 +241,53 @@ export async function fetchInstagramRequest(
     return fetch(input, { ...init, cache: "no-store" })
   }
 
-  const proxy = await getCachedProxyForAccount(accountId)
+  const maxAttempts = getProxyRotationAttempts()
+  let lastProxyError: unknown = null
 
-  if (!proxy) {
-    if (isInstagramProxyRequired()) {
-      throw new Error(
-        "Não há proxy disponível para esta conta. Importe novas proxies no painel administrativo."
-      )
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const proxy = await getCachedProxyForAccount(accountId)
+
+    if (!proxy) {
+      if (isInstagramProxyRequired()) {
+        const suffix = lastProxyError
+          ? " As proxies tentadas falharam e foram desativadas automaticamente."
+          : ""
+        throw new Error(
+          `Não há proxy funcional disponível para esta conta.${suffix} Importe novas proxies no painel administrativo.`
+        )
+      }
+
+      return fetch(input, { ...init, cache: "no-store" })
     }
 
-    return fetch(input, { ...init, cache: "no-store" })
+    try {
+      const response = await requestThroughProxy(input, init, proxy)
+
+      // 407 vem do servidor de proxy, não da API da Meta.
+      if (response.status === 407) {
+        lastProxyError = new Error("A proxy recusou a autenticação (HTTP 407).")
+        await retireFailedProxy(accountId, proxy)
+        continue
+      }
+
+      return response
+    } catch (error) {
+      if (!isProxyTransportError(error)) throw error
+
+      lastProxyError = error
+      console.warn("Instagram proxy failed; rotating account proxy", {
+        accountId,
+        attempt,
+        code: (error as NodeJS.ErrnoException)?.code,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      await retireFailedProxy(accountId, proxy)
+    }
   }
 
-  return requestThroughProxy(input, init, proxy)
+  const detail =
+    lastProxyError instanceof Error ? ` Último erro: ${lastProxyError.message}` : ""
+  throw new Error(
+    `Nenhuma proxy funcional respondeu após ${maxAttempts} tentativa(s).${detail}`
+  )
 }

@@ -249,6 +249,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // A conta só é considerada conectada depois de uma chamada real à Meta
+    // usando a proxy atribuída. Se a proxy estiver morta, o transporte tenta
+    // rotacionar automaticamente para outra proxy disponível.
+    if (assignedProxy) {
+      try {
+        await fetchInstagramProfile(accessToken, connectedAccount.id)
+      } catch (proxyValidationError) {
+        await markInstagramAccountDisconnected(connectedAccount.id)
+        throw proxyValidationError
+      }
+    }
+
     const url = new URL("/dashboard/meta-app", request.url)
     url.searchParams.set("success", "connected")
     url.searchParams.set("username", username)
