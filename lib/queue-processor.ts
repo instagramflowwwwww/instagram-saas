@@ -93,8 +93,9 @@ async function recoverStuckItems(userId?: string) {
   }
 }
 
-function retryDate(attempts: number) {
-  return new Date(Date.now() + Math.max(10, attempts * 10) * 60 * 1000)
+function retryDate(attempts: number, minimumDelayMs = 0) {
+  const normalDelayMs = Math.max(10, attempts * 10) * 60 * 1000
+  return new Date(Date.now() + Math.max(normalDelayMs, minimumDelayMs))
 }
 
 export async function processDueQueue(options: {
@@ -233,11 +234,23 @@ export async function processDueQueue(options: {
         .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
         .join(" | ")
 
+      const failedResults = result.results.filter(
+        (entry) => entry.status === "error"
+      )
+      const retryableResults = failedResults.filter(
+        (entry) => entry.retryable !== false
+      )
+      const minimumRetryDelayMs = retryableResults.reduce(
+        (delay, entry) => Math.max(delay, entry.retryAfterMs || 0),
+        0
+      )
+
       if (
         ["failed", "partial"].includes(postStatus) &&
+        retryableResults.length > 0 &&
         item.attempts < MAX_ATTEMPTS
       ) {
-        const nextAttemptAt = retryDate(item.attempts)
+        const nextAttemptAt = retryDate(item.attempts, minimumRetryDelayMs)
         await prisma.$transaction([
           prisma.postingBatchItem.update({
             where: { id: item.id },

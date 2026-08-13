@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { markInstagramAccountDisconnected } from "@/lib/instagram-account-lifecycle"
+import {
+  isInstagramDisconnectError,
+  markInstagramAccountDisconnected,
+} from "@/lib/instagram-account-lifecycle"
 import {
   fetchInstagramProfile,
   getInstagramRedirectUri,
@@ -243,7 +246,6 @@ export async function GET(request: NextRequest) {
     const assignedProxy = await assignProxyToAccount(connectedAccount.id)
 
     if (!assignedProxy && isInstagramProxyRequired()) {
-      await markInstagramAccountDisconnected(connectedAccount.id)
       throw new Error(
         "Não há proxy disponível para esta conta. Importe novas proxies antes de conectar outra conta."
       )
@@ -256,7 +258,9 @@ export async function GET(request: NextRequest) {
       try {
         await fetchInstagramProfile(accessToken, connectedAccount.id)
       } catch (proxyValidationError) {
-        await markInstagramAccountDisconnected(connectedAccount.id)
+        if (isInstagramDisconnectError(proxyValidationError)) {
+          await markInstagramAccountDisconnected(connectedAccount.id)
+        }
         throw proxyValidationError
       }
     }

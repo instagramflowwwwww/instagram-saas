@@ -103,6 +103,10 @@ export function metaErrorMessage(error: MetaApiError | null) {
     return "O acesso desta conta expirou. Reconecte a conta pelo App Meta."
   }
 
+  if (error.code === 9 && error.error_subcode === 2207042) {
+    return "Limite de publicação da Meta atingido para esta conta. A nova tentativa será feita após a janela de cota liberar."
+  }
+
   if (error.code === 10 || error.code === 200) {
     return "O App Meta não possui a permissão necessária para esta ação."
   }
@@ -164,8 +168,12 @@ export async function fetchInstagramProfile(
 
     const requestError = new Error(metaErrorMessage(error)) as Error & {
       metaCode?: number
+      metaSubcode?: number
+      httpStatus?: number
     }
     requestError.metaCode = error?.code
+    requestError.metaSubcode = error?.error_subcode
+    requestError.httpStatus = response.status
     throw requestError
   }
 

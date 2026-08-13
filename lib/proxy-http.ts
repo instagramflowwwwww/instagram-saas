@@ -270,6 +270,22 @@ export async function fetchInstagramRequest(
         continue
       }
 
+      // Nos logs de produção, proxies defeituosas também responderam 502 com
+      // corpo vazio. Uma resposta da Meta com erro normalmente traz JSON; o
+      // 502 vazio é tratado como gateway/proxy quebrado e rotacionado.
+      if (response.status === 502) {
+        const raw = await response.clone().text().catch(() => "")
+        if (!raw.trim()) {
+          lastProxyError = new Error("A proxy retornou HTTP 502 sem resposta da Meta.")
+          console.warn("Instagram proxy returned empty 502; rotating account proxy", {
+            accountId,
+            attempt,
+          })
+          await retireFailedProxy(accountId, proxy)
+          continue
+        }
+      }
+
       return response
     } catch (error) {
       if (!isProxyTransportError(error)) throw error

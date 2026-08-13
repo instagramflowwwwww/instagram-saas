@@ -21,6 +21,8 @@ export type PublishResult = {
   status: "success" | "error"
   error?: string
   alreadyPublished?: boolean
+  retryable?: boolean
+  retryAfterMs?: number
 }
 
 type OfficialAccount = {
@@ -40,6 +42,14 @@ const WAIT_INTERVAL = 4_000
 const MAX_STATUS_CHECKS = 35
 const MAX_ACCOUNT_ATTEMPTS = 3
 const ACCOUNT_CONCURRENCY = 4
+const DEFAULT_PUBLISH_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000
+
+type InstagramOperationError = Error & {
+  metaCode?: number
+  metaSubcode?: number
+  httpStatus?: number
+  retryAfterMs?: number
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -94,14 +104,143 @@ async function metaRequest(
       body: raw.slice(0, 1200),
     })
     const metaError = getMetaError(payload)
-    const error = new Error(metaErrorMessage(metaError)) as Error & {
-      metaCode?: number
-    }
+    const error = new Error(metaErrorMessage(metaError)) as InstagramOperationError
     error.metaCode = metaError?.code
+    error.metaSubcode = metaError?.error_subcode
+    error.httpStatus = response.status
+    if (metaError?.code === 9 && metaError.error_subcode === 2207042) {
+      error.retryAfterMs = DEFAULT_PUBLISH_LIMIT_RETRY_MS
+    }
     throw error
   }
 
   return payload
+}
+
+function isPublishingLimitError(error: unknown) {
+  const operationError = error as InstagramOperationError
+  if (
+    operationError?.metaCode === 9 &&
+    operationError?.metaSubcode === 2207042
+  ) {
+    return true
+  }
+
+  const message = error instanceof Error ? error.message.toLowerCase() : ""
+  return (
+    message.includes("limite de publicação") ||
+    message.includes("media publish limit") ||
+    message.includes("user is performing too many actions")
+  )
+}
+
+function isPrismaForeignKeyError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2003"
+  )
+}
+
+async function replacePostLogSafely(params: {
+  postId: string
+  accountId: string
+  status: "success" | "error"
+  mediaId?: string
+  errorMessage?: string
+}) {
+  const accountExists = await prisma.instagramAccount.findUnique({
+    where: { id: params.accountId },
+    select: { id: true },
+  })
+
+  if (!accountExists) {
+    console.warn("Skipping PostLog because Instagram account was removed", {
+      postId: params.postId,
+      accountId: params.accountId,
+      status: params.status,
+    })
+    return false
+  }
+
+  try {
+    await prisma.$transaction([
+      prisma.postLog.deleteMany({
+        where: {
+          postId: params.postId,
+          instagramAccountId: params.accountId,
+          status: "error",
+        },
+      }),
+      prisma.postLog.create({
+        data: {
+          postId: params.postId,
+          instagramAccountId: params.accountId,
+          status: params.status,
+          mediaId: params.mediaId,
+          errorMessage: params.errorMessage,
+        },
+      }),
+    ])
+    return true
+  } catch (error) {
+    if (!isPrismaForeignKeyError(error)) throw error
+
+    console.warn("Skipping PostLog after account/post was removed concurrently", {
+      postId: params.postId,
+      accountId: params.accountId,
+      status: params.status,
+    })
+    return false
+  }
+}
+
+async function ensurePublishingQuota(account: OfficialAccount, token: string) {
+  try {
+    const payload = await metaRequest(
+      `${account.igUserId}/content_publishing_limit`,
+      account.id,
+      {
+        searchParams: {
+          fields: "config,quota_usage",
+          access_token: token,
+        },
+      }
+    )
+
+    const entry = Array.isArray(payload?.data) ? payload.data[0] : null
+    const usage = Number(entry?.quota_usage)
+    const total = Number(entry?.config?.quota_total)
+    const durationSeconds = Number(entry?.config?.quota_duration)
+
+    if (
+      Number.isFinite(usage) &&
+      Number.isFinite(total) &&
+      total > 0 &&
+      usage >= total
+    ) {
+      const error = new Error(
+        `Limite de publicação da Meta atingido para esta conta (${usage}/${total}).`
+      ) as InstagramOperationError
+      error.metaCode = 9
+      error.metaSubcode = 2207042
+      error.retryAfterMs =
+        Number.isFinite(durationSeconds) && durationSeconds > 0
+          ? durationSeconds * 1000
+          : DEFAULT_PUBLISH_LIMIT_RETRY_MS
+      throw error
+    }
+  } catch (error) {
+    if (isPublishingLimitError(error)) throw error
+
+    // A consulta de cota é preventiva. Se ela estiver indisponível, não
+    // bloqueia uma publicação que a própria Meta ainda pode aceitar.
+    console.warn("Instagram publishing quota check failed; continuing", {
+      accountId: account.id,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
@@ -291,6 +430,7 @@ async function publishToAccount(params: {
 
     try {
       const token = await refreshAccessTokenIfNeeded(params.account)
+      await ensurePublishingQuota(params.account, token)
       const containerId = await createContainer({
         account: params.account,
         token,
@@ -305,31 +445,21 @@ async function publishToAccount(params: {
       stage = "publish"
       const mediaId = await publishContainer(params.account, containerId, token)
 
-      await prisma.$transaction([
-        prisma.instagramAccount.update({
-          where: { id: params.account.id },
-          data: {
-            connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
-            isActive: true,
-            lastActiveAt: new Date(),
-          },
-        }),
-        prisma.postLog.deleteMany({
-          where: {
-            postId: params.post.id,
-            instagramAccountId: params.account.id,
-            status: "error",
-          },
-        }),
-        prisma.postLog.create({
-          data: {
-            postId: params.post.id,
-            instagramAccountId: params.account.id,
-            status: "success",
-            mediaId,
-          },
-        }),
-      ])
+      await prisma.instagramAccount.updateMany({
+        where: { id: params.account.id },
+        data: {
+          connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
+          isActive: true,
+          lastActiveAt: new Date(),
+        },
+      })
+
+      await replacePostLogSafely({
+        postId: params.post.id,
+        accountId: params.account.id,
+        status: "success",
+        mediaId,
+      })
 
       return
     } catch (error) {
@@ -415,7 +545,9 @@ export async function publishExistingPost(params: {
     }),
   ])
 
-  const accountMap = new Map(accounts.map((account) => [account.id, account]))
+  const accountMap = new Map<string, OfficialAccount>(
+    accounts.map((account) => [account.id, account] as const)
+  )
   const alreadyPublishedIds = new Set(
     successfulLogs.map((log) => log.instagramAccountId)
   )
@@ -450,6 +582,7 @@ export async function publishExistingPost(params: {
           username: "conta-removida",
           status: "error",
           error: "A conta selecionada não está mais disponível.",
+          retryable: false,
         }
       }
 
@@ -459,6 +592,7 @@ export async function publishExistingPost(params: {
           username: account.username,
           status: "error",
           error: "Esta conta está desconectada e não será usada para publicar.",
+          retryable: false,
         }
       }
 
@@ -479,29 +613,25 @@ export async function publishExistingPost(params: {
         const message =
           error instanceof Error ? error.message : "Erro ao publicar"
 
-        await prisma.$transaction([
-          prisma.postLog.deleteMany({
-            where: {
-              postId: post.id,
-              instagramAccountId: account.id,
-              status: "error",
-            },
-          }),
-          prisma.postLog.create({
-            data: {
-              postId: post.id,
-              instagramAccountId: account.id,
-              status: "error",
-              errorMessage: message,
-            },
-          }),
-        ])
+        await replacePostLogSafely({
+          postId: post.id,
+          accountId: account.id,
+          status: "error",
+          errorMessage: message,
+        })
+
+        const operationError = error as InstagramOperationError
+        const publishLimit = isPublishingLimitError(error)
 
         return {
           accountId: account.id,
           username: account.username,
           status: "error",
           error: message,
+          retryable: !isInstagramDisconnectError(error),
+          retryAfterMs: publishLimit
+            ? operationError.retryAfterMs || DEFAULT_PUBLISH_LIMIT_RETRY_MS
+            : undefined,
         }
       }
     }

@@ -145,7 +145,7 @@ export async function getProxyPoolStats(): Promise<ProxyPoolStats> {
   const [total, available, assigned, consumed, inactive] = await Promise.all([
     prisma.instagramProxy.count(),
     prisma.instagramProxy.count({
-      where: { isActive: true, usedAt: null },
+      where: { isActive: true, assignedAccountId: null },
     }),
     prisma.instagramProxy.count({
       where: { assignedAccountId: { not: null } },
@@ -233,8 +233,11 @@ async function assignInTransaction(accountId: string) {
       SELECT "id"
       FROM "InstagramProxy"
       WHERE "isActive" = true
-        AND "usedAt" IS NULL
-      ORDER BY "createdAt" ASC
+        AND "assignedAccountId" IS NULL
+      ORDER BY
+        CASE WHEN "usedAt" IS NULL THEN 0 ELSE 1 END ASC,
+        "usedAt" ASC,
+        "createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     `
