@@ -246,22 +246,36 @@ export async function GET(request: NextRequest) {
     const assignedProxy = await assignProxyToAccount(connectedAccount.id)
 
     if (!assignedProxy && isInstagramProxyRequired()) {
-      throw new Error(
-        "Não há proxy disponível para esta conta. Importe novas proxies antes de conectar outra conta."
-      )
+      console.warn("Instagram account connected without an available proxy", {
+        accountId: connectedAccount.id,
+        username,
+      })
     }
 
-    // A conta só é considerada conectada depois de uma chamada real à Meta
-    // usando a proxy atribuída. Se a proxy estiver morta, o transporte tenta
-    // rotacionar automaticamente para outra proxy disponível.
+    // A conta já foi autenticada e salva antes desta etapa. Falhas temporárias
+    // de proxy não devem transformar uma conta válida em callback_failed.
+    // Apenas erros que realmente exigem reconexão da conta (ex.: code 190)
+    // invalidam a conexão.
     if (assignedProxy) {
       try {
         await fetchInstagramProfile(accessToken, connectedAccount.id)
       } catch (proxyValidationError) {
         if (isInstagramDisconnectError(proxyValidationError)) {
           await markInstagramAccountDisconnected(connectedAccount.id)
+          throw proxyValidationError
         }
-        throw proxyValidationError
+
+        console.warn(
+          "Instagram proxy validation failed after account connection; keeping account connected",
+          {
+            accountId: connectedAccount.id,
+            username,
+            message:
+              proxyValidationError instanceof Error
+                ? proxyValidationError.message
+                : String(proxyValidationError),
+          }
+        )
       }
     }
 
