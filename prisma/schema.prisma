@@ -77,7 +77,6 @@ model InstagramApp {
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   accounts           InstagramAccount[]
 
-  @@unique([userId, metaAppId])
   @@index([userId])
 }
 
