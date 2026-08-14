@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
+  Check,
   Clipboard,
   ExternalLink,
   Eye,
@@ -9,22 +10,32 @@ import {
   Instagram,
   KeyRound,
   Loader2,
+  Pencil,
   PlugZap,
+  Plus,
   Save,
   ShieldCheck,
   Trash2,
   UserPlus,
+  X,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast } from "@/lib/toast"
 
-type MetaAppData = {
-  configured: boolean
+type MetaApp = {
+  id: string
   appId: string
   secretConfigured: boolean
   lastValidatedAt: string | null
   createdAt: string | null
   updatedAt: string | null
+  accountsCount: number
+}
+
+type MetaAppsData = {
+  configured: boolean
+  apps: MetaApp[]
+  appsCount: number
   accountsCount: number
   redirectUri: string
 }
@@ -40,14 +51,18 @@ type InstagramAccount = {
   requiresReconnect: boolean
   tokenExpiresAt: string | null
   autoDeleteAt: string | null
+  appConfigId: string | null
   appId: string | null
 }
 
 const errorMessages: Record<string, string> = {
-  app_not_configured: "Salve o Instagram App ID e o App Secret antes de conectar uma conta.",
+  app_not_configured:
+    "Salve o Instagram App ID e o App Secret antes de conectar uma conta.",
+  app_required: "Escolha qual App Meta será usado para conectar esta conta.",
   invalid_username: "Informe um usuário do Instagram válido.",
   oauth_cancelled: "A autorização foi cancelada no Instagram.",
-  missing_oauth_data: "A Meta não retornou os dados necessários para concluir a conexão.",
+  missing_oauth_data:
+    "A Meta não retornou os dados necessários para concluir a conexão.",
   invalid_state: "A tentativa de conexão é inválida. Inicie novamente.",
   expired_state: "A tentativa de conexão expirou. Inicie novamente.",
   callback_failed: "A Meta não concluiu a conexão da conta.",
@@ -62,27 +77,40 @@ function formatDate(value: string | null) {
   }).format(new Date(value))
 }
 
+function maskAppId(value: string) {
+  if (!value) return "—"
+  if (value.length <= 8) return value
+  return `${value.slice(0, 4)}…${value.slice(-4)}`
+}
+
 export default function MetaAppPage() {
-  const [app, setApp] = useState<MetaAppData | null>(null)
+  const [metaData, setMetaData] = useState<MetaAppsData | null>(null)
+  const [apps, setApps] = useState<MetaApp[]>([])
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
   const [appId, setAppId] = useState("")
   const [appSecret, setAppSecret] = useState("")
+  const [editingAppId, setEditingAppId] = useState<string | null>(null)
+  const [selectedAppId, setSelectedAppId] = useState("")
   const [username, setUsername] = useState("")
   const [showSecret, setShowSecret] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const configured = Boolean(app?.configured)
-  const canConnect = configured && /^[a-zA-Z0-9._]{1,30}$/.test(username.replace(/^@/, ""))
+  const configured = apps.length > 0
+  const selectedApp = useMemo(
+    () => apps.find((app) => app.id === selectedAppId) || null,
+    [apps, selectedAppId]
+  )
+  const selectedAccounts = useMemo(
+    () => accounts.filter((account) => account.appConfigId === selectedAppId),
+    [accounts, selectedAppId]
+  )
+  const normalizedUsername = username.trim().replace(/^@/, "").toLowerCase()
+  const canConnect =
+    Boolean(selectedAppId) && /^[a-z0-9._]{1,30}$/.test(normalizedUsername)
 
-  const visibleAppId = useMemo(() => {
-    if (!app?.appId) return "—"
-    if (app.appId.length <= 8) return app.appId
-    return `${app.appId.slice(0, 4)}…${app.appId.slice(-4)}`
-  }, [app?.appId])
-
-  const loadData = async () => {
+  const loadData = async (preferredAppId?: string) => {
     try {
       const [appResponse, accountsResponse] = await Promise.all([
         fetch("/api/instagram/meta-app", { cache: "no-store" }),
@@ -93,16 +121,27 @@ export default function MetaAppPage() {
       const accountsData = await accountsResponse.json()
 
       if (!appResponse.ok) {
-        throw new Error(appData.error || "Não foi possível carregar o App Meta.")
+        throw new Error(appData.error || "Não foi possível carregar os Apps Meta.")
       }
 
       if (!accountsResponse.ok) {
         throw new Error(accountsData.error || "Não foi possível carregar as contas.")
       }
 
-      setApp(appData)
-      setAppId(appData.appId || "")
+      const loadedApps: MetaApp[] = Array.isArray(appData.apps)
+        ? appData.apps
+        : []
+
+      setMetaData(appData)
+      setApps(loadedApps)
       setAccounts(Array.isArray(accountsData) ? accountsData : [])
+      setSelectedAppId((current) => {
+        const requested = preferredAppId || current
+        if (requested && loadedApps.some((app) => app.id === requested)) {
+          return requested
+        }
+        return loadedApps[0]?.id || ""
+      })
     } catch (loadError) {
       toast.error(
         loadError instanceof Error
@@ -116,8 +155,6 @@ export default function MetaAppPage() {
   }
 
   useEffect(() => {
-    loadData()
-
     const params = new URLSearchParams(window.location.search)
     const success = params.get("success")
     const errorCode = params.get("error")
@@ -125,6 +162,9 @@ export default function MetaAppPage() {
     const connectedUsername = params.get("username")
     const expected = params.get("expected")
     const connected = params.get("connected")
+    const callbackAppConfigId = params.get("appConfigId") || undefined
+
+    loadData(callbackAppConfigId)
 
     if (success === "connected") {
       toast.success(
@@ -140,7 +180,11 @@ export default function MetaAppPage() {
           `Você informou @${expected || "outra_conta"}, mas autorizou @${connected || "outra_conta"}. Tente novamente com a conta correta.`
         )
       } else {
-        toast.error(callbackMessage || errorMessages[errorCode] || "Erro ao conectar a conta.")
+        toast.error(
+          callbackMessage ||
+            errorMessages[errorCode] ||
+            "Erro ao conectar a conta."
+        )
       }
     }
 
@@ -149,6 +193,13 @@ export default function MetaAppPage() {
     }
   }, [])
 
+  const resetForm = () => {
+    setEditingAppId(null)
+    setAppId("")
+    setAppSecret("")
+    setShowSecret(false)
+  }
+
   const saveApp = async (event: React.FormEvent) => {
     event.preventDefault()
     setSaving(true)
@@ -156,7 +207,11 @@ export default function MetaAppPage() {
       const response = await fetch("/api/instagram/meta-app", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appId, appSecret }),
+        body: JSON.stringify({
+          configId: editingAppId,
+          appId,
+          appSecret,
+        }),
       })
       const data = await response.json()
 
@@ -164,9 +219,14 @@ export default function MetaAppPage() {
         throw new Error(data.error || "Não foi possível salvar o App Meta.")
       }
 
-      setAppSecret("")
-      toast.success("App Meta salvo. Agora adicione a Redirect URI e os Instagram Testers no painel da Meta.")
-      await loadData()
+      const savedConfigId = String(data.configId || "")
+      resetForm()
+      toast.success(
+        editingAppId
+          ? "App Meta atualizado com sucesso."
+          : "App Meta adicionado com sucesso."
+      )
+      await loadData(savedConfigId || undefined)
     } catch (saveError) {
       toast.error(
         saveError instanceof Error
@@ -178,27 +238,39 @@ export default function MetaAppPage() {
     }
   }
 
-  const deleteApp = async () => {
-    const confirmed = await confirmToast("Excluir a configuração do App Meta?", {
-      confirmLabel: "Excluir",
-      danger: true,
-    })
+  const editApp = (app: MetaApp) => {
+    setEditingAppId(app.id)
+    setAppId(app.appId)
+    setAppSecret("")
+    setShowSecret(false)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const deleteApp = async (app: MetaApp) => {
+    const confirmed = await confirmToast(
+      `Excluir o App Meta ${maskAppId(app.appId)}?`,
+      {
+        confirmLabel: "Excluir",
+        danger: true,
+      }
+    )
     if (!confirmed) return
 
-    setDeleting(true)
+    setDeletingId(app.id)
     try {
       const response = await fetch("/api/instagram/meta-app", {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ configId: app.id }),
       })
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
         throw new Error(data.error || "Não foi possível excluir o App Meta.")
       }
 
-      setAppId("")
-      setAppSecret("")
-      toast.success("Configuração do App Meta removida.")
+      if (editingAppId === app.id) resetForm()
+      toast.success("App Meta removido.")
       await loadData()
     } catch (deleteError) {
       toast.error(
@@ -207,15 +279,15 @@ export default function MetaAppPage() {
           : "Não foi possível excluir o App Meta."
       )
     } finally {
-      setDeleting(false)
+      setDeletingId(null)
     }
   }
 
   const copyRedirectUri = async () => {
-    if (!app?.redirectUri) return
+    if (!metaData?.redirectUri) return
 
     try {
-      await navigator.clipboard.writeText(app.redirectUri)
+      await navigator.clipboard.writeText(metaData.redirectUri)
       toast.success("Redirect URI copiada.")
     } catch {
       toast.error("Não foi possível copiar a Redirect URI.")
@@ -224,15 +296,23 @@ export default function MetaAppPage() {
 
   const connectAccount = () => {
     if (!configured) {
-      toast.error("Salve o App Meta antes de conectar uma conta.")
+      toast.error("Adicione um App Meta antes de conectar uma conta.")
+      return
+    }
+    if (!selectedAppId) {
+      toast.error("Escolha qual App Meta será usado nesta conta.")
       return
     }
     if (!canConnect) {
       toast.error("Informe um usuário do Instagram válido.")
       return
     }
-    const normalized = username.trim().replace(/^@/, "").toLowerCase()
-    window.location.href = `/api/instagram/oauth/start?username=${encodeURIComponent(normalized)}`
+
+    const params = new URLSearchParams({
+      username: normalizedUsername,
+      appConfigId: selectedAppId,
+    })
+    window.location.href = `/api/instagram/oauth/start?${params.toString()}`
   }
 
   const removeAccount = async (id: string) => {
@@ -255,7 +335,7 @@ export default function MetaAppPage() {
       }
 
       toast.success("Conta removida.")
-      await loadData()
+      await loadData(selectedAppId)
     } catch (removeError) {
       toast.error(
         removeError instanceof Error
@@ -274,148 +354,160 @@ export default function MetaAppPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">App Meta</h1>
+        <h1 className="text-2xl font-bold text-white">Apps Meta</h1>
         <p className="text-gray-500 mt-1">
-          Use o App Meta de Development do seu negócio para conectar contas profissionais em modo de teste.
+          Cadastre vários Apps Meta e escolha qual deles será usado em cada
+          conexão do Instagram.
         </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <div className="bg-[#111] border border-white/5 rounded-2xl p-5">
+          <p className="text-xs text-gray-500">Apps configurados</p>
+          <p className="text-2xl text-white font-bold mt-1">{apps.length}</p>
+        </div>
+        <div className="bg-[#111] border border-white/5 rounded-2xl p-5">
+          <p className="text-xs text-gray-500">Contas conectadas</p>
+          <p className="text-2xl text-white font-bold mt-1">
+            {metaData?.accountsCount || 0}
+          </p>
+        </div>
+        <div className="bg-[#111] border border-white/5 rounded-2xl p-5">
+          <p className="text-xs text-gray-500">App selecionado</p>
+          <p className="text-lg text-white font-semibold mt-1">
+            {selectedApp ? maskAppId(selectedApp.appId) : "—"}
+          </p>
+        </div>
       </div>
 
       <div className="space-y-5">
         <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
-          <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex items-start justify-between gap-4 mb-5">
             <div>
-              <h2 className="text-white font-semibold">Seu App Meta</h2>
+              <h2 className="text-white font-semibold">Redirect URI compartilhada</h2>
               <p className="text-xs text-gray-500 mt-1">
-                Credenciais próprias do usuário. O App Secret fica criptografado no banco.
+                Cadastre esta mesma URL em todos os Apps Meta adicionados aqui.
               </p>
             </div>
-            <span
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
-                configured
-                  ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                  : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
-              }`}
+            <button
+              onClick={copyRedirectUri}
+              className="inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${configured ? "bg-green-400" : "bg-yellow-400"}`} />
-              {configured ? "Configurado" : "Não configurado"}
-            </span>
+              <Clipboard size={13} />
+              Copiar
+            </button>
           </div>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="bg-white/[0.025] border border-white/5 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">Instagram App ID</p>
-              <p className="text-white font-medium">{visibleAppId}</p>
-            </div>
-            <div className="bg-white/[0.025] border border-white/5 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">Contas conectadas</p>
-              <p className="text-white font-medium">{app?.accountsCount || 0}</p>
-            </div>
-            <div className="col-span-2 bg-white/[0.025] border border-white/5 rounded-xl p-4">
-              <div className="flex items-center justify-between gap-4 mb-2">
-                <p className="text-xs text-gray-500">Redirect URI</p>
-                <button
-                  onClick={copyRedirectUri}
-                  className="inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300"
-                >
-                  <Clipboard size={13} />
-                  Copiar
-                </button>
-              </div>
-              <p className="text-xs sm:text-sm text-gray-300 break-all font-mono">
-                {app?.redirectUri}
-              </p>
-              <p className="text-[11px] text-gray-600 mt-2">
-                Cole exatamente esta URL em Business login settings → OAuth redirect URIs.
-              </p>
-            </div>
-            <div className="bg-white/[0.025] border border-white/5 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">Última validação</p>
-              <p className="text-white font-medium">{formatDate(app?.lastValidatedAt || null)}</p>
-            </div>
-            <div className="bg-white/[0.025] border border-white/5 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">App Secret</p>
-              <p className="text-white font-medium">
-                {app?.secretConfigured ? "Salvo e criptografado" : "—"}
-              </p>
-            </div>
+          <div className="bg-white/[0.025] border border-white/5 rounded-xl p-4">
+            <p className="text-xs sm:text-sm text-gray-300 break-all font-mono">
+              {metaData?.redirectUri || "—"}
+            </p>
+            <p className="text-[11px] text-gray-600 mt-2">
+              Business login settings → OAuth redirect URIs.
+            </p>
           </div>
         </section>
 
         <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-white font-semibold">Salvar App Meta</h2>
+              <h2 className="text-white font-semibold">
+                {editingAppId ? "Editar App Meta" : "Adicionar App Meta"}
+              </h2>
               <p className="text-xs text-gray-500 mt-1">
-                Use o Instagram App ID e o Instagram App Secret, não credenciais de outro produto.
+                Use o Instagram App ID e o Instagram App Secret do produto
+                Instagram.
               </p>
             </div>
             <ShieldCheck size={20} className="text-purple-400" />
           </div>
 
           <form onSubmit={saveApp} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                Instagram App ID
-              </label>
-              <div className="relative">
-                <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                <input
-                  value={appId}
-                  onChange={(event) => setAppId(event.target.value.replace(/\D/g, ""))}
-                  required
-                  inputMode="numeric"
-                  placeholder="1784..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                  Instagram App ID
+                </label>
+                <div className="relative">
+                  <Instagram
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                    size={16}
+                  />
+                  <input
+                    value={appId}
+                    onChange={(event) =>
+                      setAppId(event.target.value.replace(/\D/g, ""))
+                    }
+                    required
+                    inputMode="numeric"
+                    placeholder="1784..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                  App Secret
+                </label>
+                <div className="relative">
+                  <KeyRound
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                    size={16}
+                  />
+                  <input
+                    type={showSecret ? "text" : "password"}
+                    value={appSecret}
+                    onChange={(event) => setAppSecret(event.target.value)}
+                    required={!editingAppId}
+                    placeholder={
+                      editingAppId
+                        ? "Deixe vazio para manter o secret atual"
+                        : "Instagram App Secret"
+                    }
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-11 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret((current) => !current)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                    aria-label={showSecret ? "Ocultar secret" : "Mostrar secret"}
+                  >
+                    {showSecret ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                App Secret
-              </label>
-              <div className="relative">
-                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                <input
-                  type={showSecret ? "text" : "password"}
-                  value={appSecret}
-                  onChange={(event) => setAppSecret(event.target.value)}
-                  required={!configured}
-                  placeholder={configured ? "Deixe vazio para manter o secret atual" : "Instagram App Secret"}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-11 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((current) => !current)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                  aria-label={showSecret ? "Ocultar secret" : "Mostrar secret"}
-                >
-                  {showSecret ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <button
                 type="submit"
                 disabled={saving}
                 className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold px-5 py-3 rounded-xl hover:opacity-90 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                {saving ? "Salvando..." : "Salvar app"}
+                {saving ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : editingAppId ? (
+                  <Save size={15} />
+                ) : (
+                  <Plus size={15} />
+                )}
+                {saving
+                  ? "Salvando..."
+                  : editingAppId
+                    ? "Salvar alterações"
+                    : "Adicionar app"}
               </button>
 
-              {configured && (
+              {editingAppId && (
                 <button
                   type="button"
-                  onClick={deleteApp}
-                  disabled={deleting}
-                  className="inline-flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium px-5 py-3 rounded-xl hover:bg-red-500/15 disabled:opacity-50"
+                  onClick={resetForm}
+                  className="inline-flex items-center justify-center gap-2 bg-white/5 border border-white/10 text-gray-300 text-sm font-medium px-5 py-3 rounded-xl hover:bg-white/10"
                 >
-                  {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                  Excluir
+                  <X size={15} />
+                  Cancelar
                 </button>
               )}
             </div>
@@ -423,26 +515,145 @@ export default function MetaAppPage() {
         </section>
 
         <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
+          <div className="mb-5">
+            <h2 className="text-white font-semibold">Seus Apps Meta</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Cada conta fica vinculada ao App Meta usado durante o OAuth.
+            </p>
+          </div>
+
+          {apps.length === 0 ? (
+            <div className="border border-dashed border-white/10 rounded-xl py-10 text-center">
+              <Instagram size={24} className="text-gray-700 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">Nenhum App Meta cadastrado.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {apps.map((app, index) => {
+                const selected = app.id === selectedAppId
+                return (
+                  <div
+                    key={app.id}
+                    className={`rounded-xl border p-4 transition-colors ${
+                      selected
+                        ? "border-purple-500/40 bg-purple-500/[0.06]"
+                        : "border-white/[0.07] bg-white/[0.025]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-semibold flex items-center justify-center shrink-0">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white">
+                            App Meta {index + 1}
+                          </p>
+                          <p className="text-xs text-gray-500 font-mono">
+                            {maskAppId(app.appId)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => editApp(app)}
+                          className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg"
+                          aria-label="Editar App Meta"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => deleteApp(app)}
+                          disabled={deletingId === app.id}
+                          className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50"
+                          aria-label="Excluir App Meta"
+                        >
+                          {deletingId === app.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs mb-4">
+                      <div>
+                        <p className="text-gray-600">Contas</p>
+                        <p className="text-white font-medium mt-1">
+                          {app.accountsCount}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Última validação</p>
+                        <p className="text-gray-300 mt-1">
+                          {formatDate(app.lastValidatedAt)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAppId(app.id)}
+                      className={`w-full inline-flex items-center justify-center gap-2 text-xs font-semibold py-2.5 rounded-lg border ${
+                        selected
+                          ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                          : "bg-white/[0.03] border-white/10 text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      {selected ? <Check size={13} /> : <PlugZap size={13} />}
+                      {selected ? "Selecionado" : "Usar para conectar"}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-white font-semibold">Contas deste app</h2>
+              <h2 className="text-white font-semibold">Conectar conta</h2>
               <p className="text-xs text-gray-500 mt-1">
-                Adicione a conta como Instagram Tester no app Meta e aceite o convite antes de conectar.
+                Escolha explicitamente o App Meta que fará a autorização OAuth.
               </p>
             </div>
             <UserPlus size={20} className="text-purple-400" />
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 mb-5">
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">@</span>
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 mb-5">
+            <select
+              value={selectedAppId}
+              onChange={(event) => setSelectedAppId(event.target.value)}
+              disabled={apps.length === 0}
+              className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 disabled:opacity-50"
+            >
+              {apps.length === 0 ? (
+                <option value="">Nenhum App Meta</option>
+              ) : (
+                apps.map((app, index) => (
+                  <option key={app.id} value={app.id}>
+                    App Meta {index + 1} · {maskAppId(app.appId)}
+                  </option>
+                ))
+              )}
+            </select>
+
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
+                @
+              </span>
               <input
                 value={username}
-                onChange={(event) => setUsername(event.target.value.replace(/^@/, ""))}
+                onChange={(event) =>
+                  setUsername(event.target.value.replace(/^@/, ""))
+                }
                 placeholder="usuario"
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
               />
             </div>
+
             <button
               onClick={connectAccount}
               disabled={!canConnect}
@@ -453,14 +664,28 @@ export default function MetaAppPage() {
             </button>
           </div>
 
-          {accounts.length === 0 ? (
-            <div className="border border-dashed border-white/10 rounded-xl py-10 text-center">
-              <Instagram size={24} className="text-gray-700 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">Nenhuma conta oficial conectada.</p>
+          {selectedApp && (
+            <p className="text-[11px] text-gray-600 mb-5">
+              A conta será vinculada ao App Meta {maskAppId(selectedApp.appId)}.
+            </p>
+          )}
+
+          <div className="mb-3">
+            <h3 className="text-sm font-medium text-white">
+              Contas do app selecionado
+            </h3>
+          </div>
+
+          {selectedAccounts.length === 0 ? (
+            <div className="border border-dashed border-white/10 rounded-xl py-9 text-center">
+              <Instagram size={22} className="text-gray-700 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">
+                Nenhuma conta conectada por este App Meta.
+              </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {accounts.map((account) => (
+              {selectedAccounts.map((account) => (
                 <div
                   key={account.id}
                   className="flex items-center gap-3 bg-white/[0.025] border border-white/5 rounded-xl p-3.5"
@@ -477,7 +702,9 @@ export default function MetaAppPage() {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-white truncate">@{account.username}</p>
+                    <p className="text-sm font-medium text-white truncate">
+                      @{account.username}
+                    </p>
                     <p className="text-xs text-gray-500 truncate">
                       {account.accountType || "Conta profissional"}
                       {account.followerCount !== null
@@ -486,7 +713,8 @@ export default function MetaAppPage() {
                     </p>
                     {account.requiresReconnect && account.autoDeleteAt && (
                       <p className="text-[10px] text-red-300/70 mt-0.5 truncate">
-                        Reconecte até {formatDate(account.autoDeleteAt)} ou a conta será removida.
+                        Reconecte até {formatDate(account.autoDeleteAt)} ou a conta
+                        será removida.
                       </p>
                     )}
                   </div>
@@ -497,8 +725,16 @@ export default function MetaAppPage() {
                         : "bg-red-500/10 text-red-400"
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${account.isActive && !account.requiresReconnect ? "bg-green-400" : "bg-red-400"}`} />
-                    {account.isActive && !account.requiresReconnect ? "Conectada" : "Reconectar"}
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        account.isActive && !account.requiresReconnect
+                          ? "bg-green-400"
+                          : "bg-red-400"
+                      }`}
+                    />
+                    {account.isActive && !account.requiresReconnect
+                      ? "Conectada"
+                      : "Reconectar"}
                   </span>
                   <button
                     onClick={() => removeAccount(account.id)}
@@ -517,7 +753,9 @@ export default function MetaAppPage() {
           <div className="flex items-center justify-between gap-4 mb-5">
             <div>
               <h2 className="text-white font-semibold">Como configurar</h2>
-              <p className="text-xs text-gray-500 mt-1">Fluxo BYOA oficial da Meta.</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Repita a configuração para cada App Meta cadastrado.
+              </p>
             </div>
             <a
               href="https://developers.facebook.com/apps/"
@@ -532,12 +770,11 @@ export default function MetaAppPage() {
 
           <ol className="space-y-3 text-sm text-gray-400">
             {[
-              "Crie um app em developers.facebook.com e mantenha-o em modo Development durante os testes.",
-              "Adicione o produto Instagram e escolha API setup with Instagram login.",
-              "Em Business login settings, cole exatamente a Redirect URI mostrada nesta página.",
-              "Copie o Instagram App ID e o Instagram App Secret exibidos no produto Instagram.",
-              "Adicione as contas em Roles como Instagram Testers e aceite o convite na conta do Instagram.",
-              "Salve o app aqui, informe o @ da conta e clique em Conectar conta.",
+              "Crie o App Meta e adicione o produto Instagram com Instagram Login.",
+              "Em Business login settings, cadastre exatamente a Redirect URI compartilhada desta página.",
+              "Copie o Instagram App ID e o Instagram App Secret e adicione o app aqui.",
+              "Adicione a conta como Instagram Tester no App Meta correto e aceite o convite.",
+              "Na seção Conectar conta, selecione esse App Meta, informe o @ e faça o OAuth.",
             ].map((item, index) => (
               <li key={item} className="flex gap-3">
                 <span className="w-6 h-6 rounded-full bg-purple-500/10 text-purple-400 text-xs font-semibold flex items-center justify-center shrink-0">

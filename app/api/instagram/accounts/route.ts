@@ -138,6 +138,7 @@ export async function GET() {
         hasAssignedProxy: Boolean(currentAccount.proxyAssignedAt),
         lastActiveAt: currentAccount.lastActiveAt,
         createdAt: currentAccount.createdAt,
+        appConfigId: currentAccount.appConfigId || null,
         appId: currentAccount.appConfig?.metaAppId || null,
         requiresReconnect: reconnect,
         autoDeleteAt,

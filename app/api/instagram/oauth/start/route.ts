@@ -18,13 +18,54 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  const app = await prisma.instagramApp.findUnique({
-    where: { userId: session.user.id },
-    select: {
-      id: true,
-      metaAppId: true,
-    },
-  })
+  const requestedAppConfigId = String(
+    request.nextUrl.searchParams.get("appConfigId") || ""
+  ).trim()
+
+  let app: { id: string; metaAppId: string } | null = null
+
+  if (requestedAppConfigId) {
+    app = await prisma.instagramApp.findFirst({
+      where: {
+        id: requestedAppConfigId,
+        userId: session.user.id,
+      },
+      select: {
+        id: true,
+        metaAppId: true,
+      },
+    })
+
+    if (!app) {
+      return NextResponse.redirect(
+        new URL("/dashboard/meta-app?error=app_not_configured", request.url)
+      )
+    }
+  } else {
+    const apps = await prisma.instagramApp.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        metaAppId: true,
+      },
+      take: 2,
+    })
+
+    if (apps.length === 0) {
+      return NextResponse.redirect(
+        new URL("/dashboard/meta-app?error=app_not_configured", request.url)
+      )
+    }
+
+    if (apps.length > 1) {
+      return NextResponse.redirect(
+        new URL("/dashboard/meta-app?error=app_required", request.url)
+      )
+    }
+
+    app = apps[0]
+  }
 
   if (!app) {
     return NextResponse.redirect(

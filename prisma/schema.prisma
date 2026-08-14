@@ -16,7 +16,7 @@ model User {
   password         String?
   accounts         Account[]
   sessions         Session[]
-  instagramApp     InstagramApp?
+  instagramApps    InstagramApp[]
   igAccounts       InstagramAccount[]
   posts            Post[]
   media            MediaLibrary[]
@@ -68,7 +68,7 @@ model VerificationToken {
 
 model InstagramApp {
   id                 String             @id @default(cuid())
-  userId             String             @unique
+  userId             String
   metaAppId          String
   appSecretEncrypted String
   lastValidatedAt    DateTime?
@@ -76,6 +76,9 @@ model InstagramApp {
   updatedAt          DateTime           @updatedAt
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   accounts           InstagramAccount[]
+
+  @@unique([userId, metaAppId])
+  @@index([userId])
 }
 
 model InstagramAccount {

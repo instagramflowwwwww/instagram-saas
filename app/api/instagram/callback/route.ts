@@ -181,6 +181,7 @@ export async function GET(request: NextRequest) {
       url.searchParams.set("error", "wrong_account")
       url.searchParams.set("connected", username)
       url.searchParams.set("expected", state.expectedUsername)
+      url.searchParams.set("appConfigId", app.id)
       return NextResponse.redirect(url)
     }
 
@@ -282,12 +283,14 @@ export async function GET(request: NextRequest) {
     const url = new URL("/dashboard/meta-app", request.url)
     url.searchParams.set("success", "connected")
     url.searchParams.set("username", username)
+    url.searchParams.set("appConfigId", app.id)
     return NextResponse.redirect(url)
   } catch (error) {
     console.error("Instagram official callback error", error)
     const url = new URL("/dashboard/meta-app", request.url)
     url.searchParams.set("error", "callback_failed")
     url.searchParams.set("message", getCallbackErrorMessage(error))
+    url.searchParams.set("appConfigId", app.id)
     return NextResponse.redirect(url)
   }
 }
