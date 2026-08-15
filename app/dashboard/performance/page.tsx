@@ -32,6 +32,7 @@ type PerformancePost = {
 }
 
 type PeriodKey = "today" | "yesterday" | "month" | "total"
+type SortKey = "recent" | "views" | "likes" | "comments"
 
 type PeriodOption = {
   value: PeriodKey
@@ -46,6 +47,13 @@ const PERIOD_OPTIONS: PeriodOption[] = [
   { value: "yesterday", label: "Ontem", description: "Publicações de ontem" },
   { value: "month", label: "Este mês", description: "Publicações do mês atual" },
   { value: "total", label: "Total", description: "Todas as publicações" },
+]
+
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: "recent", label: "Mais recentes" },
+  { value: "views", label: "Mais visualizações" },
+  { value: "likes", label: "Mais curtidas" },
+  { value: "comments", label: "Mais comentários" },
 ]
 
 function formatNumber(value: number | null) {
@@ -110,6 +118,7 @@ function getPerformanceUrl(
 export default function PerformancePage() {
   const [posts, setPosts] = useState<PerformancePost[]>([])
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("today")
+  const [sortBy, setSortBy] = useState<SortKey>("recent")
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [pageError, setPageError] = useState("")
@@ -274,6 +283,24 @@ export default function PerformancePage() {
     [posts]
   )
 
+  const sortedPosts = useMemo(() => {
+    const metricValue = (post: PerformancePost) => {
+      if (sortBy === "views") return post.viewsCount ?? -1
+      if (sortBy === "likes") return post.likeCount ?? -1
+      if (sortBy === "comments") return post.commentsCount ?? -1
+      return new Date(post.publishedAt).getTime()
+    }
+
+    return [...posts].sort((a, b) => {
+      const difference = metricValue(b) - metricValue(a)
+      if (difference !== 0) return difference
+
+      return (
+        new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+      )
+    })
+  }, [posts, sortBy])
+
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <div className="mb-6 flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -313,6 +340,22 @@ export default function PerformancePage() {
               )
             })}
           </div>
+
+          <label className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.07] bg-[#111] px-3 text-xs text-gray-500">
+            <span className="whitespace-nowrap">Ordenar por</span>
+            <select
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value as SortKey)}
+              aria-label="Ordenar publicações por"
+              className="min-w-0 cursor-pointer bg-transparent font-medium text-gray-200 outline-none"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value} className="bg-[#111]">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <button
             type="button"
@@ -408,7 +451,7 @@ export default function PerformancePage() {
 
       {!loading && posts.length > 0 && (
         <div className="space-y-3">
-          {posts.map((post) => (
+          {sortedPosts.map((post) => (
             <div
               key={post.id}
               className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-hidden rounded-xl border border-white/5 bg-[#111] p-5 lg:flex-row lg:items-center"

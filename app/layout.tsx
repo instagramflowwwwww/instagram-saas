@@ -8,6 +8,11 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "InstaFlow — Automação de Instagram",
   description: "Gerencie e publique em múltiplas contas do Instagram",
+  icons: {
+    icon: "/logo/logosfundo.png",
+    shortcut: "/logo/logosfundo.png",
+    apple: "/logo/logosfundo.png",
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -7,7 +7,7 @@ import toast from "react-hot-toast"
 import { isAdminEmail } from "@/lib/account-access"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
-  History, Settings, LogOut, Zap, FolderOpen,
+  History, Settings, LogOut, FolderOpen,
   ListChecks, Star, TrendingUp, Shield, Boxes, Network
 } from "lucide-react"
 
@@ -141,9 +141,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className="w-60 bg-[#0d0d0d] border-r border-white/5 flex flex-col fixed h-full">
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-              <Zap size={14} className="text-white" />
-            </div>
+            <img
+              src="/logo/logosfundo.png"
+              alt="Logo InstaFlow"
+              className="h-8 w-8 rounded-lg object-contain"
+            />
             <span className="font-bold text-white">InstaFlow</span>
           </div>
         </div>
