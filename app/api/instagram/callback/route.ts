@@ -32,14 +32,37 @@ type OAuthState = {
   appConfigId: string
   expectedUsername: string | null
   redirectUri?: string
+  popup?: boolean
   nonce: string
   expiresAt: number
 }
 
-function redirectWithError(request: NextRequest, error: string) {
+function getDashboardUrl(request: NextRequest, popupMode: boolean) {
   const url = new URL("/dashboard/meta-app", request.url)
+  if (popupMode) {
+    url.searchParams.set("oauthPopup", "1")
+  }
+  return url
+}
+
+function redirectWithError(
+  request: NextRequest,
+  error: string,
+  popupMode = false
+) {
+  const url = getDashboardUrl(request, popupMode)
   url.searchParams.set("error", error)
   return NextResponse.redirect(url)
+}
+
+function getPopupModeFromState(stateValue: string | null) {
+  if (!stateValue) return false
+
+  try {
+    return Boolean(openPayload<OAuthState>(stateValue).popup)
+  } catch {
+    return false
+  }
 }
 
 function getCallbackErrorMessage(error: unknown) {
@@ -67,13 +90,14 @@ export async function GET(request: NextRequest) {
   const errorReason = request.nextUrl.searchParams.get("error_reason")
   const code = request.nextUrl.searchParams.get("code")
   const stateValue = request.nextUrl.searchParams.get("state")
+  const popupModeFromState = getPopupModeFromState(stateValue)
 
   if (error || errorReason) {
-    return redirectWithError(request, "oauth_cancelled")
+    return redirectWithError(request, "oauth_cancelled", popupModeFromState)
   }
 
   if (!code || !stateValue) {
-    return redirectWithError(request, "missing_oauth_data")
+    return redirectWithError(request, "missing_oauth_data", popupModeFromState)
   }
 
   let state: OAuthState
@@ -81,8 +105,10 @@ export async function GET(request: NextRequest) {
   try {
     state = openPayload<OAuthState>(stateValue)
   } catch {
-    return redirectWithError(request, "invalid_state")
+    return redirectWithError(request, "invalid_state", popupModeFromState)
   }
+
+  const popupMode = Boolean(state.popup)
 
   if (
     state.userId !== session.user.id ||
@@ -90,7 +116,7 @@ export async function GET(request: NextRequest) {
     !state.expiresAt ||
     Date.now() > state.expiresAt
   ) {
-    return redirectWithError(request, "expired_state")
+    return redirectWithError(request, "expired_state", popupMode)
   }
 
   const app = await prisma.instagramApp.findFirst({
@@ -101,7 +127,7 @@ export async function GET(request: NextRequest) {
   })
 
   if (!app) {
-    return redirectWithError(request, "app_not_configured")
+    return redirectWithError(request, "app_not_configured", popupMode)
   }
 
   try {
@@ -177,7 +203,7 @@ export async function GET(request: NextRequest) {
       state.expectedUsername &&
       state.expectedUsername.toLowerCase() !== username
     ) {
-      const url = new URL("/dashboard/meta-app", request.url)
+      const url = getDashboardUrl(request, popupMode)
       url.searchParams.set("error", "wrong_account")
       url.searchParams.set("connected", username)
       url.searchParams.set("expected", state.expectedUsername)
@@ -280,14 +306,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const url = new URL("/dashboard/meta-app", request.url)
+    const url = getDashboardUrl(request, popupMode)
     url.searchParams.set("success", "connected")
     url.searchParams.set("username", username)
     url.searchParams.set("appConfigId", app.id)
     return NextResponse.redirect(url)
   } catch (error) {
     console.error("Instagram official callback error", error)
-    const url = new URL("/dashboard/meta-app", request.url)
+    const url = getDashboardUrl(request, popupMode)
     url.searchParams.set("error", "callback_failed")
     url.searchParams.set("message", getCallbackErrorMessage(error))
     url.searchParams.set("appConfigId", app.id)

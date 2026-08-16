@@ -11,8 +11,22 @@ import { sealPayload } from "@/lib/secure-store"
 
 export const runtime = "nodejs"
 
+function redirectToMetaApp(
+  request: NextRequest,
+  error: string,
+  popupMode: boolean
+) {
+  const url = new URL("/dashboard/meta-app", request.url)
+  url.searchParams.set("error", error)
+  if (popupMode) {
+    url.searchParams.set("oauthPopup", "1")
+  }
+  return NextResponse.redirect(url)
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
+  const popupMode = request.nextUrl.searchParams.get("popup") === "1"
 
   if (!session?.user?.id) {
     return NextResponse.redirect(new URL("/login", request.url))
@@ -37,9 +51,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (!app) {
-      return NextResponse.redirect(
-        new URL("/dashboard/meta-app?error=app_not_configured", request.url)
-      )
+      return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
   } else {
     const apps = await prisma.instagramApp.findMany({
@@ -53,24 +65,18 @@ export async function GET(request: NextRequest) {
     })
 
     if (apps.length === 0) {
-      return NextResponse.redirect(
-        new URL("/dashboard/meta-app?error=app_not_configured", request.url)
-      )
+      return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
 
     if (apps.length > 1) {
-      return NextResponse.redirect(
-        new URL("/dashboard/meta-app?error=app_required", request.url)
-      )
+      return redirectToMetaApp(request, "app_required", popupMode)
     }
 
     app = apps[0]
   }
 
   if (!app) {
-    return NextResponse.redirect(
-      new URL("/dashboard/meta-app?error=app_not_configured", request.url)
-    )
+    return redirectToMetaApp(request, "app_not_configured", popupMode)
   }
 
   const username = String(request.nextUrl.searchParams.get("username") || "")
@@ -79,9 +85,7 @@ export async function GET(request: NextRequest) {
     .toLowerCase()
 
   if (username && !/^[a-z0-9._]{1,30}$/.test(username)) {
-    return NextResponse.redirect(
-      new URL("/dashboard/meta-app?error=invalid_username", request.url)
-    )
+    return redirectToMetaApp(request, "invalid_username", popupMode)
   }
 
   const redirectUri = getInstagramRedirectUri(request)
@@ -90,6 +94,7 @@ export async function GET(request: NextRequest) {
     appConfigId: app.id,
     expectedUsername: username || null,
     redirectUri,
+    popup: popupMode,
     nonce: randomBytes(18).toString("hex"),
     expiresAt: Date.now() + 10 * 60 * 1000,
   })

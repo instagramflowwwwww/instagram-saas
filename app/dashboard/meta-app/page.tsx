@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Check,
   Clipboard,
@@ -55,6 +55,20 @@ type InstagramAccount = {
   appId: string | null
 }
 
+type OAuthResult = {
+  eventId: string
+  success: string | null
+  errorCode: string | null
+  callbackMessage: string | null
+  connectedUsername: string | null
+  expected: string | null
+  connected: string | null
+  appConfigId?: string
+}
+
+const OAUTH_CHANNEL_NAME = "instagram-meta-oauth"
+const OAUTH_STORAGE_KEY = "instagram-meta-oauth-result"
+
 const errorMessages: Record<string, string> = {
   app_not_configured:
     "Salve o Instagram App ID e o App Secret antes de conectar uma conta.",
@@ -96,6 +110,7 @@ export default function MetaAppPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const handledOAuthEventRef = useRef<string | null>(null)
 
   const configured = apps.length > 0
   const selectedApp = useMemo(
@@ -154,6 +169,30 @@ export default function MetaAppPage() {
     }
   }
 
+  const showOAuthResultToast = (result: OAuthResult) => {
+    if (result.success === "connected") {
+      toast.success(
+        result.connectedUsername
+          ? `@${result.connectedUsername} conectada com sucesso pelo App Meta.`
+          : "Conta conectada com sucesso pelo App Meta."
+      )
+    }
+
+    if (result.errorCode) {
+      if (result.errorCode === "wrong_account") {
+        toast.error(
+          `Você informou @${result.expected || "outra_conta"}, mas autorizou @${result.connected || "outra_conta"}. Tente novamente com a conta correta.`
+        )
+      } else {
+        toast.error(
+          result.callbackMessage ||
+            errorMessages[result.errorCode] ||
+            "Erro ao conectar a conta."
+        )
+      }
+    }
+  }
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const success = params.get("success")
@@ -163,35 +202,111 @@ export default function MetaAppPage() {
     const expected = params.get("expected")
     const connected = params.get("connected")
     const callbackAppConfigId = params.get("appConfigId") || undefined
+    const isOAuthPopup = params.get("oauthPopup") === "1"
+    const hasOAuthResult = Boolean(success || errorCode)
+    const callbackResult: OAuthResult | null = hasOAuthResult
+      ? {
+          eventId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          success,
+          errorCode,
+          callbackMessage,
+          connectedUsername,
+          expected,
+          connected,
+          appConfigId: callbackAppConfigId,
+        }
+      : null
 
-    loadData(callbackAppConfigId)
+    const processOAuthResult = (result: OAuthResult) => {
+      if (!result?.eventId || handledOAuthEventRef.current === result.eventId) {
+        return
+      }
 
-    if (success === "connected") {
-      toast.success(
-        connectedUsername
-          ? `@${connectedUsername} conectada com sucesso pelo App Meta.`
-          : "Conta conectada com sucesso pelo App Meta."
-      )
+      handledOAuthEventRef.current = result.eventId
+      if (result.success === "connected") {
+        setUsername("")
+      }
+      showOAuthResultToast(result)
+      void loadData(result.appConfigId)
     }
 
-    if (errorCode) {
-      if (errorCode === "wrong_account") {
-        toast.error(
-          `Você informou @${expected || "outra_conta"}, mas autorizou @${connected || "outra_conta"}. Tente novamente com a conta correta.`
-        )
-      } else {
-        toast.error(
-          callbackMessage ||
-            errorMessages[errorCode] ||
-            "Erro ao conectar a conta."
-        )
+    let channel: BroadcastChannel | null = null
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel(OAUTH_CHANNEL_NAME)
+      channel.addEventListener("message", (event: MessageEvent<OAuthResult>) => {
+        processOAuthResult(event.data)
+      })
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== OAUTH_STORAGE_KEY || !event.newValue) return
+
+      try {
+        processOAuthResult(JSON.parse(event.newValue) as OAuthResult)
+      } catch {
+        // Ignora mensagens inválidas de outras abas.
       }
     }
 
-    if (success || errorCode) {
+    const handleFocus = () => {
+      void loadData()
+    }
+
+    window.addEventListener("storage", handleStorage)
+    window.addEventListener("focus", handleFocus)
+
+    if (isOAuthPopup && callbackResult) {
+      try {
+        channel?.postMessage(callbackResult)
+      } catch {
+        // O evento de storage e o refresh no foco continuam como fallback.
+      }
+
+      try {
+        localStorage.setItem(OAUTH_STORAGE_KEY, JSON.stringify(callbackResult))
+        localStorage.removeItem(OAUTH_STORAGE_KEY)
+      } catch {
+        // O refresh no foco da aba principal ainda atualiza os dados.
+      }
+
+      window.history.replaceState({}, "", "/dashboard/meta-app")
+      window.close()
+
+      const closeFallbackTimer = window.setTimeout(() => {
+        if (!window.closed) {
+          processOAuthResult(callbackResult)
+        }
+      }, 300)
+
+      return () => {
+        window.clearTimeout(closeFallbackTimer)
+        channel?.close()
+        window.removeEventListener("storage", handleStorage)
+        window.removeEventListener("focus", handleFocus)
+      }
+    }
+
+    void loadData(callbackAppConfigId)
+
+    if (callbackResult) {
+      handledOAuthEventRef.current = callbackResult.eventId
+      if (callbackResult.success === "connected") {
+        setUsername("")
+      }
+      showOAuthResultToast(callbackResult)
+    }
+
+    if (hasOAuthResult) {
       window.history.replaceState({}, "", "/dashboard/meta-app")
     }
+
+    return () => {
+      channel?.close()
+      window.removeEventListener("storage", handleStorage)
+      window.removeEventListener("focus", handleFocus)
+    }
   }, [])
+
 
   const resetForm = () => {
     setEditingAppId(null)
@@ -312,7 +427,35 @@ export default function MetaAppPage() {
       username: normalizedUsername,
       appConfigId: selectedAppId,
     })
-    window.location.href = `/api/instagram/oauth/start?${params.toString()}`
+    const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
+    const authTab = window.open("about:blank", "_blank")
+
+    if (!authTab) {
+      toast.error(
+        "O navegador bloqueou a nova aba. A autorização será aberta nesta aba."
+      )
+      window.location.href = sameTabUrl
+      return
+    }
+
+    try {
+      authTab.opener = null
+    } catch {
+      // Alguns navegadores não permitem alterar opener; o fluxo continua normal.
+    }
+
+    params.set("popup", "1")
+    const popupUrl = new URL(
+      `/api/instagram/oauth/start?${params.toString()}`,
+      window.location.origin
+    ).toString()
+
+    try {
+      authTab.location.href = popupUrl
+    } catch {
+      authTab.close()
+      window.location.href = sameTabUrl
+    }
   }
 
   const removeAccount = async (id: string) => {
