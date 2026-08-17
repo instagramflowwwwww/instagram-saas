@@ -5,7 +5,6 @@ import {
   isAdminEmail,
 } from "@/lib/account-access"
 import { authOptions } from "@/lib/auth"
-import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -16,7 +15,6 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  await maintainInstagramAccounts()
   const now = new Date()
 
   const users = await prisma.user.findMany({

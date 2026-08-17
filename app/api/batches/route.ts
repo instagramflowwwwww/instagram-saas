@@ -41,7 +41,6 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
-  await maintainInstagramAccounts(session.user.id)
   const now = new Date()
 
   const batches = await prisma.postingBatch.findMany({

@@ -4,7 +4,6 @@ import { authOptions } from "@/lib/auth"
 import {
   INSTAGRAM_OFFICIAL_CONNECTION,
   isInstagramDisconnectError,
-  maintainInstagramAccounts,
   markInstagramAccountDisconnected,
 } from "@/lib/instagram-account-lifecycle"
 import {
@@ -449,7 +448,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    await maintainInstagramAccounts(session.user.id)
     const requestUrl = new URL(request.url)
     const rawFrom = requestUrl.searchParams.get("from")
     const rawTo = requestUrl.searchParams.get("to")

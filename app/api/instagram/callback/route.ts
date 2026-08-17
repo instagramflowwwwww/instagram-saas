@@ -236,6 +236,7 @@ export async function GET(request: NextRequest) {
       instagramPassword: null,
       sessionFilePath: null,
       lastActiveAt: new Date(),
+      profileSyncedAt: new Date(),
     }
 
     const connectedAccount = await prisma.$transaction(async (tx) => {

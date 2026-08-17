@@ -2,7 +2,6 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import type { Prisma } from "@prisma/client"
 import { authOptions } from "@/lib/auth"
-import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -115,7 +114,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
-  await maintainInstagramAccounts(session.user.id)
 
   const { searchParams } = new URL(request.url)
   const page = readPositiveInteger(searchParams.get("page"), 1, 100_000)

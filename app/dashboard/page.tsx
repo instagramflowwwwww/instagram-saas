@@ -25,7 +25,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react"
 import toast from "react-hot-toast"
@@ -291,7 +290,6 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [dateFrom, setDateFrom] = useState(getInitialDateFrom)
   const [dateTo, setDateTo] = useState(getToday)
-  const initialLoad = useRef(true)
 
   const loadDashboard = useCallback(
     async (syncAccounts = false) => {
@@ -302,7 +300,7 @@ export default function DashboardPage() {
 
         if (syncAccounts) {
           try {
-            const accountResponse = await fetch("/api/instagram/accounts", {
+            const accountResponse = await fetch("/api/instagram/accounts?sync=1", {
               cache: "no-store",
             })
             const accountPayload = await accountResponse.json().catch(() => ({}))
@@ -356,8 +354,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setLoading(true)
-    void loadDashboard(initialLoad.current)
-    initialLoad.current = false
+    void loadDashboard(false)
   }, [loadDashboard])
 
   const maxFollowers = useMemo(

@@ -98,7 +98,10 @@ export default function AccountsPage() {
 
 
     try {
-      const response = await fetch("/api/instagram/accounts", {
+      const endpoint = manual
+        ? "/api/instagram/accounts?sync=1"
+        : "/api/instagram/accounts"
+      const response = await fetch(endpoint, {
         cache: "no-store",
       })
       const data = await response.json()

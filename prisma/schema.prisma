@@ -101,6 +101,7 @@ model InstagramAccount {
   proxy             String?
   proxyAssignedAt   DateTime?
   lastActiveAt      DateTime              @default(now())
+  profileSyncedAt   DateTime?
   createdAt         DateTime              @default(now())
   user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   appConfig         InstagramApp?         @relation(fields: [appConfigId], references: [id], onDelete: SetNull)
@@ -109,6 +110,10 @@ model InstagramAccount {
   assignedProxy     InstagramProxy?
 
   @@index([userId, igUserId])
+  @@index([userId, createdAt])
+  @@index([userId, connectionType, isActive, tokenExpiresAt])
+  @@index([connectionType, isActive, lastActiveAt])
+  @@index([connectionType, isActive, profileSyncedAt])
   @@index([appConfigId])
 }
 
@@ -143,6 +148,11 @@ model Post {
   user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   logs            PostLog[]
   batchItem       PostingBatchItem?
+
+  @@index([userId, createdAt])
+  @@index([userId, status, createdAt])
+  @@index([userId, status, publishedAt])
+  @@index([userId, status, scheduledAt])
 }
 
 model PostLog {
@@ -167,7 +177,9 @@ model PostLog {
   instagramAccount            InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt])
+  @@index([postId, createdAt])
   @@index([instagramAccountId, mediaId])
+  @@index([instagramAccountId, createdAt])
 }
 
 model MediaLibrary {

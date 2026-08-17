@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
+import { Prisma } from "@prisma/client"
 import { authOptions } from "@/lib/auth"
-import { maintainInstagramAccounts } from "@/lib/instagram-account-lifecycle"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -12,6 +12,17 @@ type Period = {
   end: Date
   previousStart: Date
   previousEnd: Date
+}
+
+type SummaryCountsRow = {
+  publishedCurrent: bigint
+  publishedPrevious: bigint
+  scheduledCurrent: bigint
+  scheduledPrevious: bigint
+  failuresCurrent: bigint
+  failuresPrevious: bigint
+  newAccountsCurrent: bigint
+  newAccountsPrevious: bigint
 }
 
 const BRAZIL_OFFSET = "-03:00"
@@ -80,7 +91,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
-  await maintainInstagramAccounts(session.user.id)
   const period = getPeriod(request)
 
   if (!period) {
@@ -91,25 +101,13 @@ export async function GET(request: Request) {
   }
 
   const userId = session.user.id
+  const now = new Date()
   const currentRange = { gte: period.start, lte: period.end }
-  const previousRange = {
-    gte: period.previousStart,
-    lte: period.previousEnd,
-  }
 
   try {
-    const [
-      accounts,
-      published,
-      previousPublished,
-      scheduled,
-      previousScheduled,
-      failures,
-      previousFailures,
-      newAccounts,
-      previousNewAccounts,
-      recentPosts,
-    ] = await Promise.all([
+    // O dashboard agora faz três round-trips principais ao banco: contas,
+    // resumo agregado e posts recentes. Antes eram cerca de dez consultas.
+    const [accounts, summaryRows, recentPosts] = await Promise.all([
       prisma.instagramAccount.findMany({
         where: {
           userId,
@@ -117,7 +115,7 @@ export async function GET(request: Request) {
           isActive: true,
           accessToken: { not: null },
           appConfigId: { not: null },
-          tokenExpiresAt: { gt: new Date() },
+          tokenExpiresAt: { gt: now },
         },
         select: {
           id: true,
@@ -138,84 +136,95 @@ export async function GET(request: Request) {
           { createdAt: "desc" },
         ],
       }),
-      prisma.post.count({
-        where: {
-          userId,
-          status: { in: ["published", "partial"] },
-          publishedAt: currentRange,
-        },
-      }),
-      prisma.post.count({
-        where: {
-          userId,
-          status: { in: ["published", "partial"] },
-          publishedAt: previousRange,
-        },
-      }),
-      prisma.post.count({
-        where: {
-          userId,
-          status: "scheduled",
-          scheduledAt: currentRange,
-        },
-      }),
-      prisma.post.count({
-        where: {
-          userId,
-          status: "scheduled",
-          scheduledAt: previousRange,
-        },
-      }),
-      prisma.postLog.count({
-        where: {
-          status: "error",
-          createdAt: currentRange,
-          post: { userId },
-          instagramAccount: {
-            connectionType: "official",
-            isActive: true,
-            accessToken: { not: null },
-            appConfigId: { not: null },
-            tokenExpiresAt: { gt: new Date() },
-          },
-        },
-      }),
-      prisma.postLog.count({
-        where: {
-          status: "error",
-          createdAt: previousRange,
-          post: { userId },
-          instagramAccount: {
-            connectionType: "official",
-            isActive: true,
-            accessToken: { not: null },
-            appConfigId: { not: null },
-            tokenExpiresAt: { gt: new Date() },
-          },
-        },
-      }),
-      prisma.instagramAccount.count({
-        where: {
-          userId,
-          connectionType: "official",
-          isActive: true,
-          accessToken: { not: null },
-          appConfigId: { not: null },
-          tokenExpiresAt: { gt: new Date() },
-          createdAt: currentRange,
-        },
-      }),
-      prisma.instagramAccount.count({
-        where: {
-          userId,
-          connectionType: "official",
-          isActive: true,
-          accessToken: { not: null },
-          appConfigId: { not: null },
-          tokenExpiresAt: { gt: new Date() },
-          createdAt: previousRange,
-        },
-      }),
+      prisma.$queryRaw<SummaryCountsRow[]>(Prisma.sql`
+        SELECT
+          (
+            SELECT COUNT(*)
+            FROM "Post" p
+            WHERE p."userId" = ${userId}
+              AND p."status" IN ('published', 'partial')
+              AND p."publishedAt" >= ${period.start}
+              AND p."publishedAt" <= ${period.end}
+          ) AS "publishedCurrent",
+          (
+            SELECT COUNT(*)
+            FROM "Post" p
+            WHERE p."userId" = ${userId}
+              AND p."status" IN ('published', 'partial')
+              AND p."publishedAt" >= ${period.previousStart}
+              AND p."publishedAt" <= ${period.previousEnd}
+          ) AS "publishedPrevious",
+          (
+            SELECT COUNT(*)
+            FROM "Post" p
+            WHERE p."userId" = ${userId}
+              AND p."status" = 'scheduled'
+              AND p."scheduledAt" >= ${period.start}
+              AND p."scheduledAt" <= ${period.end}
+          ) AS "scheduledCurrent",
+          (
+            SELECT COUNT(*)
+            FROM "Post" p
+            WHERE p."userId" = ${userId}
+              AND p."status" = 'scheduled'
+              AND p."scheduledAt" >= ${period.previousStart}
+              AND p."scheduledAt" <= ${period.previousEnd}
+          ) AS "scheduledPrevious",
+          (
+            SELECT COUNT(*)
+            FROM "PostLog" pl
+            INNER JOIN "Post" p ON p."id" = pl."postId"
+            INNER JOIN "InstagramAccount" ia ON ia."id" = pl."instagramAccountId"
+            WHERE p."userId" = ${userId}
+              AND pl."status" = 'error'
+              AND pl."createdAt" >= ${period.start}
+              AND pl."createdAt" <= ${period.end}
+              AND ia."connectionType" = 'official'
+              AND ia."isActive" = true
+              AND ia."accessToken" IS NOT NULL
+              AND ia."appConfigId" IS NOT NULL
+              AND ia."tokenExpiresAt" > ${now}
+          ) AS "failuresCurrent",
+          (
+            SELECT COUNT(*)
+            FROM "PostLog" pl
+            INNER JOIN "Post" p ON p."id" = pl."postId"
+            INNER JOIN "InstagramAccount" ia ON ia."id" = pl."instagramAccountId"
+            WHERE p."userId" = ${userId}
+              AND pl."status" = 'error'
+              AND pl."createdAt" >= ${period.previousStart}
+              AND pl."createdAt" <= ${period.previousEnd}
+              AND ia."connectionType" = 'official'
+              AND ia."isActive" = true
+              AND ia."accessToken" IS NOT NULL
+              AND ia."appConfigId" IS NOT NULL
+              AND ia."tokenExpiresAt" > ${now}
+          ) AS "failuresPrevious",
+          (
+            SELECT COUNT(*)
+            FROM "InstagramAccount" ia
+            WHERE ia."userId" = ${userId}
+              AND ia."connectionType" = 'official'
+              AND ia."isActive" = true
+              AND ia."accessToken" IS NOT NULL
+              AND ia."appConfigId" IS NOT NULL
+              AND ia."tokenExpiresAt" > ${now}
+              AND ia."createdAt" >= ${period.start}
+              AND ia."createdAt" <= ${period.end}
+          ) AS "newAccountsCurrent",
+          (
+            SELECT COUNT(*)
+            FROM "InstagramAccount" ia
+            WHERE ia."userId" = ${userId}
+              AND ia."connectionType" = 'official'
+              AND ia."isActive" = true
+              AND ia."accessToken" IS NOT NULL
+              AND ia."appConfigId" IS NOT NULL
+              AND ia."tokenExpiresAt" > ${now}
+              AND ia."createdAt" >= ${period.previousStart}
+              AND ia."createdAt" <= ${period.previousEnd}
+          ) AS "newAccountsPrevious"
+      `),
       prisma.post.findMany({
         where: {
           userId,
@@ -242,7 +251,7 @@ export async function GET(request: Request) {
                 isActive: true,
                 accessToken: { not: null },
                 appConfigId: { not: null },
-                tokenExpiresAt: { gt: new Date() },
+                tokenExpiresAt: { gt: now },
               },
             },
             select: {
@@ -264,12 +273,21 @@ export async function GET(request: Request) {
       }),
     ])
 
-    const activeAccounts = accounts
-    const totalFollowers = activeAccounts.reduce(
+    const counts = summaryRows[0]
+    const published = Number(counts?.publishedCurrent || 0)
+    const previousPublished = Number(counts?.publishedPrevious || 0)
+    const scheduled = Number(counts?.scheduledCurrent || 0)
+    const previousScheduled = Number(counts?.scheduledPrevious || 0)
+    const failures = Number(counts?.failuresCurrent || 0)
+    const previousFailures = Number(counts?.failuresPrevious || 0)
+    const newAccounts = Number(counts?.newAccountsCurrent || 0)
+    const previousNewAccounts = Number(counts?.newAccountsPrevious || 0)
+
+    const totalFollowers = accounts.reduce(
       (sum, account) => sum + (account.followerCount || 0),
       0
     )
-    const totalMedia = activeAccounts.reduce(
+    const totalMedia = accounts.reduce(
       (sum, account) => sum + (account.mediaCount || 0),
       0
     )
@@ -281,7 +299,7 @@ export async function GET(request: Request) {
       },
       summary: {
         accounts: {
-          value: activeAccounts.length,
+          value: accounts.length,
           totalConfigured: accounts.length,
           newInPeriod: newAccounts,
           trend: trend(newAccounts, previousNewAccounts),
@@ -303,9 +321,7 @@ export async function GET(request: Request) {
         totalFollowers,
         totalMedia,
         averageFollowers:
-          activeAccounts.length > 0
-            ? Math.round(totalFollowers / activeAccounts.length)
-            : 0,
+          accounts.length > 0 ? Math.round(totalFollowers / accounts.length) : 0,
       },
       accounts: accounts.slice(0, 6).map((account) => ({
         ...account,
