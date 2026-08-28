@@ -39,7 +39,7 @@ export async function GET(request: Request) {
   }
 
   // Sem ?sync=1 este endpoint faz somente leitura no PostgreSQL. Assim telas
-  // que precisam apenas listar contas não ficam esperando Meta/proxy.
+  // que precisam apenas listar contas não ficam esperando a Meta.
   const accounts = await prisma.instagramAccount.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "desc" },
@@ -56,7 +56,6 @@ export async function GET(request: Request) {
       accessToken: true,
       tokenExpiresAt: true,
       appConfigId: true,
-      proxyAssignedAt: true,
       lastActiveAt: true,
       createdAt: true,
       appConfig: {
@@ -84,8 +83,6 @@ export async function GET(request: Request) {
       connectionType: exposedConnectionType,
       isActive: account.isActive,
       tokenExpiresAt: account.tokenExpiresAt,
-      proxyAssignedAt: account.proxyAssignedAt,
-      hasAssignedProxy: Boolean(account.proxyAssignedAt),
       lastActiveAt: account.lastActiveAt,
       createdAt: account.createdAt,
       appConfigId: account.appConfigId || null,

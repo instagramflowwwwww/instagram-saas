@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { fetchInstagramRequest } from "@/lib/proxy-http"
+import { fetchInstagramRequest } from "@/lib/instagram-http"
 
 export const INSTAGRAM_GRAPH_VERSION =
   process.env.INSTAGRAM_GRAPH_VERSION || "v25.0"
@@ -141,21 +141,14 @@ export function parseMetaCount(value: unknown) {
   return null
 }
 
-export async function fetchInstagramProfile(
-  accessToken: string,
-  accountId?: string
-) {
+export async function fetchInstagramProfile(accessToken: string) {
   const url = new URL(
     `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}/me`
   )
   url.searchParams.set("fields", INSTAGRAM_PROFILE_FIELDS)
   url.searchParams.set("access_token", accessToken)
 
-  const response = await fetchInstagramRequest(
-    url,
-    { cache: "no-store" },
-    accountId
-  )
+  const response = await fetchInstagramRequest(url)
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload) {

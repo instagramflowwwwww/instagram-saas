@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import {
-  isInstagramDisconnectError,
-  markInstagramAccountDisconnected,
-} from "@/lib/instagram-account-lifecycle"
-import {
   fetchInstagramProfile,
   getInstagramRedirectUri,
   getMetaError,
@@ -14,10 +10,6 @@ import {
   readJsonResponse,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
-import {
-  assignProxyToAccount,
-  isInstagramProxyRequired,
-} from "@/lib/proxy-manager"
 import {
   decryptValue,
   encryptValue,
@@ -231,7 +223,6 @@ export async function GET(request: NextRequest) {
       mediaCount: parseMetaCount(profile.media_count),
       connectionType: "official",
       isActive: true,
-      proxy: null,
       instagramUsername: null,
       instagramPassword: null,
       sessionFilePath: null,
@@ -239,7 +230,7 @@ export async function GET(request: NextRequest) {
       profileSyncedAt: new Date(),
     }
 
-    const connectedAccount = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
       const existingAccount = await tx.instagramAccount.findFirst({
         where: {
           userId: session.user.id,
@@ -270,42 +261,6 @@ export async function GET(request: NextRequest) {
 
       return account
     })
-
-    const assignedProxy = await assignProxyToAccount(connectedAccount.id)
-
-    if (!assignedProxy && isInstagramProxyRequired()) {
-      console.warn("Instagram account connected without an available proxy", {
-        accountId: connectedAccount.id,
-        username,
-      })
-    }
-
-    // A conta já foi autenticada e salva antes desta etapa. Falhas temporárias
-    // de proxy não devem transformar uma conta válida em callback_failed.
-    // Apenas erros que realmente exigem reconexão da conta (ex.: code 190)
-    // invalidam a conexão.
-    if (assignedProxy) {
-      try {
-        await fetchInstagramProfile(accessToken, connectedAccount.id)
-      } catch (proxyValidationError) {
-        if (isInstagramDisconnectError(proxyValidationError)) {
-          await markInstagramAccountDisconnected(connectedAccount.id)
-          throw proxyValidationError
-        }
-
-        console.warn(
-          "Instagram proxy validation failed after account connection; keeping account connected",
-          {
-            accountId: connectedAccount.id,
-            username,
-            message:
-              proxyValidationError instanceof Error
-                ? proxyValidationError.message
-                : String(proxyValidationError),
-          }
-        )
-      }
-    }
 
     const url = getDashboardUrl(request, popupMode)
     url.searchParams.set("success", "connected")

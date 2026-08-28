@@ -12,7 +12,7 @@ import {
   readJsonResponse,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
-import { fetchInstagramRequest } from "@/lib/proxy-http"
+import { fetchInstagramRequest } from "@/lib/instagram-http"
 import { decryptValue, encryptValue } from "@/lib/secure-store"
 
 export type PublishResult = {
@@ -90,11 +90,7 @@ async function metaRequest(
   })
 
   const { searchParams: _searchParams, ...requestOptions } = options
-  const response = await fetchInstagramRequest(
-    url,
-    { ...requestOptions, cache: "no-store" },
-    accountId
-  )
+  const response = await fetchInstagramRequest(url, requestOptions)
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload) {
@@ -259,11 +255,7 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
   url.searchParams.set("grant_type", "ig_refresh_token")
   url.searchParams.set("access_token", token)
 
-  const response = await fetchInstagramRequest(
-    url,
-    { cache: "no-store" },
-    account.id
-  )
+  const response = await fetchInstagramRequest(url)
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload?.access_token) {
@@ -400,7 +392,6 @@ function isRetryablePrePublishError(error: unknown) {
   return [
     "tempo limite",
     "demorou demais",
-    "proxy",
     "temporário",
     "temporariamente",
     "timeout",

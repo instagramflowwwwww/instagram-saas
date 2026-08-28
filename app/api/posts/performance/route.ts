@@ -13,7 +13,7 @@ import {
   readJsonResponse,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
-import { fetchInstagramRequest } from "@/lib/proxy-http"
+import { fetchInstagramRequest } from "@/lib/instagram-http"
 import { decryptValue, encryptValue } from "@/lib/secure-store"
 
 export const runtime = "nodejs"
@@ -211,11 +211,7 @@ async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
   url.searchParams.set("grant_type", "ig_refresh_token")
   url.searchParams.set("access_token", token)
 
-  const response = await fetchInstagramRequest(
-    url,
-    metaRequestInit(),
-    account.id
-  )
+  const response = await fetchInstagramRequest(url, metaRequestInit())
   const { payload, raw } = await readJsonResponse(response)
 
   if (!response.ok || !payload?.access_token) {
@@ -273,11 +269,7 @@ async function fetchMedia(
     url.searchParams.set("fields", fields)
     url.searchParams.set("access_token", accessToken)
 
-    const response = await fetchInstagramRequest(
-      url,
-      metaRequestInit(),
-      accountId
-    )
+    const response = await fetchInstagramRequest(url, metaRequestInit())
     const { payload } = await readJsonResponse(response)
 
     if (response.ok && payload) {
@@ -307,11 +299,7 @@ async function requestInsightMetric(
   url.searchParams.set("access_token", accessToken)
   if (withMetricType) url.searchParams.set("metric_type", "total_value")
 
-  const response = await fetchInstagramRequest(
-    url,
-    metaRequestInit(),
-    accountId
-  )
+  const response = await fetchInstagramRequest(url, metaRequestInit())
   const { payload } = await readJsonResponse(response)
 
   if (response.ok && payload) {

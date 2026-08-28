@@ -119,7 +119,7 @@ export async function syncInstagramAccountProfiles(
 
       try {
         const accessToken = decryptValue(account.accessToken!)
-        const profile = await fetchInstagramProfile(accessToken, account.id)
+        const profile = await fetchInstagramProfile(accessToken)
         const username = String(profile.username || account.username)
         const followerCount = parseMetaCount(profile.followers_count)
         const mediaCount = parseMetaCount(profile.media_count)
@@ -157,7 +157,7 @@ export async function syncInstagramAccountProfiles(
         if (disconnected) {
           await markInstagramAccountDisconnected(account.id)
         } else {
-          // Evita martelar Meta/proxy em todas as execuções do cron quando uma
+          // Evita martelar a Meta em todas as execuções do cron quando uma
           // conta apresenta uma falha temporária. Ela volta a ser elegível após
           // a janela de staleMinutes.
           await prisma.instagramAccount
