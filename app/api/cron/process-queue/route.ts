@@ -5,6 +5,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
+const DEFAULT_PARALLEL_USERS = 3
+const MAX_PARALLEL_USERS = 4
+
 function authorized(request: Request) {
   const secrets = [
     process.env.CRON_SECRET?.trim(),
@@ -17,10 +20,16 @@ function authorized(request: Request) {
   const headerSecret = request.headers.get("x-cron-secret")?.trim()
 
   return secrets.some(
-    (secret) =>
-      authorization === `Bearer ${secret}` ||
-      headerSecret === secret
+    (secret) => authorization === `Bearer ${secret}` || headerSecret === secret
   )
+}
+
+function parallelUsersPerRun() {
+  const configured = Number(process.env.QUEUE_PARALLEL_USERS)
+  if (Number.isInteger(configured) && configured >= 1) {
+    return Math.min(configured, MAX_PARALLEL_USERS)
+  }
+  return DEFAULT_PARALLEL_USERS
 }
 
 export async function POST(request: Request) {
@@ -30,12 +39,14 @@ export async function POST(request: Request) {
   }
 
   const startedAt = Date.now()
+  const parallelUsers = parallelUsersPerRun()
 
   try {
-    const result = await processDueQueue({ limit: 1 })
+    const result = await processDueQueue({ limit: parallelUsers })
     const response = {
       ...result,
       executor: "cron",
+      parallelUsers,
       durationMs: Date.now() - startedAt,
     }
 
@@ -51,7 +62,12 @@ export async function POST(request: Request) {
     console.error("[queue-cron] Queue processing failed", error)
 
     return NextResponse.json(
-      { error: message, executor: "cron", durationMs: Date.now() - startedAt },
+      {
+        error: message,
+        executor: "cron",
+        parallelUsers,
+        durationMs: Date.now() - startedAt,
+      },
       { status: 500, headers: { "Cache-Control": "no-store, max-age=0" } }
     )
   }

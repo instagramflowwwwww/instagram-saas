@@ -10,9 +10,18 @@ import { prisma } from "@/lib/prisma"
 const MAX_ITEM_ATTEMPTS = 3
 const STUCK_AFTER_MS = 3 * 60 * 1000
 const ACCOUNT_CHUNK_SIZE = 4
-const CONTINUE_DELAY_MS = 65_000
-const OLD_CANDIDATE_WINDOW = 24
-const RECENT_CANDIDATE_WINDOW = 48
+const OLD_CANDIDATE_WINDOW = 48
+const RECENT_CANDIDATE_WINDOW = 120
+const NEAR_DUE_CANDIDATE_WINDOW = 200
+const NEAR_SCHEDULE_WINDOW_MS = 90 * 60 * 1000
+const RECENT_BATCH_WINDOW_MS = 6 * 60 * 60 * 1000
+
+type ProcessedQueueItem = {
+  itemId: string
+  status: string
+  error?: string
+  remainingAccounts?: number
+}
 
 export async function refreshBatchStats(batchId: string) {
   const batch = await prisma.postingBatch.findUnique({
@@ -80,7 +89,6 @@ async function recoverStuckItems(userId?: string) {
         where: { id: item.id },
         data: {
           status: "pending",
-          scheduledAt: new Date(),
           processingStartedAt: null,
           lastError: "Processamento anterior interrompido; retomado automaticamente.",
         },
@@ -192,6 +200,160 @@ async function finalizeItem(params: {
   return itemStatus
 }
 
+async function processCandidate(candidateId: string): Promise<ProcessedQueueItem | null> {
+  const claim = await prisma.postingBatchItem.updateMany({
+    where: { id: candidateId, status: "pending" },
+    data: {
+      status: "processing",
+      processingStartedAt: new Date(),
+    },
+  })
+  if (claim.count === 0) return null
+
+  console.info("[queue] Claiming item", { itemId: candidateId })
+
+  const item = await prisma.postingBatchItem.findUnique({
+    where: { id: candidateId },
+    include: {
+      batch: {
+        include: {
+          accounts: {
+            select: { instagramAccountId: true },
+          },
+        },
+      },
+      post: { select: { id: true } },
+    },
+  })
+
+  if (!item || !item.post || item.batch.status === "cancelled") {
+    if (item) {
+      await prisma.postingBatchItem.update({
+        where: { id: item.id },
+        data: {
+          status: "cancelled",
+          processedAt: new Date(),
+          processingStartedAt: null,
+        },
+      })
+      await refreshBatchStats(item.batchId)
+    }
+    return null
+  }
+
+  const targetAccountIds = item.batch.accounts.map(
+    (account) => account.instagramAccountId
+  )
+
+  try {
+    const before = await getProgress(item.post.id, targetAccountIds)
+
+    if (before.remainingIds.length === 0) {
+      const status = await finalizeItem({
+        itemId: item.id,
+        batchId: item.batchId,
+        postId: item.post.id,
+        targetCount: targetAccountIds.length,
+        successCount: before.successCount,
+        lastError:
+          before.successCount < targetAccountIds.length
+            ? `${targetAccountIds.length - before.successCount} conta(s) não concluíram esta publicação.`
+            : null,
+      })
+      return { itemId: item.id, status }
+    }
+
+    // Cada trabalho executa no máximo quatro contas por ciclo. Isso mantém a
+    // Function curta e permite que outros usuários recebam tempo de fila no
+    // mesmo cron sem um lote grande monopolizar o executor.
+    const chunkIds = before.remainingIds.slice(0, ACCOUNT_CHUNK_SIZE)
+    const result = await publishExistingPost({
+      postId: item.post.id,
+      userId: item.batch.userId,
+      accountIds: chunkIds,
+    })
+
+    const message = result.results
+      .filter((entry) => entry.status === "error")
+      .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
+      .join(" | ")
+
+    const after = await getProgress(item.post.id, targetAccountIds)
+
+    if (after.remainingIds.length > 0) {
+      await prisma.$transaction([
+        prisma.postingBatchItem.update({
+          where: { id: item.id },
+          data: {
+            status: "pending",
+            // Não altera o horário original. No próximo minuto o item continua
+            // elegível, mas a seleção justa pode dar a vez a outro usuário.
+            processingStartedAt: null,
+            lastError: message || null,
+          },
+        }),
+        prisma.post.update({
+          where: { id: item.post.id },
+          data: { status: "scheduled" },
+        }),
+      ])
+
+      await refreshBatchStats(item.batchId)
+      return {
+        itemId: item.id,
+        status: "continuing",
+        error: message || undefined,
+        remainingAccounts: after.remainingIds.length,
+      }
+    }
+
+    const status = await finalizeItem({
+      itemId: item.id,
+      batchId: item.batchId,
+      postId: item.post.id,
+      targetCount: targetAccountIds.length,
+      successCount: after.successCount,
+      lastError: message || null,
+    })
+    return { itemId: item.id, status, error: message || undefined }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao processar fila"
+    const nextAttempts = item.attempts + 1
+
+    if (nextAttempts < MAX_ITEM_ATTEMPTS) {
+      await prisma.$transaction([
+        prisma.postingBatchItem.update({
+          where: { id: item.id },
+          data: {
+            status: "pending",
+            attempts: nextAttempts,
+            scheduledAt: retryDate(nextAttempts),
+            processingStartedAt: null,
+            lastError: message,
+          },
+        }),
+        prisma.post.update({
+          where: { id: item.post.id },
+          data: { status: "scheduled" },
+        }),
+      ])
+      await refreshBatchStats(item.batchId)
+      return { itemId: item.id, status: "retrying", error: message }
+    }
+
+    const progress = await getProgress(item.post.id, targetAccountIds)
+    const status = await finalizeItem({
+      itemId: item.id,
+      batchId: item.batchId,
+      postId: item.post.id,
+      targetCount: targetAccountIds.length,
+      successCount: progress.successCount,
+      lastError: message,
+    })
+    return { itemId: item.id, status, error: message }
+  }
+}
+
 export async function processDueQueue(options: {
   userId?: string
   limit?: number
@@ -201,6 +363,8 @@ export async function processDueQueue(options: {
 
   const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 4)
   const now = new Date()
+  const nearScheduleCutoff = new Date(now.getTime() - NEAR_SCHEDULE_WINDOW_MS)
+  const recentBatchCutoff = new Date(now.getTime() - RECENT_BATCH_WINDOW_MS)
 
   const baseWhere: Prisma.PostingBatchItemWhereInput = {
     status: "pending",
@@ -225,20 +389,29 @@ export async function processDueQueue(options: {
 
   const candidateSelect = {
     id: true,
+    batchId: true,
     postId: true,
     scheduledAt: true,
     position: true,
+    post: {
+      select: {
+        scheduledAt: true,
+      },
+    },
     batch: {
       select: {
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
         _count: { select: { accounts: true } },
       },
     },
   } as const
 
-  // Mistura uma janela dos itens mais antigos com outra dos itens vencidos
-  // mais recentes. Assim um backlog enorme não impede que um agendamento de
-  // 1-4 contas, recém-chegado ao horário, seja sequer avaliado pela prioridade.
-  const [oldestDue, recentDue] = await Promise.all([
+  // Três janelas evitam que milhares de itens atrasados escondam uma mídia
+  // que acabou de chegar ao horário: backlog antigo, vencidos recentes e uma
+  // janela dedicada aos horários próximos do momento atual.
+  const [oldestDue, recentDue, nearDue, processingRows] = await Promise.all([
     prisma.postingBatchItem.findMany({
       where: baseWhere,
       orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
@@ -251,11 +424,37 @@ export async function processDueQueue(options: {
       select: candidateSelect,
       take: RECENT_CANDIDATE_WINDOW,
     }),
+    prisma.postingBatchItem.findMany({
+      where: {
+        ...baseWhere,
+        scheduledAt: { gte: nearScheduleCutoff, lte: now },
+      },
+      orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
+      select: candidateSelect,
+      take: NEAR_DUE_CANDIDATE_WINDOW,
+    }),
+    prisma.postingBatchItem.findMany({
+      where: {
+        status: "processing",
+        batch: {
+          status: { not: "cancelled" },
+          ...(options.userId ? { userId: options.userId } : {}),
+        },
+      },
+      select: {
+        batch: { select: { userId: true } },
+      },
+      take: 200,
+    }),
   ])
 
+  const busyUserIds = new Set(processingRows.map((row) => row.batch.userId))
+
   const dueCandidateMap = new Map<string, (typeof oldestDue)[number]>()
-  for (const candidate of [...oldestDue, ...recentDue]) {
-    dueCandidateMap.set(candidate.id, candidate)
+  for (const candidate of [...oldestDue, ...recentDue, ...nearDue]) {
+    if (!busyUserIds.has(candidate.batch.userId)) {
+      dueCandidateMap.set(candidate.id, candidate)
+    }
   }
   const dueCandidates = Array.from(dueCandidateMap.values())
 
@@ -267,16 +466,31 @@ export async function processDueQueue(options: {
     )
   )
 
-  const progressLogs =
+  const candidateUserIds = Array.from(
+    new Set(dueCandidates.map((candidate) => candidate.batch.userId))
+  )
+
+  const [progressLogs, userActivityRows] = await Promise.all([
     candidatePostIds.length > 0
-      ? await prisma.postLog.findMany({
+      ? prisma.postLog.findMany({
           where: {
             postId: { in: candidatePostIds },
             status: { in: ["success", "error"] },
           },
           select: { postId: true, instagramAccountId: true },
         })
-      : []
+      : Promise.resolve([]),
+    candidateUserIds.length > 0
+      ? prisma.postingBatch.groupBy({
+          by: ["userId"],
+          where: {
+            userId: { in: candidateUserIds },
+            status: { in: ["scheduled", "processing"] },
+          },
+          _max: { updatedAt: true },
+        })
+      : Promise.resolve([]),
+  ])
 
   const processedByPost = new Map<string, Set<string>>()
   for (const log of progressLogs) {
@@ -285,56 +499,128 @@ export async function processDueQueue(options: {
     processedByPost.set(log.postId, set)
   }
 
-  const prioritizedCandidates = dueCandidates
-    .map((candidate) => {
-      const totalAccounts = candidate.batch._count.accounts
-      const processedAccounts = candidate.postId
-        ? processedByPost.get(candidate.postId)?.size || 0
-        : 0
-      const remainingAccounts = Math.max(totalAccounts - processedAccounts, 0)
+  const lastServedByUser = new Map<string, Date>()
+  for (const row of userActivityRows) {
+    if (row._max.updatedAt) lastServedByUser.set(row.userId, row._max.updatedAt)
+  }
 
-      return {
-        ...candidate,
-        remainingAccounts,
-        quick: remainingAccounts <= ACCOUNT_CHUNK_SIZE,
-      }
-    })
-    .sort((a, b) => {
-      // 1) Publicações de até 4 contas primeiro.
-      if (a.quick !== b.quick) return a.quick ? -1 : 1
+  const enrichedCandidates = dueCandidates.map((candidate) => {
+    const totalAccounts = candidate.batch._count.accounts
+    const processedAccounts = candidate.postId
+      ? processedByPost.get(candidate.postId)?.size || 0
+      : 0
+    const remainingAccounts = Math.max(totalAccounts - processedAccounts, 0)
+    const intendedScheduledAt = candidate.post?.scheduledAt || candidate.scheduledAt
 
-      // 2) Entre as rápidas, prioriza a que acabou de vencer para reduzir
-      // atraso do horário marcado. Entre lotes grandes, mantém justiça com
-      // os mais antigos.
-      if (a.quick && b.quick) {
-        const byRecentSchedule = b.scheduledAt.getTime() - a.scheduledAt.getTime()
-        if (byRecentSchedule !== 0) return byRecentSchedule
-      } else {
-        const byOldSchedule = a.scheduledAt.getTime() - b.scheduledAt.getTime()
-        if (byOldSchedule !== 0) return byOldSchedule
-      }
+    return {
+      ...candidate,
+      intendedScheduledAt,
+      remainingAccounts,
+      quick: remainingAccounts <= ACCOUNT_CHUNK_SIZE,
+      nearSchedule: intendedScheduledAt >= nearScheduleCutoff,
+      recentBatch: candidate.batch.createdAt >= recentBatchCutoff,
+      userLastServedAt:
+        lastServedByUser.get(candidate.batch.userId) || new Date(0),
+    }
+  })
 
-      return a.position - b.position
-    })
+  // Dentro da mesma sequência, sempre considera primeiro o item mais antigo
+  // ainda vencido. Isso impede uma mídia das 00:01 de passar na frente da
+  // mídia das 23:41 da mesma sequência.
+  const bestPerBatch = new Map<string, (typeof enrichedCandidates)[number]>()
+  for (const candidate of enrichedCandidates) {
+    const current = bestPerBatch.get(candidate.batchId)
+    if (
+      !current ||
+      candidate.intendedScheduledAt < current.intendedScheduledAt ||
+      (candidate.intendedScheduledAt.getTime() === current.intendedScheduledAt.getTime() &&
+        candidate.position < current.position)
+    ) {
+      bestPerBatch.set(candidate.batchId, candidate)
+    }
+  }
 
-  const dueItems = prioritizedCandidates.slice(0, requestedLimit)
+  function compareUserCandidate(
+    a: (typeof enrichedCandidates)[number],
+    b: (typeof enrichedCandidates)[number]
+  ) {
+    // Horários dos últimos 90 minutos têm prioridade sobre backlog histórico.
+    if (a.nearSchedule !== b.nearSchedule) return a.nearSchedule ? -1 : 1
+
+    if (a.nearSchedule && b.nearSchedule) {
+      const bySchedule =
+        a.intendedScheduledAt.getTime() - b.intendedScheduledAt.getTime()
+      if (bySchedule !== 0) return bySchedule
+    }
+
+    // Uma sequência criada recentemente também não deve ficar presa atrás de
+    // lotes antigos do mesmo usuário.
+    if (a.recentBatch !== b.recentBatch) return a.recentBatch ? -1 : 1
+
+    if (a.quick !== b.quick) return a.quick ? -1 : 1
+
+    const bySchedule =
+      a.intendedScheduledAt.getTime() - b.intendedScheduledAt.getTime()
+    if (bySchedule !== 0) return bySchedule
+    return a.position - b.position
+  }
+
+  // Um usuário só ocupa um slot por execução. Assim três usuários podem ser
+  // processados em paralelo sem um único cliente monopolizar a fila global.
+  const bestPerUser = new Map<string, (typeof enrichedCandidates)[number]>()
+  for (const candidate of bestPerBatch.values()) {
+    const userId = candidate.batch.userId
+    const current = bestPerUser.get(userId)
+    if (!current || compareUserCandidate(candidate, current) < 0) {
+      bestPerUser.set(userId, candidate)
+    }
+  }
+
+  const prioritizedUsers = Array.from(bestPerUser.values()).sort((a, b) => {
+    if (a.nearSchedule !== b.nearSchedule) return a.nearSchedule ? -1 : 1
+
+    if (a.nearSchedule && b.nearSchedule) {
+      const bySchedule =
+        a.intendedScheduledAt.getTime() - b.intendedScheduledAt.getTime()
+      if (bySchedule !== 0) return bySchedule
+    }
+
+    if (a.recentBatch !== b.recentBatch) return a.recentBatch ? -1 : 1
+    if (a.quick !== b.quick) return a.quick ? -1 : 1
+
+    // Para backlog, quem foi atendido há mais tempo recebe a próxima vez.
+    const byLastServed =
+      a.userLastServedAt.getTime() - b.userLastServedAt.getTime()
+    if (byLastServed !== 0) return byLastServed
+
+    return a.intendedScheduledAt.getTime() - b.intendedScheduledAt.getTime()
+  })
+
+  const dueItems = prioritizedUsers.slice(0, requestedLimit)
 
   console.info("[queue] Due items found", {
     userId: options.userId || "all",
     oldestCandidates: oldestDue.length,
     recentCandidates: recentDue.length,
+    nearCandidates: nearDue.length,
+    busyUsers: busyUserIds.size,
     candidates: dueCandidates.length,
+    candidateUsers: bestPerUser.size,
     count: dueItems.length,
     selected: dueItems.map((item) => ({
       itemId: item.id,
+      batchId: item.batchId,
+      ownerUserId: item.batch.userId,
       remainingAccounts: item.remainingAccounts,
       quick: item.quick,
-      scheduledAt: item.scheduledAt.toISOString(),
+      nearSchedule: item.nearSchedule,
+      eligibleAt: item.scheduledAt.toISOString(),
+      intendedScheduledAt: item.intendedScheduledAt.toISOString(),
     })),
   })
 
-  // Diagnóstico útil quando a fila do próprio usuário diz que não encontrou
-  // nada, mas o painel ainda mostra itens pendentes. Não altera o processamento.
+  // Diagnóstico quando a fila manual do próprio usuário não encontra nada,
+  // embora o painel ainda mostre itens pendentes.
   if (options.userId && dueItems.length === 0) {
     const pendingDiagnostic = await prisma.postingBatchItem.findMany({
       where: {
@@ -346,6 +632,7 @@ export async function processDueQueue(options: {
       select: {
         id: true,
         scheduledAt: true,
+        post: { select: { scheduledAt: true } },
         batch: {
           select: {
             status: true,
@@ -365,9 +652,12 @@ export async function processDueQueue(options: {
       console.warn("[queue] Pending items excluded from due selection", {
         userId: options.userId,
         now: now.toISOString(),
+        busy: busyUserIds.has(options.userId),
         items: pendingDiagnostic.map((item) => ({
           itemId: item.id,
           scheduledAt: item.scheduledAt.toISOString(),
+          intendedScheduledAt:
+            item.post?.scheduledAt?.toISOString() || item.scheduledAt.toISOString(),
           batchStatus: item.batch.status,
           userEmail: item.batch.user.email,
           accessStatus: item.batch.user.accessStatus,
@@ -378,164 +668,22 @@ export async function processDueQueue(options: {
     }
   }
 
-  const processed: Array<{
-    itemId: string
-    status: string
-    error?: string
-    remainingAccounts?: number
-  }> = []
+  // Na fila global, cada item pertence a um usuário diferente e roda em
+  // paralelo. Cada um publica no máximo 4 contas. Na fila manual do dashboard
+  // continua sendo apenas um usuário/um item.
+  const rawProcessed =
+    dueItems.length === 0
+      ? []
+      : options.userId
+        ? [await processCandidate(dueItems[0].id)]
+        : await Promise.all(dueItems.map((candidate) => processCandidate(candidate.id)))
 
-  for (const candidate of dueItems) {
-    const claim = await prisma.postingBatchItem.updateMany({
-      where: { id: candidate.id, status: "pending" },
-      data: {
-        status: "processing",
-        processingStartedAt: new Date(),
-      },
-    })
-    if (claim.count === 0) continue
+  const processed = rawProcessed.filter(
+    (entry): entry is ProcessedQueueItem => Boolean(entry)
+  )
 
-    console.info("[queue] Claiming item", { itemId: candidate.id })
-
-    const item = await prisma.postingBatchItem.findUnique({
-      where: { id: candidate.id },
-      include: {
-        batch: {
-          include: {
-            accounts: {
-              select: { instagramAccountId: true },
-            },
-          },
-        },
-        post: { select: { id: true } },
-      },
-    })
-
-    if (!item || !item.post || item.batch.status === "cancelled") {
-      if (item) {
-        await prisma.postingBatchItem.update({
-          where: { id: item.id },
-          data: {
-            status: "cancelled",
-            processedAt: new Date(),
-            processingStartedAt: null,
-          },
-        })
-        await refreshBatchStats(item.batchId)
-      }
-      continue
-    }
-
-    const targetAccountIds = item.batch.accounts.map(
-      (account) => account.instagramAccountId
-    )
-
-    try {
-      const before = await getProgress(item.post.id, targetAccountIds)
-
-      if (before.remainingIds.length === 0) {
-        const status = await finalizeItem({
-          itemId: item.id,
-          batchId: item.batchId,
-          postId: item.post.id,
-          targetCount: targetAccountIds.length,
-          successCount: before.successCount,
-          lastError:
-            before.successCount < targetAccountIds.length
-              ? `${targetAccountIds.length - before.successCount} conta(s) não concluíram esta publicação.`
-              : null,
-        })
-        processed.push({ itemId: item.id, status })
-        continue
-      }
-
-      const chunkIds = before.remainingIds.slice(0, ACCOUNT_CHUNK_SIZE)
-      const result = await publishExistingPost({
-        postId: item.post.id,
-        userId: item.batch.userId,
-        accountIds: chunkIds,
-      })
-
-      const message = result.results
-        .filter((entry) => entry.status === "error")
-        .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
-        .join(" | ")
-
-      const after = await getProgress(item.post.id, targetAccountIds)
-
-      if (after.remainingIds.length > 0) {
-        await prisma.$transaction([
-          prisma.postingBatchItem.update({
-            where: { id: item.id },
-            data: {
-              status: "pending",
-              scheduledAt: new Date(Date.now() + CONTINUE_DELAY_MS),
-              processingStartedAt: null,
-              lastError: message || null,
-            },
-          }),
-          prisma.post.update({
-            where: { id: item.post.id },
-            data: { status: "scheduled" },
-          }),
-        ])
-
-        processed.push({
-          itemId: item.id,
-          status: "continuing",
-          error: message || undefined,
-          remainingAccounts: after.remainingIds.length,
-        })
-        await refreshBatchStats(item.batchId)
-        continue
-      }
-
-      const status = await finalizeItem({
-        itemId: item.id,
-        batchId: item.batchId,
-        postId: item.post.id,
-        targetCount: targetAccountIds.length,
-        successCount: after.successCount,
-        lastError: message || null,
-      })
-      processed.push({ itemId: item.id, status, error: message || undefined })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Erro ao processar fila"
-      const nextAttempts = item.attempts + 1
-
-      if (nextAttempts < MAX_ITEM_ATTEMPTS) {
-        await prisma.$transaction([
-          prisma.postingBatchItem.update({
-            where: { id: item.id },
-            data: {
-              status: "pending",
-              attempts: nextAttempts,
-              scheduledAt: retryDate(nextAttempts),
-              processingStartedAt: null,
-              lastError: message,
-            },
-          }),
-          prisma.post.update({
-            where: { id: item.post.id },
-            data: { status: "scheduled" },
-          }),
-        ])
-        processed.push({ itemId: item.id, status: "retrying", error: message })
-      } else {
-        const progress = await getProgress(item.post.id, targetAccountIds)
-        const status = await finalizeItem({
-          itemId: item.id,
-          batchId: item.batchId,
-          postId: item.post.id,
-          targetCount: targetAccountIds.length,
-          successCount: progress.successCount,
-          lastError: message,
-        })
-        processed.push({ itemId: item.id, status, error: message })
-      }
-    }
-
-    console.info("[queue] Item finished", processed[processed.length - 1])
+  for (const entry of processed) {
+    console.info("[queue] Item finished", entry)
   }
 
   return {
