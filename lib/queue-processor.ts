@@ -9,7 +9,8 @@ import { prisma } from "@/lib/prisma"
 const MAX_ITEM_ATTEMPTS = 3
 const STUCK_AFTER_MS = 3 * 60 * 1000
 const ACCOUNT_CHUNK_SIZE = 4
-const CONTINUE_DELAY_MS = 5_000
+const CONTINUE_DELAY_MS = 65_000
+const DUE_CANDIDATE_WINDOW = 24
 
 export async function refreshBatchStats(batchId: string) {
   const batch = await prisma.postingBatch.findUnique({
@@ -196,10 +197,17 @@ export async function processDueQueue(options: {
   await maintainInstagramAccounts(options.userId)
   await recoverStuckItems(options.userId)
 
-  const dueItems = await prisma.postingBatchItem.findMany({
+  const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 4)
+  const now = new Date()
+
+  // Busca uma janela maior de itens vencidos para que um lote grande antigo
+  // não bloqueie uma publicação pequena que acabou de chegar no horário.
+  // A execução continua processando poucos itens por vez; só a escolha fica
+  // mais inteligente.
+  const dueCandidates = await prisma.postingBatchItem.findMany({
     where: {
       status: "pending",
-      scheduledAt: { lte: new Date() },
+      scheduledAt: { lte: now },
       batch: {
         status: { in: ["scheduled", "processing"] },
         ...(options.userId ? { userId: options.userId } : {}),
@@ -210,7 +218,7 @@ export async function processDueQueue(options: {
               accessStatus: "approved",
               OR: [
                 { accessExpiresAt: null },
-                { accessExpiresAt: { gt: new Date() } },
+                { accessExpiresAt: { gt: now } },
               ],
             },
           ],
@@ -218,13 +226,83 @@ export async function processDueQueue(options: {
       },
     },
     orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
-    select: { id: true },
-    take: Math.min(Math.max(options.limit || 1, 1), 4),
+    select: {
+      id: true,
+      postId: true,
+      scheduledAt: true,
+      position: true,
+      batch: {
+        select: {
+          _count: { select: { accounts: true } },
+        },
+      },
+    },
+    take: DUE_CANDIDATE_WINDOW,
   })
+
+  const candidatePostIds = Array.from(
+    new Set(
+      dueCandidates
+        .map((candidate) => candidate.postId)
+        .filter((postId): postId is string => Boolean(postId))
+    )
+  )
+
+  const progressLogs =
+    candidatePostIds.length > 0
+      ? await prisma.postLog.findMany({
+          where: {
+            postId: { in: candidatePostIds },
+            status: { in: ["success", "error"] },
+          },
+          select: { postId: true, instagramAccountId: true },
+        })
+      : []
+
+  const processedByPost = new Map<string, Set<string>>()
+  for (const log of progressLogs) {
+    const set = processedByPost.get(log.postId) || new Set<string>()
+    set.add(log.instagramAccountId)
+    processedByPost.set(log.postId, set)
+  }
+
+  const prioritizedCandidates = dueCandidates
+    .map((candidate) => {
+      const totalAccounts = candidate.batch._count.accounts
+      const processedAccounts = candidate.postId
+        ? processedByPost.get(candidate.postId)?.size || 0
+        : 0
+      const remainingAccounts = Math.max(totalAccounts - processedAccounts, 0)
+
+      return {
+        ...candidate,
+        remainingAccounts,
+        // Itens que conseguem terminar em um único chunk têm prioridade.
+        // Isso evita que um agendamento de 1-4 contas fique atrás de um lote
+        // antigo com dezenas de contas.
+        quick: remainingAccounts <= ACCOUNT_CHUNK_SIZE,
+      }
+    })
+    .sort((a, b) => {
+      if (a.quick !== b.quick) return a.quick ? -1 : 1
+
+      const bySchedule = a.scheduledAt.getTime() - b.scheduledAt.getTime()
+      if (bySchedule !== 0) return bySchedule
+      return a.position - b.position
+    })
+
+  const dueItems = prioritizedCandidates.slice(0, requestedLimit)
 
   console.info("[queue] Due items found", {
     userId: options.userId || "all",
+    candidates: dueCandidates.length,
     count: dueItems.length,
+    selected: dueItems.map((item) => ({
+      itemId: item.id,
+      remainingAccounts: item.remainingAccounts,
+      quick: item.quick,
+      scheduledAt: item.scheduledAt.toISOString(),
+    })),
   })
 
   const processed: Array<{
