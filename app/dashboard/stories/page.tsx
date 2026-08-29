@@ -239,34 +239,11 @@ export default function StoriesPage() {
         throw new Error(payload.error || "Não foi possível criar a sequência de Stories.")
       }
 
-      let immediateProcessingWarning = ""
-      if (publishMode === "now") {
-        try {
-          const processResponse = await fetch("/api/queue/process", { method: "POST" })
-          const processPayload = await processResponse.json().catch(() => ({}))
-          if (!processResponse.ok) {
-            immediateProcessingWarning =
-              processPayload.error || "O processamento imediato não pôde ser iniciado."
-          }
-        } catch (processError) {
-          immediateProcessingWarning =
-            processError instanceof Error
-              ? processError.message
-              : "O processamento imediato não pôde ser iniciado."
-        }
-      }
-
-      if (immediateProcessingWarning) {
-        toastWarning(
-          `Sequência criada e mantida na fila, mas houve um aviso: ${immediateProcessingWarning}`
-        )
-      } else {
-        toast.success(
-          publishMode === "now"
-            ? "Sequência de Stories enviada para publicação."
-            : "Sequência de Stories agendada com sucesso."
-        )
-      }
+      toast.success(
+        publishMode === "now"
+          ? "Sequência de Stories adicionada à fila de publicação."
+          : "Sequência de Stories agendada com sucesso."
+      )
       router.push("/dashboard/queue")
     } catch (submitError) {
       toast.error(

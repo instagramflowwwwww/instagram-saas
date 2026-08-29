@@ -99,8 +99,22 @@ export function getMetaError(payload: unknown): MetaApiError | null {
 export function metaErrorMessage(error: MetaApiError | null) {
   if (!error) return "A Meta retornou uma resposta vazia ou inválida para a solicitação."
 
+  const normalizedMessage = error.message.toLowerCase()
+
   if (error.code === 190) {
-    return "O acesso desta conta expirou. Reconecte a conta pelo App Meta."
+    return "O Instagram bloqueou temporariamente o acesso desta conta. Entre no Instagram, conclua a verificação solicitada e depois reconecte a conta no App Meta."
+  }
+
+  if (normalizedMessage.includes("api access deactivated")) {
+    return "A Meta desativou o acesso da API para esta conta. Reconecte a conta pelo App Meta antes de tentar publicar novamente."
+  }
+
+  if (normalizedMessage.includes("unsupported request - method type: post")) {
+    return "Esta conta não aceita publicação pela API no estado atual. Reconecte a conta pelo App Meta."
+  }
+
+  if (error.code === 25 && error.error_subcode === 2207050) {
+    return "A conta do Instagram está restrita pela Meta e não pode publicar pela API neste momento."
   }
 
   if (error.code === 9 && error.error_subcode === 2207042) {

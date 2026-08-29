@@ -1,4 +1,4 @@
-const DEFAULT_META_TIMEOUT_MS = 45_000
+const DEFAULT_META_TIMEOUT_MS = 20_000
 
 function getMetaTimeoutMs() {
   const configured = Number(process.env.INSTAGRAM_META_TIMEOUT_MS)

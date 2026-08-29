@@ -56,8 +56,30 @@ export function isInstagramDisconnectError(error: unknown) {
   )
 }
 
+
+export function isInstagramPermanentPublishError(error: unknown) {
+  const operationError = error as Error & { metaCode?: number; metaSubcode?: number }
+  if (operationError?.metaCode === 190) return true
+  if ([10, 200].includes(operationError?.metaCode || -1)) return true
+  if (operationError?.metaCode === 25 && operationError?.metaSubcode === 2207050) return true
+
+  const message = error instanceof Error ? error.message.toLowerCase() : ""
+  return (
+    message.includes("api access deactivated") ||
+    message.includes("meta desativou o acesso da api") ||
+    message.includes("não aceita publicação pela api") ||
+    message.includes("unsupported request - method type: post") ||
+    message.includes("unsupported request - method type: get") ||
+    message.includes("user access is restricted") ||
+    message.includes("instagram account is restricted") ||
+    message.includes("acesso desta conta expirou") ||
+    (message.includes("token") && message.includes("expir")) ||
+    message.includes("reconecte a conta")
+  )
+}
+
 export async function markInstagramAccountDisconnected(accountId: string) {
-  return prisma.instagramAccount.update({
+  return prisma.instagramAccount.updateMany({
     where: { id: accountId },
     data: {
       connectionType: INSTAGRAM_DISCONNECTED_CONNECTION,

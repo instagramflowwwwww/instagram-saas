@@ -3,7 +3,7 @@ import { processDueQueue } from "@/lib/queue-processor"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-export const maxDuration = 300
+export const maxDuration = 120
 
 function authorized(request: Request) {
   const secrets = [

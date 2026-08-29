@@ -2,6 +2,7 @@ import {
   INSTAGRAM_OFFICIAL_CONNECTION,
   isInstagramAccountUsable,
   isInstagramDisconnectError,
+  isInstagramPermanentPublishError,
   maintainInstagramAccounts,
   markInstagramAccountDisconnected,
 } from "@/lib/instagram-account-lifecycle"
@@ -38,9 +39,9 @@ type OfficialAccount = {
 
 const GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`
 const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
-const WAIT_INTERVAL = 4_000
-const MAX_STATUS_CHECKS = 35
-const MAX_ACCOUNT_ATTEMPTS = 3
+const WAIT_INTERVAL = 3_000
+const MAX_STATUS_CHECKS = 20
+const MAX_ACCOUNT_ATTEMPTS = 2
 const ACCOUNT_CONCURRENCY = 4
 const DEFAULT_PUBLISH_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000
 
@@ -228,10 +229,12 @@ async function ensurePublishingQuota(account: OfficialAccount, token: string) {
       throw error
     }
   } catch (error) {
-    if (isPublishingLimitError(error)) throw error
+    if (isPublishingLimitError(error) || isInstagramPermanentPublishError(error)) {
+      throw error
+    }
 
-    // A consulta de cota é preventiva. Se ela estiver indisponível, não
-    // bloqueia uma publicação que a própria Meta ainda pode aceitar.
+    // A consulta de cota é preventiva. Só ignoramos falhas realmente
+    // transitórias; erros permanentes da conta interrompem a publicação.
     console.warn("Instagram publishing quota check failed; continuing", {
       accountId: account.id,
       message: error instanceof Error ? error.message : String(error),
@@ -391,7 +394,6 @@ function isRetryablePrePublishError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : ""
   return [
     "tempo limite",
-    "demorou demais",
     "temporário",
     "temporariamente",
     "timeout",
@@ -456,7 +458,7 @@ async function publishToAccount(params: {
     } catch (error) {
       lastError = error
 
-      if (isInstagramDisconnectError(error)) {
+      if (isInstagramPermanentPublishError(error) || isInstagramDisconnectError(error)) {
         await markInstagramAccountDisconnected(params.account.id)
         break
       }
@@ -619,7 +621,9 @@ export async function publishExistingPost(params: {
           username: account.username,
           status: "error",
           error: message,
-          retryable: !isInstagramDisconnectError(error),
+          retryable:
+            !isInstagramDisconnectError(error) &&
+            !isInstagramPermanentPublishError(error),
           retryAfterMs: publishLimit
             ? operationError.retryAfterMs || DEFAULT_PUBLISH_LIMIT_RETRY_MS
             : undefined,

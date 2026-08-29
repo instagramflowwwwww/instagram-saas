@@ -6,8 +6,10 @@ import {
 import { publishExistingPost } from "@/lib/instagram-publisher"
 import { prisma } from "@/lib/prisma"
 
-const MAX_ATTEMPTS = 3
-const STUCK_AFTER_MS = 20 * 60 * 1000
+const MAX_ITEM_ATTEMPTS = 3
+const STUCK_AFTER_MS = 3 * 60 * 1000
+const ACCOUNT_CHUNK_SIZE = 4
+const CONTINUE_DELAY_MS = 5_000
 
 export async function refreshBatchStats(batchId: string) {
   const batch = await prisma.postingBatch.findUnique({
@@ -77,7 +79,7 @@ async function recoverStuckItems(userId?: string) {
           status: "pending",
           scheduledAt: new Date(),
           processingStartedAt: null,
-          lastError: "Processamento anterior interrompido; reagendado automaticamente.",
+          lastError: "Processamento anterior interrompido; retomado automaticamente.",
         },
       }),
       ...(item.postId
@@ -93,9 +95,98 @@ async function recoverStuckItems(userId?: string) {
   }
 }
 
-function retryDate(attempts: number, minimumDelayMs = 0) {
-  const normalDelayMs = Math.max(10, attempts * 10) * 60 * 1000
-  return new Date(Date.now() + Math.max(normalDelayMs, minimumDelayMs))
+function retryDate(attempts: number) {
+  const delayMinutes = Math.max(2, Math.min(10, attempts * 2))
+  return new Date(Date.now() + delayMinutes * 60 * 1000)
+}
+
+async function getProgress(postId: string, targetAccountIds: string[]) {
+  const [accounts, logs] = await Promise.all([
+    prisma.instagramAccount.findMany({
+      where: { id: { in: targetAccountIds } },
+      select: {
+        id: true,
+        connectionType: true,
+        isActive: true,
+        accessToken: true,
+        tokenExpiresAt: true,
+        appConfigId: true,
+      },
+    }),
+    prisma.postLog.findMany({
+      where: {
+        postId,
+        instagramAccountId: { in: targetAccountIds },
+        status: { in: ["success", "error"] },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { instagramAccountId: true, status: true },
+    }),
+  ])
+
+  const processedIds = new Set<string>()
+  const successIds = new Set<string>()
+  for (const log of logs) {
+    if (processedIds.has(log.instagramAccountId)) continue
+    processedIds.add(log.instagramAccountId)
+    if (log.status === "success") successIds.add(log.instagramAccountId)
+  }
+
+  const usableIds = accounts
+    .filter((account) => isInstagramAccountUsable(account))
+    .map((account) => account.id)
+  const usableSet = new Set(usableIds)
+
+  const remainingIds = targetAccountIds.filter(
+    (accountId) => usableSet.has(accountId) && !processedIds.has(accountId)
+  )
+
+  return {
+    successCount: successIds.size,
+    processedCount: processedIds.size,
+    remainingIds,
+    unavailableCount: targetAccountIds.filter((id) => !usableSet.has(id)).length,
+  }
+}
+
+async function finalizeItem(params: {
+  itemId: string
+  batchId: string
+  postId: string
+  targetCount: number
+  successCount: number
+  lastError?: string | null
+}) {
+  const itemStatus =
+    params.successCount === params.targetCount
+      ? "published"
+      : params.successCount > 0
+        ? "partial"
+        : "failed"
+
+  const postStatus = itemStatus === "published" ? "published" : itemStatus
+
+  await prisma.$transaction([
+    prisma.postingBatchItem.update({
+      where: { id: params.itemId },
+      data: {
+        status: itemStatus,
+        processedAt: new Date(),
+        processingStartedAt: null,
+        lastError: params.lastError || null,
+      },
+    }),
+    prisma.post.update({
+      where: { id: params.postId },
+      data: {
+        status: postStatus,
+        publishedAt: params.successCount > 0 ? new Date() : null,
+      },
+    }),
+  ])
+
+  await refreshBatchStats(params.batchId)
+  return itemStatus
 }
 
 export async function processDueQueue(options: {
@@ -128,7 +219,7 @@ export async function processDueQueue(options: {
     },
     orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
     select: { id: true },
-    take: Math.min(Math.max(options.limit || 1, 1), 10),
+    take: Math.min(Math.max(options.limit || 1, 1), 4),
   })
 
   console.info("[queue] Due items found", {
@@ -140,20 +231,20 @@ export async function processDueQueue(options: {
     itemId: string
     status: string
     error?: string
+    remainingAccounts?: number
   }> = []
 
   for (const candidate of dueItems) {
-    console.info("[queue] Claiming item", { itemId: candidate.id })
-
     const claim = await prisma.postingBatchItem.updateMany({
       where: { id: candidate.id, status: "pending" },
       data: {
         status: "processing",
         processingStartedAt: new Date(),
-        attempts: { increment: 1 },
       },
     })
     if (claim.count === 0) continue
+
+    console.info("[queue] Claiming item", { itemId: candidate.id })
 
     const item = await prisma.postingBatchItem.findUnique({
       where: { id: candidate.id },
@@ -161,18 +252,7 @@ export async function processDueQueue(options: {
         batch: {
           include: {
             accounts: {
-              include: {
-                instagramAccount: {
-                  select: {
-                    id: true,
-                    connectionType: true,
-                    isActive: true,
-                    accessToken: true,
-                    tokenExpiresAt: true,
-                    appConfigId: true,
-                  },
-                },
-              },
+              select: { instagramAccountId: true },
             },
           },
         },
@@ -195,70 +275,52 @@ export async function processDueQueue(options: {
       continue
     }
 
-    try {
-      const activeAccountIds = item.batch.accounts
-        .filter((account) => isInstagramAccountUsable(account.instagramAccount))
-        .map((account) => account.instagramAccountId)
+    const targetAccountIds = item.batch.accounts.map(
+      (account) => account.instagramAccountId
+    )
 
-      if (activeAccountIds.length === 0) {
-        const message =
-          "Nenhuma conta conectada está disponível para esta publicação."
-        await prisma.$transaction([
-          prisma.postingBatchItem.update({
-            where: { id: item.id },
-            data: {
-              status: "failed",
-              processedAt: new Date(),
-              processingStartedAt: null,
-              lastError: message,
-            },
-          }),
-          prisma.post.update({
-            where: { id: item.post.id },
-            data: { status: "failed", publishedAt: null },
-          }),
-        ])
-        processed.push({ itemId: item.id, status: "failed", error: message })
-        await refreshBatchStats(item.batchId)
+    try {
+      const before = await getProgress(item.post.id, targetAccountIds)
+
+      if (before.remainingIds.length === 0) {
+        const status = await finalizeItem({
+          itemId: item.id,
+          batchId: item.batchId,
+          postId: item.post.id,
+          targetCount: targetAccountIds.length,
+          successCount: before.successCount,
+          lastError:
+            before.successCount < targetAccountIds.length
+              ? `${targetAccountIds.length - before.successCount} conta(s) não concluíram esta publicação.`
+              : null,
+        })
+        processed.push({ itemId: item.id, status })
         continue
       }
 
+      const chunkIds = before.remainingIds.slice(0, ACCOUNT_CHUNK_SIZE)
       const result = await publishExistingPost({
         postId: item.post.id,
         userId: item.batch.userId,
-        accountIds: activeAccountIds,
+        accountIds: chunkIds,
       })
-      const postStatus = result.post.status
+
       const message = result.results
         .filter((entry) => entry.status === "error")
         .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
         .join(" | ")
 
-      const failedResults = result.results.filter(
-        (entry) => entry.status === "error"
-      )
-      const retryableResults = failedResults.filter(
-        (entry) => entry.retryable !== false
-      )
-      const minimumRetryDelayMs = retryableResults.reduce(
-        (delay, entry) => Math.max(delay, entry.retryAfterMs || 0),
-        0
-      )
+      const after = await getProgress(item.post.id, targetAccountIds)
 
-      if (
-        ["failed", "partial"].includes(postStatus) &&
-        retryableResults.length > 0 &&
-        item.attempts < MAX_ATTEMPTS
-      ) {
-        const nextAttemptAt = retryDate(item.attempts, minimumRetryDelayMs)
+      if (after.remainingIds.length > 0) {
         await prisma.$transaction([
           prisma.postingBatchItem.update({
             where: { id: item.id },
             data: {
               status: "pending",
-              scheduledAt: nextAttemptAt,
+              scheduledAt: new Date(Date.now() + CONTINUE_DELAY_MS),
               processingStartedAt: null,
-              lastError: message || "Falha temporária; nova tentativa agendada.",
+              lastError: message || null,
             },
           }),
           prisma.post.update({
@@ -266,34 +328,38 @@ export async function processDueQueue(options: {
             data: { status: "scheduled" },
           }),
         ])
-        processed.push({ itemId: item.id, status: "retrying", error: message })
-      } else {
-        const itemStatus =
-          postStatus === "published"
-            ? "published"
-            : postStatus === "partial"
-              ? "partial"
-              : "failed"
-        await prisma.postingBatchItem.update({
-          where: { id: item.id },
-          data: {
-            status: itemStatus,
-            processedAt: new Date(),
-            processingStartedAt: null,
-            lastError: message || null,
-          },
+
+        processed.push({
+          itemId: item.id,
+          status: "continuing",
+          error: message || undefined,
+          remainingAccounts: after.remainingIds.length,
         })
-        processed.push({ itemId: item.id, status: itemStatus, error: message })
+        await refreshBatchStats(item.batchId)
+        continue
       }
+
+      const status = await finalizeItem({
+        itemId: item.id,
+        batchId: item.batchId,
+        postId: item.post.id,
+        targetCount: targetAccountIds.length,
+        successCount: after.successCount,
+        lastError: message || null,
+      })
+      processed.push({ itemId: item.id, status, error: message || undefined })
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao processar fila"
-      if (item.attempts < MAX_ATTEMPTS) {
+      const nextAttempts = item.attempts + 1
+
+      if (nextAttempts < MAX_ITEM_ATTEMPTS) {
         await prisma.$transaction([
           prisma.postingBatchItem.update({
             where: { id: item.id },
             data: {
               status: "pending",
-              scheduledAt: retryDate(item.attempts),
+              attempts: nextAttempts,
+              scheduledAt: retryDate(nextAttempts),
               processingStartedAt: null,
               lastError: message,
             },
@@ -305,26 +371,19 @@ export async function processDueQueue(options: {
         ])
         processed.push({ itemId: item.id, status: "retrying", error: message })
       } else {
-        await prisma.$transaction([
-          prisma.postingBatchItem.update({
-            where: { id: item.id },
-            data: {
-              status: "failed",
-              processedAt: new Date(),
-              processingStartedAt: null,
-              lastError: message,
-            },
-          }),
-          prisma.post.update({
-            where: { id: item.post.id },
-            data: { status: "failed" },
-          }),
-        ])
-        processed.push({ itemId: item.id, status: "failed", error: message })
+        const progress = await getProgress(item.post.id, targetAccountIds)
+        const status = await finalizeItem({
+          itemId: item.id,
+          batchId: item.batchId,
+          postId: item.post.id,
+          targetCount: targetAccountIds.length,
+          successCount: progress.successCount,
+          lastError: message,
+        })
+        processed.push({ itemId: item.id, status, error: message })
       }
     }
 
-    await refreshBatchStats(item.batchId)
     console.info("[queue] Item finished", processed[processed.length - 1])
   }
 

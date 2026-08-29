@@ -53,6 +53,12 @@ export async function POST(
     }),
     ...(postIds.length > 0
       ? [
+          prisma.postLog.deleteMany({
+            where: {
+              postId: { in: postIds },
+              status: "error",
+            },
+          }),
           prisma.post.updateMany({
             where: { id: { in: postIds } },
             data: { status: "scheduled" },
