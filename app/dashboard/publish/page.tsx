@@ -195,6 +195,15 @@ export default function PublishPage() {
         throw new Error(data.error || "Não foi possível publicar")
       }
 
+      if (data.queued) {
+        setResults([])
+        toast.success(
+          `Publicação enviada para a fila de ${Number(data.accountCount || selectedAccounts.length)} conta(s). O processamento continuará automaticamente.`,
+          { id: toastId }
+        )
+        return
+      }
+
       const publishResults = Array.isArray(data.results) ? (data.results as PublishResult[]) : []
       setResults(publishResults)
 

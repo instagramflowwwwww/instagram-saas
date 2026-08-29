@@ -6,13 +6,21 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
 function authorized(request: Request) {
-  const secret = process.env.QUEUE_CRON_SECRET?.trim()
-  if (!secret) return false
+  const secrets = [
+    process.env.CRON_SECRET?.trim(),
+    process.env.QUEUE_CRON_SECRET?.trim(),
+  ].filter((value): value is string => Boolean(value))
+
+  if (secrets.length === 0) return false
 
   const authorization = request.headers.get("authorization")?.trim()
   const headerSecret = request.headers.get("x-cron-secret")?.trim()
 
-  return authorization === `Bearer ${secret}` || headerSecret === secret
+  return secrets.some(
+    (secret) =>
+      authorization === `Bearer ${secret}` ||
+      headerSecret === secret
+  )
 }
 
 export async function POST(request: Request) {

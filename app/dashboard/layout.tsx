@@ -1,7 +1,7 @@
 "use client"
 import { useSession, signOut } from "next-auth/react"
 import { useRouter, usePathname } from "next/navigation"
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import Link from "next/link"
 import toast from "react-hot-toast"
 import { isAdminEmail } from "@/lib/account-access"
@@ -55,7 +55,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: session, status } = useSession()
   const router = useRouter()
   const pathname = usePathname()
-  const queueTickRunning = useRef(false)
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -69,49 +68,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [session?.user?.id, status, router])
 
-  useEffect(() => {
-    if (status !== "authenticated" || !session?.user?.id) return
-
-    let disposed = false
-
-    const processQueue = async () => {
-      if (disposed || queueTickRunning.current) return
-      queueTickRunning.current = true
-
-      try {
-        const response = await fetch("/api/queue/process", {
-          method: "POST",
-          cache: "no-store",
-          keepalive: true,
-        })
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}))
-          throw new Error(data.error || "Não foi possível processar a fila de publicações.")
-        }
-
-        toast.dismiss("queue-heartbeat-error")
-      } catch (error) {
-        console.error("[queue-dashboard] Heartbeat failed", error)
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Não foi possível processar a fila de publicações.",
-          { id: "queue-heartbeat-error" }
-        )
-      } finally {
-        queueTickRunning.current = false
-      }
-    }
-
-    void processQueue()
-    const interval = window.setInterval(processQueue, 60_000)
-
-    return () => {
-      disposed = true
-      window.clearInterval(interval)
-    }
-  }, [session?.user?.id, status])
+  // O processamento automático da fila é executado no servidor pelo cron.
+  // O navegador não dispara mais publicações a cada minuto, evitando concorrência,
+  // consumo desnecessário da Vercel e execuções duplicadas.
 
   if (status === "loading") {
     return (

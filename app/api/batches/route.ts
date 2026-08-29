@@ -95,7 +95,9 @@ export async function GET() {
   return NextResponse.json({
     batches,
     generatedAt: new Date().toISOString(),
-    executorConfigured: Boolean(process.env.QUEUE_CRON_SECRET),
+    executorConfigured: Boolean(
+      process.env.CRON_SECRET?.trim() || process.env.QUEUE_CRON_SECRET?.trim()
+    ),
   })
 }
 

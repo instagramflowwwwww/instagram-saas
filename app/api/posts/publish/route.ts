@@ -74,11 +74,71 @@ export async function POST(request: Request) {
       )
     }
 
+    // Lotes grandes não são mais publicados dentro de uma única Function da
+    // Vercel. Eles entram na mesma fila resiliente das automações e são
+    // processados em blocos pequenos, evitando timeout e republicação.
+    if (accountIds.length > 4) {
+      const startAt = new Date()
+      const batch = await prisma.postingBatch.create({
+        data: {
+          userId: session.user.id,
+          name: "Publicação imediata",
+          status: "scheduled",
+          captionMode: "single",
+          publicationType: "post",
+          intervalMinutes: 5,
+          startAt,
+          totalItems: 1,
+          accounts: {
+            create: accountIds.map((instagramAccountId) => ({
+              instagramAccountId,
+            })),
+          },
+          items: {
+            create: {
+              position: 0,
+              caption,
+              hashtags,
+              scheduledAt: startAt,
+              post: {
+                create: {
+                  user: {
+                    connect: { id: session.user.id },
+                  },
+                  videoUrl: videoUrl || null,
+                  imageUrl: imageUrl || null,
+                  coverUrl: coverUrl || null,
+                  publicationType: "post",
+                  caption,
+                  hashtags,
+                  status: "scheduled",
+                  scheduledAt: startAt,
+                },
+              },
+            },
+          },
+        },
+        select: { id: true },
+      })
+
+      return NextResponse.json(
+        {
+          queued: true,
+          batchId: batch.id,
+          accountCount: accountIds.length,
+          results: [],
+        },
+        { status: 202 }
+      )
+    }
+
     const post = await prisma.post.create({
       data: {
         userId: session.user.id,
         videoUrl: videoUrl || null,
         imageUrl: imageUrl || null,
+        coverUrl: coverUrl || null,
+        publicationType: "post",
         caption,
         hashtags,
         status: "publishing",
@@ -92,7 +152,7 @@ export async function POST(request: Request) {
       coverUrl,
     })
 
-    return NextResponse.json(result)
+    return NextResponse.json({ ...result, queued: false })
   } catch (error) {
     console.error("Official Instagram publish error", error)
     return NextResponse.json(

@@ -191,7 +191,7 @@ export default function QueuePage() {
   useEffect(() => {
     if (loading || data.executorConfigured) return
     toastWarning(
-      "O processamento manual funciona, mas o automático ainda precisa da variável QUEUE_CRON_SECRET na Vercel e dos secrets do workflow no GitHub.",
+      "O processamento automático ainda precisa de CRON_SECRET (Vercel Cron) ou QUEUE_CRON_SECRET (executor externo).",
       "queue-executor-warning"
     )
   }, [data.executorConfigured, loading])
