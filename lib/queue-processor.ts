@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client"
 import { ADMIN_EMAIL } from "@/lib/account-access"
 import {
   isInstagramAccountUsable,
@@ -10,7 +11,8 @@ const MAX_ITEM_ATTEMPTS = 3
 const STUCK_AFTER_MS = 3 * 60 * 1000
 const ACCOUNT_CHUNK_SIZE = 4
 const CONTINUE_DELAY_MS = 65_000
-const DUE_CANDIDATE_WINDOW = 24
+const OLD_CANDIDATE_WINDOW = 24
+const RECENT_CANDIDATE_WINDOW = 48
 
 export async function refreshBatchStats(batchId: string) {
   const batch = await prisma.postingBatch.findUnique({
@@ -200,45 +202,62 @@ export async function processDueQueue(options: {
   const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 4)
   const now = new Date()
 
-  // Busca uma janela maior de itens vencidos para que um lote grande antigo
-  // não bloqueie uma publicação pequena que acabou de chegar no horário.
-  // A execução continua processando poucos itens por vez; só a escolha fica
-  // mais inteligente.
-  const dueCandidates = await prisma.postingBatchItem.findMany({
-    where: {
-      status: "pending",
-      scheduledAt: { lte: now },
-      batch: {
-        status: { in: ["scheduled", "processing"] },
-        ...(options.userId ? { userId: options.userId } : {}),
-        user: {
-          OR: [
-            { email: ADMIN_EMAIL },
-            {
-              accessStatus: "approved",
-              OR: [
-                { accessExpiresAt: null },
-                { accessExpiresAt: { gt: now } },
-              ],
-            },
-          ],
-        },
+  const baseWhere: Prisma.PostingBatchItemWhereInput = {
+    status: "pending",
+    scheduledAt: { lte: now },
+    batch: {
+      status: { in: ["scheduled", "processing"] },
+      ...(options.userId ? { userId: options.userId } : {}),
+      user: {
+        OR: [
+          { email: ADMIN_EMAIL },
+          {
+            accessStatus: "approved",
+            OR: [
+              { accessExpiresAt: null },
+              { accessExpiresAt: { gt: now } },
+            ],
+          },
+        ],
       },
     },
-    orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
-    select: {
-      id: true,
-      postId: true,
-      scheduledAt: true,
-      position: true,
-      batch: {
-        select: {
-          _count: { select: { accounts: true } },
-        },
+  }
+
+  const candidateSelect = {
+    id: true,
+    postId: true,
+    scheduledAt: true,
+    position: true,
+    batch: {
+      select: {
+        _count: { select: { accounts: true } },
       },
     },
-    take: DUE_CANDIDATE_WINDOW,
-  })
+  } as const
+
+  // Mistura uma janela dos itens mais antigos com outra dos itens vencidos
+  // mais recentes. Assim um backlog enorme não impede que um agendamento de
+  // 1-4 contas, recém-chegado ao horário, seja sequer avaliado pela prioridade.
+  const [oldestDue, recentDue] = await Promise.all([
+    prisma.postingBatchItem.findMany({
+      where: baseWhere,
+      orderBy: [{ scheduledAt: "asc" }, { position: "asc" }],
+      select: candidateSelect,
+      take: OLD_CANDIDATE_WINDOW,
+    }),
+    prisma.postingBatchItem.findMany({
+      where: baseWhere,
+      orderBy: [{ scheduledAt: "desc" }, { position: "asc" }],
+      select: candidateSelect,
+      take: RECENT_CANDIDATE_WINDOW,
+    }),
+  ])
+
+  const dueCandidateMap = new Map<string, (typeof oldestDue)[number]>()
+  for (const candidate of [...oldestDue, ...recentDue]) {
+    dueCandidateMap.set(candidate.id, candidate)
+  }
+  const dueCandidates = Array.from(dueCandidateMap.values())
 
   const candidatePostIds = Array.from(
     new Set(
@@ -277,17 +296,24 @@ export async function processDueQueue(options: {
       return {
         ...candidate,
         remainingAccounts,
-        // Itens que conseguem terminar em um único chunk têm prioridade.
-        // Isso evita que um agendamento de 1-4 contas fique atrás de um lote
-        // antigo com dezenas de contas.
         quick: remainingAccounts <= ACCOUNT_CHUNK_SIZE,
       }
     })
     .sort((a, b) => {
+      // 1) Publicações de até 4 contas primeiro.
       if (a.quick !== b.quick) return a.quick ? -1 : 1
 
-      const bySchedule = a.scheduledAt.getTime() - b.scheduledAt.getTime()
-      if (bySchedule !== 0) return bySchedule
+      // 2) Entre as rápidas, prioriza a que acabou de vencer para reduzir
+      // atraso do horário marcado. Entre lotes grandes, mantém justiça com
+      // os mais antigos.
+      if (a.quick && b.quick) {
+        const byRecentSchedule = b.scheduledAt.getTime() - a.scheduledAt.getTime()
+        if (byRecentSchedule !== 0) return byRecentSchedule
+      } else {
+        const byOldSchedule = a.scheduledAt.getTime() - b.scheduledAt.getTime()
+        if (byOldSchedule !== 0) return byOldSchedule
+      }
+
       return a.position - b.position
     })
 
@@ -295,6 +321,8 @@ export async function processDueQueue(options: {
 
   console.info("[queue] Due items found", {
     userId: options.userId || "all",
+    oldestCandidates: oldestDue.length,
+    recentCandidates: recentDue.length,
     candidates: dueCandidates.length,
     count: dueItems.length,
     selected: dueItems.map((item) => ({
@@ -304,6 +332,51 @@ export async function processDueQueue(options: {
       scheduledAt: item.scheduledAt.toISOString(),
     })),
   })
+
+  // Diagnóstico útil quando a fila do próprio usuário diz que não encontrou
+  // nada, mas o painel ainda mostra itens pendentes. Não altera o processamento.
+  if (options.userId && dueItems.length === 0) {
+    const pendingDiagnostic = await prisma.postingBatchItem.findMany({
+      where: {
+        status: "pending",
+        batch: { userId: options.userId },
+      },
+      orderBy: { scheduledAt: "asc" },
+      take: 5,
+      select: {
+        id: true,
+        scheduledAt: true,
+        batch: {
+          select: {
+            status: true,
+            user: {
+              select: {
+                email: true,
+                accessStatus: true,
+                accessExpiresAt: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    if (pendingDiagnostic.length > 0) {
+      console.warn("[queue] Pending items excluded from due selection", {
+        userId: options.userId,
+        now: now.toISOString(),
+        items: pendingDiagnostic.map((item) => ({
+          itemId: item.id,
+          scheduledAt: item.scheduledAt.toISOString(),
+          batchStatus: item.batch.status,
+          userEmail: item.batch.user.email,
+          accessStatus: item.batch.user.accessStatus,
+          accessExpiresAt: item.batch.user.accessExpiresAt?.toISOString() || null,
+          alreadyDue: item.scheduledAt <= now,
+        })),
+      })
+    }
+  }
 
   const processed: Array<{
     itemId: string
