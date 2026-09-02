@@ -21,6 +21,7 @@ model User {
   posts            Post[]
   media            MediaLibrary[]
   mediaFolders     MediaFolder[]
+  accountGroups    AccountGroup[]
   postingBatches   PostingBatch[]
   accessStatus     String             @default("approved")
   planName         String?
@@ -81,6 +82,31 @@ model InstagramApp {
   @@index([userId])
 }
 
+model AccountGroup {
+  id        String                    @id @default(cuid())
+  userId    String
+  name      String
+  color     String?
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members   AccountGroupMember[]
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model AccountGroupMember {
+  groupId            String
+  instagramAccountId String
+  createdAt          DateTime         @default(now())
+  group              AccountGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  instagramAccount   InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, instagramAccountId])
+  @@index([instagramAccountId])
+}
+
 model InstagramAccount {
   id                String                @id @default(cuid())
   userId            String
@@ -109,6 +135,7 @@ model InstagramAccount {
   postLogs          PostLog[]
   batchAccounts     PostingBatchAccount[]
   assignedProxy     InstagramProxy?
+  groupMembers      AccountGroupMember[]
 
   @@index([userId, igUserId])
   @@index([userId, createdAt])
@@ -269,7 +296,7 @@ model PostingBatchItem {
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
   batch               PostingBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  media               MediaLibrary? @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  media               MediaLibrary? @relation(fields: [mediaId], references: [id], onDelete: Cascade)
   post                Post?         @relation(fields: [postId], references: [id], onDelete: SetNull)
 
   @@unique([batchId, position])
