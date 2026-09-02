@@ -12,6 +12,7 @@ import {
   Upload,
   X,
   XCircle,
+  Shuffle,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { toastWarning } from "@/lib/toast"
@@ -33,6 +34,13 @@ type PublishResult = {
   error?: string
 }
 
+type LibraryMedia = {
+  id: string
+  url: string
+  type: string
+  fileName: string
+}
+
 const IMAGE_LIMIT = 8 * 1024 * 1024
 const VIDEO_LIMIT = 200 * 1024 * 1024
 
@@ -48,6 +56,9 @@ export default function PublishPage() {
   const [publishing, setPublishing] = useState(false)
   const [publishStage, setPublishStage] = useState("")
   const [results, setResults] = useState<PublishResult[]>([])
+  const [randomMode, setRandomMode] = useState(false)
+  const [library, setLibrary] = useState<LibraryMedia[]>([])
+  const [loadingLibrary, setLoadingLibrary] = useState(false)
   const videoRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
@@ -81,6 +92,29 @@ export default function PublishPage() {
       if (coverPreview) URL.revokeObjectURL(coverPreview)
     }
   }, [coverPreview])
+
+  useEffect(() => {
+    if (randomMode && library.length === 0) {
+      setLoadingLibrary(true)
+      fetch("/api/library")
+        .then((r) => r.json())
+        .then((data) => {
+          const videos = (Array.isArray(data) ? data : []).filter(
+            (m: LibraryMedia) => m.type === "video"
+          )
+          setLibrary(videos)
+          if (videos.length === 0) {
+            toast.error("Nenhum vídeo encontrado na biblioteca. Adicione vídeos primeiro.")
+            setRandomMode(false)
+          }
+        })
+        .catch(() => {
+          toast.error("Erro ao carregar a biblioteca")
+          setRandomMode(false)
+        })
+        .finally(() => setLoadingLibrary(false))
+    }
+  }, [randomMode])
 
   const toggleAccount = (id: string) => {
     setSelectedAccounts((current) =>
@@ -127,7 +161,79 @@ export default function PublishPage() {
     return uploaded.publicUrl
   }
 
+  const publishRandom = async () => {
+    if (selectedAccounts.length === 0) {
+      toast.error("Selecione pelo menos uma conta")
+      return
+    }
+    if (library.length === 0) {
+      toast.error("Nenhum vídeo na biblioteca")
+      return
+    }
+
+    setPublishing(true)
+    setResults([])
+    const toastId = toast.loading("Publicando aleatório...")
+
+    try {
+      const allResults: PublishResult[] = []
+
+      for (const accountId of selectedAccounts) {
+        const randomVideo = library[Math.floor(Math.random() * library.length)]
+        setPublishStage(`Publicando @${accounts.find(a => a.id === accountId)?.username}...`)
+
+        const response = await fetch("/api/posts/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoUrl: randomVideo.url,
+            imageUrl: "",
+            coverUrl: "",
+            caption,
+            hashtags,
+            accountIds: [accountId],
+          }),
+        })
+        const data = await response.json()
+
+        if (!response.ok) {
+          allResults.push({
+            accountId,
+            username: accounts.find(a => a.id === accountId)?.username || accountId,
+            status: "error",
+            error: data.error || "Erro ao publicar",
+          })
+        } else if (data.results?.length > 0) {
+          allResults.push(...data.results)
+        }
+      }
+
+      setResults(allResults)
+      const successCount = allResults.filter((r) => r.status === "success").length
+      const errorCount = allResults.length - successCount
+
+      if (errorCount === 0) {
+        toast.success(`Publicado com sucesso em ${successCount} conta(s).`, { id: toastId })
+      } else if (successCount > 0) {
+        toast.dismiss(toastId)
+        toastWarning(`Publicado em ${successCount} conta(s), com falha em ${errorCount}.`)
+      } else {
+        toast.error("A publicação falhou em todas as contas.", { id: toastId })
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível publicar",
+        { id: toastId }
+      )
+    } finally {
+      setPublishing(false)
+      setPublishStage("")
+    }
+  }
+
   const publish = async () => {
+    if (randomMode) return publishRandom()
+
     if (!videoFile && !imageFile) {
       toast.error("Adicione uma imagem ou um vídeo")
       return
@@ -164,15 +270,9 @@ export default function PublishPage() {
     try {
       setPublishStage("Enviando mídia...")
       const [videoUrl, imageUrl, coverUrl] = await Promise.all([
-        videoFile
-          ? uploadMedia(videoFile)
-          : Promise.resolve(""),
-        imageFile
-          ? uploadMedia(imageFile)
-          : Promise.resolve(""),
-        coverFile
-          ? uploadMedia(coverFile)
-          : Promise.resolve(""),
+        videoFile ? uploadMedia(videoFile) : Promise.resolve(""),
+        imageFile ? uploadMedia(imageFile) : Promise.resolve(""),
+        coverFile ? uploadMedia(coverFile) : Promise.resolve(""),
       ])
 
       setPublishStage("Publicando no Instagram...")
@@ -214,9 +314,7 @@ export default function PublishPage() {
         toast.success(`Publicado com sucesso em ${successCount} conta(s).`, { id: toastId })
       } else if (successCount > 0) {
         toast.dismiss(toastId)
-        toastWarning(
-          `Publicado em ${successCount} conta(s), com falha em ${errorCount}.`
-        )
+        toastWarning(`Publicado em ${successCount} conta(s), com falha em ${errorCount}.`)
       } else {
         toast.error("A publicação falhou em todas as contas selecionadas.", { id: toastId })
       }
@@ -246,102 +344,136 @@ export default function PublishPage() {
         </Link>
       </div>
 
+      {/* Toggle modo aleatório */}
+      <div className="mb-6">
+        <button
+          onClick={() => setRandomMode(!randomMode)}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            randomMode
+              ? "bg-green-500/20 border border-green-500/30 text-green-300"
+              : "bg-white/5 border border-white/10 text-gray-400 hover:text-white"
+          }`}
+        >
+          {loadingLibrary ? <Loader2 size={15} className="animate-spin" /> : <Shuffle size={15} />}
+          {randomMode ? "Modo aleatório ativado — cada conta recebe um vídeo diferente da biblioteca" : "Ativar modo aleatório"}
+        </button>
+      </div>
+
       <div className="grid grid-cols-5 gap-6">
         <div className="col-span-3 space-y-4">
-          <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
-            <h2 className="font-semibold text-white text-sm">Conteúdo</h2>
+          {!randomMode && (
+            <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
+              <h2 className="font-semibold text-white text-sm">Conteúdo</h2>
 
-            <div>
-              <label className="text-xs text-gray-400 mb-1.5 block">Vídeo (Reel)</label>
-              <input
-                ref={videoRef}
-                type="file"
-                accept="video/mp4,video/quicktime"
-                className="hidden"
-                onChange={(event) => handleVideoChange(event.target.files?.[0] || null)}
-              />
-              {videoFile ? (
-                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                  <Film size={15} className="text-purple-400" />
-                  <span className="text-sm text-white flex-1 truncate">{videoFile.name}</span>
-                  <span className="text-xs text-gray-500">{formatSize(videoFile.size)}</span>
-                  <button onClick={() => handleVideoChange(null)}>
-                    <X size={14} className="text-gray-500 hover:text-white" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => videoRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-purple-500/50 transition-colors"
-                >
-                  <Film size={15} />
-                  Clique para selecionar vídeo
-                </button>
-              )}
-            </div>
-
-            {videoFile && (
               <div>
-                <label className="text-xs text-gray-400 mb-1.5 block">
-                  Capa do Reel <span className="text-gray-600">(opcional)</span>
-                </label>
+                <label className="text-xs text-gray-400 mb-1.5 block">Vídeo (Reel)</label>
                 <input
-                  ref={coverRef}
+                  ref={videoRef}
                   type="file"
-                  accept="image/jpeg"
+                  accept="video/mp4,video/quicktime"
                   className="hidden"
-                  onChange={(event) => handleCoverChange(event.target.files?.[0] || null)}
+                  onChange={(event) => handleVideoChange(event.target.files?.[0] || null)}
                 />
-                {coverFile && coverPreview ? (
+                {videoFile ? (
                   <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                    <img src={coverPreview} alt="capa" className="w-10 h-10 rounded object-cover" />
-                    <span className="text-sm text-white flex-1 truncate">{coverFile.name}</span>
-                    <span className="text-xs text-gray-500">{formatSize(coverFile.size)}</span>
-                    <button onClick={() => handleCoverChange(null)}>
+                    <Film size={15} className="text-purple-400" />
+                    <span className="text-sm text-white flex-1 truncate">{videoFile.name}</span>
+                    <span className="text-xs text-gray-500">{formatSize(videoFile.size)}</span>
+                    <button onClick={() => handleVideoChange(null)}>
                       <X size={14} className="text-gray-500 hover:text-white" />
                     </button>
                   </div>
                 ) : (
                   <button
-                    onClick={() => coverRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-yellow-500/20 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-yellow-500/50 transition-colors"
+                    onClick={() => videoRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-purple-500/50 transition-colors"
                   >
-                    <Image size={15} />
-                    Clique para adicionar a capa
+                    <Film size={15} />
+                    Clique para selecionar vídeo
                   </button>
                 )}
               </div>
-            )}
 
-            <div>
-              <label className="text-xs text-gray-400 mb-1.5 block">Imagem</label>
-              <input
-                ref={imageRef}
-                type="file"
-                accept="image/jpeg"
-                className="hidden"
-                onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
-              />
-              {imageFile ? (
-                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                  <Image size={15} className="text-pink-400" />
-                  <span className="text-sm text-white flex-1 truncate">{imageFile.name}</span>
-                  <span className="text-xs text-gray-500">{formatSize(imageFile.size)}</span>
-                  <button onClick={() => handleImageChange(null)}>
-                    <X size={14} className="text-gray-500 hover:text-white" />
-                  </button>
+              {videoFile && (
+                <div>
+                  <label className="text-xs text-gray-400 mb-1.5 block">
+                    Capa do Reel <span className="text-gray-600">(opcional)</span>
+                  </label>
+                  <input
+                    ref={coverRef}
+                    type="file"
+                    accept="image/jpeg"
+                    className="hidden"
+                    onChange={(event) => handleCoverChange(event.target.files?.[0] || null)}
+                  />
+                  {coverFile && coverPreview ? (
+                    <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
+                      <img src={coverPreview} alt="capa" className="w-10 h-10 rounded object-cover" />
+                      <span className="text-sm text-white flex-1 truncate">{coverFile.name}</span>
+                      <span className="text-xs text-gray-500">{formatSize(coverFile.size)}</span>
+                      <button onClick={() => handleCoverChange(null)}>
+                        <X size={14} className="text-gray-500 hover:text-white" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => coverRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-yellow-500/20 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-yellow-500/50 transition-colors"
+                    >
+                      <Image size={15} />
+                      Clique para adicionar a capa
+                    </button>
+                  )}
                 </div>
-              ) : (
-                <button
-                  onClick={() => imageRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-pink-500/50 transition-colors"
-                >
-                  <Image size={15} />
-                  Clique para selecionar imagem
-                </button>
               )}
-            </div>
 
+              <div>
+                <label className="text-xs text-gray-400 mb-1.5 block">Imagem</label>
+                <input
+                  ref={imageRef}
+                  type="file"
+                  accept="image/jpeg"
+                  className="hidden"
+                  onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
+                />
+                {imageFile ? (
+                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
+                    <Image size={15} className="text-pink-400" />
+                    <span className="text-sm text-white flex-1 truncate">{imageFile.name}</span>
+                    <span className="text-xs text-gray-500">{formatSize(imageFile.size)}</span>
+                    <button onClick={() => handleImageChange(null)}>
+                      <X size={14} className="text-gray-500 hover:text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => imageRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-pink-500/50 transition-colors"
+                  >
+                    <Image size={15} />
+                    Clique para selecionar imagem
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {randomMode && (
+            <div className="bg-[#111] border border-green-500/20 rounded-xl p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Shuffle size={16} className="text-green-400" />
+                <h2 className="font-semibold text-white text-sm">Modo aleatório</h2>
+              </div>
+              <p className="text-gray-500 text-sm">
+                {library.length > 0
+                  ? `${library.length} vídeo(s) disponíveis na biblioteca. Cada conta selecionada receberá um vídeo diferente sorteado aleatoriamente.`
+                  : "Carregando biblioteca..."}
+              </p>
+            </div>
+          )}
+
+          <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
+            <h2 className="font-semibold text-white text-sm">Legenda e hashtags</h2>
             <div>
               <label className="text-xs text-gray-400 mb-1.5 block">Legenda</label>
               <textarea
@@ -352,7 +484,6 @@ export default function PublishPage() {
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 resize-none"
               />
             </div>
-
             <div>
               <label className="text-xs text-gray-400 mb-1.5 block">Hashtags</label>
               <input
@@ -366,11 +497,11 @@ export default function PublishPage() {
 
           <button
             onClick={publish}
-            disabled={publishing}
+            disabled={publishing || (randomMode && library.length === 0)}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-opacity"
           >
-            {publishing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            {publishing ? publishStage : `Publicar em ${selectedAccounts.length} conta(s)`}
+            {publishing ? <Loader2 size={16} className="animate-spin" /> : randomMode ? <Shuffle size={16} /> : <Upload size={16} />}
+            {publishing ? publishStage : randomMode ? `Publicar aleatório em ${selectedAccounts.length} conta(s)` : `Publicar em ${selectedAccounts.length} conta(s)`}
           </button>
 
           {results.length > 0 && (
