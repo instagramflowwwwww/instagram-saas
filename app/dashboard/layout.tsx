@@ -8,9 +8,8 @@ import { isAdminEmail } from "@/lib/account-access"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, FolderOpen,
-  ListChecks, Star, TrendingUp, Shield, Boxes
+  ListChecks, Star, TrendingUp, Shield, Boxes, Users
 } from "lucide-react"
-
 
 const navGroups = [
   {
@@ -39,6 +38,7 @@ const navGroups = [
     label: "Operação",
     items: [
       { href: "/dashboard/accounts", icon: Instagram, label: "Contas" },
+      { href: "/dashboard/groups", icon: Users, label: "Pastas" },
       { href: "/dashboard/meta-app", icon: Boxes, label: "App Meta" },
       { href: "/dashboard/queue", icon: ListChecks, label: "Status da Fila" },
     ],
@@ -67,10 +67,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       void signOut({ callbackUrl: "/login" })
     }
   }, [session?.user?.id, status, router])
-
-  // O processamento automático da fila é executado no servidor pelo cron.
-  // O navegador não dispara mais publicações a cada minuto, evitando concorrência,
-  // consumo desnecessário da Vercel e execuções duplicadas.
 
   if (status === "loading") {
     return (
