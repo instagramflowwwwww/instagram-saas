@@ -127,8 +127,8 @@ export default function MetaAppPage() {
     [accounts, selectedAppId]
   )
   const normalizedUsername = username.trim().replace(/^@/, "").toLowerCase()
-  const canConnect = Boolean(selectedAppId) && /^[a-z0-9._]{1,30}$/.test(normalizedUsername)
-
+   const canConnect = Boolean(selectedAppId) && (normalizedUsername === "" || /^[a-z0-9._]{1,30}$/.test(normalizedUsername))
+  
   const loadData = async (preferredAppId?: string) => {
     try {
       const [appResponse, accountsResponse] = await Promise.all([
@@ -332,8 +332,8 @@ export default function MetaAppPage() {
     if (!selectedAppId) { toast.error("Escolha qual App Meta será usado nesta conta."); return }
     if (!canConnect) { toast.error("Informe um usuário do Instagram válido."); return }
 
-    const params = new URLSearchParams({ username: normalizedUsername, appConfigId: selectedAppId })
-    const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
+    const params = new URLSearchParams({ appConfigId: selectedAppId })
+    if (normalizedUsername) params.set("username", normalizedUsername)    const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
     const authTab = window.open("about:blank", "_blank")
 
     if (!authTab) {
