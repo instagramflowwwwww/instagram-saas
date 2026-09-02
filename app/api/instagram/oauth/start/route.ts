@@ -49,7 +49,6 @@ export async function GET(request: NextRequest) {
         metaAppId: true,
       },
     })
-
     if (!app) {
       return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
@@ -63,15 +62,12 @@ export async function GET(request: NextRequest) {
       },
       take: 2,
     })
-
     if (apps.length === 0) {
       return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
-
     if (apps.length > 1) {
       return redirectToMetaApp(request, "app_required", popupMode)
     }
-
     app = apps[0]
   }
 
@@ -105,7 +101,6 @@ export async function GET(request: NextRequest) {
   authorizeUrl.searchParams.set("response_type", "code")
   authorizeUrl.searchParams.set("scope", INSTAGRAM_SCOPES.join(","))
   authorizeUrl.searchParams.set("state", state)
-  authorizeUrl.searchParams.set("force_reauth", "true")
 
   return NextResponse.redirect(authorizeUrl)
 }
