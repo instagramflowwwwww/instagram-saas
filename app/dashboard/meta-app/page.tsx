@@ -127,8 +127,9 @@ export default function MetaAppPage() {
     [accounts, selectedAppId]
   )
   const normalizedUsername = username.trim().replace(/^@/, "").toLowerCase()
-   const canConnect = Boolean(selectedAppId) && (normalizedUsername === "" || /^[a-z0-9._]{1,30}$/.test(normalizedUsername))
-  
+  // Username é opcional — conecta sem precisar digitar o @
+  const canConnect = Boolean(selectedAppId) && (normalizedUsername === "" || /^[a-z0-9._]{1,30}$/.test(normalizedUsername))
+
   const loadData = async (preferredAppId?: string) => {
     try {
       const [appResponse, accountsResponse] = await Promise.all([
@@ -150,6 +151,7 @@ export default function MetaAppPage() {
       setSelectedAppId((current) => {
         const requested = preferredAppId || current
         if (requested && loadedApps.some((app) => app.id === requested)) return requested
+        // Auto-seleciona o primeiro app se houver apenas um
         return loadedApps[0]?.id || ""
       })
     } catch (loadError) {
@@ -332,8 +334,11 @@ export default function MetaAppPage() {
     if (!selectedAppId) { toast.error("Escolha qual App Meta será usado nesta conta."); return }
     if (!canConnect) { toast.error("Informe um usuário do Instagram válido."); return }
 
+    // Username opcional
     const params = new URLSearchParams({ appConfigId: selectedAppId })
-    if (normalizedUsername) params.set("username", normalizedUsername)    const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
+    if (normalizedUsername) params.set("username", normalizedUsername)
+
+    const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
     const authTab = window.open("about:blank", "_blank")
 
     if (!authTab) {
@@ -427,7 +432,6 @@ export default function MetaAppPage() {
           </div>
 
           <form onSubmit={saveApp} className="space-y-4">
-            {/* Nome do app */}
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1.5">Nome do app <span className="text-gray-600">(opcional)</span></label>
               <div className="relative">
@@ -514,17 +518,15 @@ export default function MetaAppPage() {
                           {index + 1}
                         </span>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">
-                            {getAppLabel(app, index)}
-                          </p>
+                          <p className="text-sm font-semibold text-white truncate">{getAppLabel(app, index)}</p>
                           <p className="text-xs text-gray-500 font-mono">{maskAppId(app.appId)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => editApp(app)} className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg" aria-label="Editar App Meta">
+                        <button onClick={() => editApp(app)} className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg">
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => deleteApp(app)} disabled={deletingId === app.id} className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50" aria-label="Excluir App Meta">
+                        <button onClick={() => deleteApp(app)} disabled={deletingId === app.id} className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50">
                           {deletingId === app.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                         </button>
                       </div>
@@ -564,35 +566,36 @@ export default function MetaAppPage() {
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
               <h2 className="text-white font-semibold">Conectar conta</h2>
-              <p className="text-xs text-gray-500 mt-1">Escolha explicitamente o App Meta que fará a autorização OAuth.</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {apps.length === 1
+                  ? `Usando ${getAppLabel(apps[0], 0)} — clique em conectar para autorizar.`
+                  : "Escolha explicitamente o App Meta que fará a autorização OAuth."}
+              </p>
             </div>
             <UserPlus size={20} className="text-purple-400" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 mb-5">
-            <select
-              value={selectedAppId}
-              onChange={(e) => setSelectedAppId(e.target.value)}
-              disabled={apps.length === 0}
-              className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 disabled:opacity-50"
-            >
-              {apps.length === 0 ? (
-                <option value="">Nenhum App Meta</option>
-              ) : (
-                apps.map((app, index) => (
+          <div className={`grid gap-3 mb-5 ${apps.length > 1 ? "grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto]"}`}>
+            {apps.length > 1 && (
+              <select
+                value={selectedAppId}
+                onChange={(e) => setSelectedAppId(e.target.value)}
+                className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500"
+              >
+                {apps.map((app, index) => (
                   <option key={app.id} value={app.id}>
                     {getAppLabel(app, index)} · {maskAppId(app.appId)}
                   </option>
-                ))
-              )}
-            </select>
+                ))}
+              </select>
+            )}
 
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">@</span>
               <input
                 value={username}
                 onChange={(e) => setUsername(e.target.value.replace(/^@/, ""))}
-                placeholder="usuario"
+                placeholder="usuario (opcional)"
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
               />
             </div>
@@ -607,7 +610,7 @@ export default function MetaAppPage() {
             </button>
           </div>
 
-          {selectedApp && (
+          {selectedApp && apps.length > 1 && (
             <p className="text-[11px] text-gray-600 mb-5">
               A conta será vinculada ao app {selectedApp.name || maskAppId(selectedApp.appId)}.
             </p>
@@ -653,7 +656,7 @@ export default function MetaAppPage() {
                     <span className={`w-1.5 h-1.5 rounded-full ${account.isActive && !account.requiresReconnect ? "bg-green-400" : "bg-red-400"}`} />
                     {account.isActive && !account.requiresReconnect ? "Conectada" : "Reconectar"}
                   </span>
-                  <button onClick={() => removeAccount(account.id)} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg" aria-label="Remover conta">
+                  <button onClick={() => removeAccount(account.id)} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg">
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -679,7 +682,7 @@ export default function MetaAppPage() {
               "Em Business login settings, cadastre exatamente a Redirect URI compartilhada desta página.",
               "Copie o Instagram App ID e o Instagram App Secret e adicione o app aqui.",
               "Adicione a conta como Instagram Tester no App Meta correto e aceite o convite.",
-              "Na seção Conectar conta, selecione esse App Meta, informe o @ e faça o OAuth.",
+              "Na seção Conectar conta, clique em Conectar conta (o usuário é opcional).",
             ].map((item, index) => (
               <li key={item} className="flex gap-3">
                 <span className="w-6 h-6 rounded-full bg-purple-500/10 text-purple-400 text-xs font-semibold flex items-center justify-center shrink-0">{index + 1}</span>
