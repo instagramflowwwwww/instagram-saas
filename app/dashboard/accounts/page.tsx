@@ -224,6 +224,7 @@ export default function AccountsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Contas do Instagram</h1>
+{/* v2 */}
           <p className="text-gray-500 mt-1">
             {connectedCount} conectada(s) pela API oficial
             {reconnectCount > 0 ? ` · ${reconnectCount} aguardando reconexão` : ""}
