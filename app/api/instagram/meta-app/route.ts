@@ -14,13 +14,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
 
-
   const apps = await prisma.instagramApp.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
       metaAppId: true,
+      name: true,
       lastValidatedAt: true,
       createdAt: true,
       updatedAt: true,
@@ -33,12 +33,14 @@ export async function GET(request: Request) {
   const serializedApps = apps.map((app) => ({
     id: app.id,
     appId: app.metaAppId,
+    name: app.name || null,
     secretConfigured: true,
     lastValidatedAt: app.lastValidatedAt,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
     accountsCount: app._count.accounts,
   }))
+
   const firstApp = serializedApps[0] || null
   const accountsCount = serializedApps.reduce(
     (total, app) => total + app.accountsCount,
@@ -51,7 +53,6 @@ export async function GET(request: Request) {
     appsCount: serializedApps.length,
     accountsCount,
     redirectUri: getInstagramRedirectUri(request),
-    // Campos mantidos por compatibilidade com a interface anterior.
     appId: firstApp?.appId || "",
     secretConfigured: Boolean(firstApp),
     lastValidatedAt: firstApp?.lastValidatedAt || null,
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
   const configId = String(body.configId || "").trim()
   const appId = String(body.appId || "").trim()
   const appSecret = String(body.appSecret || "").trim()
+  const name = String(body.name || "").trim().slice(0, 50) || null
 
   if (!/^\d{8,}$/.test(appId)) {
     return NextResponse.json(
@@ -81,10 +83,7 @@ export async function POST(request: Request) {
 
   const existing = configId
     ? await prisma.instagramApp.findFirst({
-        where: {
-          id: configId,
-          userId: session.user.id,
-        },
+        where: { id: configId, userId: session.user.id },
       })
     : null
 
@@ -117,18 +116,12 @@ export async function POST(request: Request) {
 
   if (existing && existing.metaAppId !== appId) {
     const accountsCount = await prisma.instagramAccount.count({
-      where: {
-        userId: session.user.id,
-        appConfigId: existing.id,
-      },
+      where: { userId: session.user.id, appConfigId: existing.id },
     })
 
     if (accountsCount > 0) {
       return NextResponse.json(
-        {
-          error:
-            "Remova as contas conectadas por este app antes de trocar o Instagram App ID.",
-        },
+        { error: "Remova as contas conectadas por este app antes de trocar o Instagram App ID." },
         { status: 409 }
       )
     }
@@ -139,38 +132,27 @@ export async function POST(request: Request) {
         where: { id: existing.id },
         data: {
           metaAppId: appId,
-          ...(appSecret
-            ? { appSecretEncrypted: encryptValue(appSecret) }
-            : {}),
-          ...(existing.metaAppId !== appId
-            ? { lastValidatedAt: null }
-            : {}),
+          name,
+          ...(appSecret ? { appSecretEncrypted: encryptValue(appSecret) } : {}),
+          ...(existing.metaAppId !== appId ? { lastValidatedAt: null } : {}),
         },
-        select: {
-          id: true,
-          metaAppId: true,
-          lastValidatedAt: true,
-          updatedAt: true,
-        },
+        select: { id: true, metaAppId: true, name: true, lastValidatedAt: true, updatedAt: true },
       })
     : await prisma.instagramApp.create({
         data: {
           userId: session.user.id,
           metaAppId: appId,
+          name,
           appSecretEncrypted: encryptValue(appSecret),
         },
-        select: {
-          id: true,
-          metaAppId: true,
-          lastValidatedAt: true,
-          updatedAt: true,
-        },
+        select: { id: true, metaAppId: true, name: true, lastValidatedAt: true, updatedAt: true },
       })
 
   return NextResponse.json({
     success: true,
     configId: app.id,
     appId: app.metaAppId,
+    name: app.name,
     lastValidatedAt: app.lastValidatedAt,
     updatedAt: app.updatedAt,
     redirectUri: getInstagramRedirectUri(request),
@@ -189,16 +171,11 @@ export async function DELETE(request: Request) {
 
   let app = requestedId
     ? await prisma.instagramApp.findFirst({
-        where: {
-          id: requestedId,
-          userId: session.user.id,
-        },
+        where: { id: requestedId, userId: session.user.id },
         select: { id: true },
       })
     : null
 
-  // Compatibilidade com a versão anterior: DELETE sem body continua válido
-  // quando o usuário possui somente um App Meta.
   if (!requestedId) {
     const apps = await prisma.instagramApp.findMany({
       where: { userId: session.user.id },
@@ -215,10 +192,7 @@ export async function DELETE(request: Request) {
   }
 
   const accountsCount = await prisma.instagramAccount.count({
-    where: {
-      userId: session.user.id,
-      appConfigId: app.id,
-    },
+    where: { userId: session.user.id, appConfigId: app.id },
   })
 
   if (accountsCount > 0) {
