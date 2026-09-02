@@ -292,10 +292,7 @@ export default function GroupsPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-3">
-                      <div
-                        className="w-4 h-4 rounded-full shrink-0"
-                        style={{ backgroundColor: group.color || "#7C3AED" }}
-                      />
+                      <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: group.color || "#7C3AED" }} />
                       <h2 className="font-semibold text-white">{group.name}</h2>
                       <span className="text-xs text-gray-500">{group.members.length} conta(s)</span>
                     </div>
@@ -314,11 +311,7 @@ export default function GroupsPage() {
                     ) : (
                       <>
                         <button
-                          onClick={() => {
-                            setEditingId(group.id)
-                            setEditName(group.name)
-                            setEditColor(group.color || COLORS[0].value)
-                          }}
+                          onClick={() => { setEditingId(group.id); setEditName(group.name); setEditColor(group.color || COLORS[0].value) }}
                           className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg"
                         >
                           <Pencil size={14} />
@@ -368,9 +361,7 @@ export default function GroupsPage() {
                             <button
                               key={account.id}
                               onClick={() => setSelectedToAdd((c) => isSelected ? c.filter((id) => id !== account.id) : [...c, account.id])}
-                              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors border ${
-                                isSelected ? "border-purple-500/40 bg-purple-500/15" : "border-white/10 bg-white/5 hover:bg-white/10"
-                              }`}
+                              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors border ${isSelected ? "border-purple-500/40 bg-purple-500/15" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                             >
                               {account.profilePicture ? (
                                 <img src={account.profilePicture} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
@@ -386,18 +377,11 @@ export default function GroupsPage() {
                       </div>
                     )}
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => addMembers(group.id)}
-                        disabled={selectedToAdd.length === 0}
-                        className="flex items-center gap-1.5 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
-                      >
+                      <button onClick={() => addMembers(group.id)} disabled={selectedToAdd.length === 0} className="flex items-center gap-1.5 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors">
                         <Plus size={12} />
                         Adicionar {selectedToAdd.length > 0 ? `(${selectedToAdd.length})` : ""}
                       </button>
-                      <button
-                        onClick={() => { setAddingToGroup(null); setSelectedToAdd([]) }}
-                        className="text-xs text-gray-400 hover:text-white px-3 py-2 rounded-lg hover:bg-white/5"
-                      >
+                      <button onClick={() => { setAddingToGroup(null); setSelectedToAdd([]) }} className="text-xs text-gray-400 hover:text-white px-3 py-2 rounded-lg hover:bg-white/5">
                         Cancelar
                       </button>
                     </div>
@@ -419,4 +403,3 @@ export default function GroupsPage() {
     </div>
   )
 }
-
