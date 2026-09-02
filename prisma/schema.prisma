@@ -70,6 +70,7 @@ model InstagramApp {
   id                 String             @id @default(cuid())
   userId             String
   metaAppId          String
+  name               String?
   appSecretEncrypted String
   lastValidatedAt    DateTime?
   createdAt          DateTime           @default(now())
@@ -198,7 +199,7 @@ model MediaLibrary {
   format       String?
   createdAt    DateTime           @default(now())
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folder       MediaFolder?        @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folder       MediaFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
   batchItems   PostingBatchItem[]
 
   @@index([userId, createdAt])
