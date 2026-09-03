@@ -53,7 +53,11 @@ export async function extractVideoFrames(url: string, count = 4): Promise<string
       "error",
       () => {
         clearTimeout(timer)
-        reject(new Error("Não foi possível abrir o vídeo."))
+        reject(
+          new Error(
+            "O navegador não conseguiu abrir o vídeo para leitura. Quase sempre é CORS: falta liberar a leitura externa no bucket do R2."
+          )
+        )
       },
       { once: true }
     )
