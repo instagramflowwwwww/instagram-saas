@@ -4,7 +4,16 @@ export const dynamic = "force-dynamic"
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { Activity, CheckCircle, Instagram, Loader2, RefreshCw, XCircle } from "lucide-react"
+import {
+  Activity,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  Instagram,
+  Loader2,
+  RefreshCw,
+  XCircle,
+} from "lucide-react"
 import toast from "react-hot-toast"
 
 type DayEntry = { day: string; count: number }
@@ -33,6 +42,10 @@ type HealthData = {
   series: DayEntry[]
   offline: AccountSummary[]
   online: AccountSummary[]
+  droppedToday: number
+  droppedYesterday: number
+  daily: Record<string, number>
+  dailyDrops: Record<string, number>
 }
 
 // Cores conferidas com o validador de paleta contra o fundo #111:
@@ -49,6 +62,153 @@ function formatDay(day: string, style: "short" | "long" = "short") {
     month: style === "long" ? "long" : "2-digit",
     ...(style === "long" ? { weekday: "long" } : {}),
   })
+}
+
+const WEEKDAYS = ["D", "S", "T", "Q", "Q", "S", "S"]
+const MONTHS = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+]
+
+function firstUpper(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function dayKey(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
+function MonthCalendar({
+  daily,
+  dailyDrops,
+  todayKey,
+  firstAccountAt,
+}: {
+  daily: Record<string, number>
+  dailyDrops: Record<string, number>
+  todayKey: string
+  firstAccountAt: string | null
+}) {
+  const [year, month] = todayKey.split("-").map(Number)
+  const [view, setView] = useState({ year, month: month - 1 })
+
+  const firstDate = firstAccountAt ? new Date(firstAccountAt) : null
+  const lowerBound = firstDate
+    ? firstDate.getFullYear() * 12 + firstDate.getMonth()
+    : year * 12 + (month - 1)
+  const upperBound = year * 12 + (month - 1)
+  const current = view.year * 12 + view.month
+
+  const shift = (step: number) => {
+    const next = current + step
+    if (next < lowerBound || next > upperBound) return
+    setView({ year: Math.floor(next / 12), month: next % 12 })
+  }
+
+  const firstWeekday = new Date(view.year, view.month, 1).getDay()
+  const totalDays = new Date(view.year, view.month + 1, 0).getDate()
+
+  const monthAdded = Array.from({ length: totalDays }, (_, i) =>
+    daily[dayKey(view.year, view.month, i + 1)] || 0
+  )
+  const peak = Math.max(1, ...monthAdded)
+  const addedTotal = monthAdded.reduce((total, value) => total + value, 0)
+  const droppedTotal = Array.from({ length: totalDays }, (_, i) =>
+    dailyDrops[dayKey(view.year, view.month, i + 1)] || 0
+  ).reduce((total, value) => total + value, 0)
+
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-white">
+          {firstUpper(MONTHS[view.month])} de {view.year}
+        </h2>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => shift(-1)}
+            disabled={current <= lowerBound}
+            className="rounded-lg border border-white/10 p-1.5 text-gray-400 hover:text-white disabled:opacity-25"
+            aria-label="Mês anterior"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            onClick={() => shift(1)}
+            disabled={current >= upperBound}
+            className="rounded-lg border border-white/10 p-1.5 text-gray-400 hover:text-white disabled:opacity-25"
+            aria-label="Próximo mês"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+      <p className="mb-4 text-xs text-gray-500">
+        {addedTotal} entraram · {droppedTotal} caíram neste mês
+      </p>
+
+      <div className="mb-1.5 grid grid-cols-7 gap-1.5">
+        {WEEKDAYS.map((label, index) => (
+          <div key={index} className="text-center text-[10px] text-gray-600">
+            {label}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1.5">
+        {Array.from({ length: firstWeekday }, (_, i) => (
+          <div key={`blank-${i}`} />
+        ))}
+        {Array.from({ length: totalDays }, (_, i) => {
+          const day = i + 1
+          const key = dayKey(view.year, view.month, day)
+          const added = daily[key] || 0
+          const dropped = dailyDrops[key] || 0
+          const isToday = key === todayKey
+
+          return (
+            <div
+              key={key}
+              title={`${day}/${view.month + 1}: ${added} entraram, ${dropped} caíram`}
+              className={`flex min-h-[54px] flex-col rounded-lg border p-1.5 ${
+                isToday ? "border-white/35" : "border-white/[0.06]"
+              }`}
+              style={{
+                backgroundColor: added > 0 ? `${BAR}${Math.round(
+                  25 + (added / peak) * 105
+                ).toString(16).padStart(2, "0")}` : "rgba(255,255,255,0.02)",
+              }}
+            >
+              <span className={`text-[10px] tabular-nums ${isToday ? "text-white" : "text-gray-500"}`}>
+                {day}
+              </span>
+              <span className="mt-auto flex flex-col leading-tight">
+                {added > 0 && (
+                  <span className="text-[11px] font-semibold tabular-nums text-white">+{added}</span>
+                )}
+                {dropped > 0 && (
+                  <span className="text-[11px] font-semibold tabular-nums" style={{ color: BAD }}>
+                    −{dropped}
+                  </span>
+                )}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 pt-3 text-[11px] text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded" style={{ backgroundColor: BAR }} />
+          +N contas entraram
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded" style={{ backgroundColor: BAD }} />
+          −N contas caíram
+        </span>
+        <span>Quanto mais forte o roxo, mais contas entraram no dia.</span>
+      </div>
+    </div>
+  )
 }
 
 function AccountFace({ account }: { account: AccountSummary }) {
@@ -107,11 +267,18 @@ export default function HealthPage() {
 
   const average = data.activeDays > 0 ? data.last30 / data.activeDays : 0
 
+  const dropsIn = (days: number) =>
+    data.series
+      .slice(-days)
+      .reduce((total, entry) => total + (data.dailyDrops[entry.day] || 0), 0)
+
+  const todayKey = data.series[data.series.length - 1]?.day || ""
+
   const tiles = [
-    { label: "Hoje", value: data.today },
-    { label: "Ontem", value: data.yesterday },
-    { label: "Últimos 7 dias", value: data.last7 },
-    { label: "Últimos 30 dias", value: data.last30 },
+    { label: "Hoje", value: data.today, dropped: data.droppedToday },
+    { label: "Ontem", value: data.yesterday, dropped: data.droppedYesterday },
+    { label: "Últimos 7 dias", value: data.last7, dropped: dropsIn(7) },
+    { label: "Últimos 30 dias", value: data.last30, dropped: dropsIn(30) },
   ]
 
   return (
@@ -145,7 +312,19 @@ export default function HealthPage() {
             <p className="text-[10px] uppercase tracking-wide text-gray-600">{tile.label}</p>
             <p className="mt-1.5 text-3xl font-semibold tabular-nums text-white">{tile.value}</p>
             <p className="mt-1 text-[11px] text-gray-600">
-              conta{tile.value === 1 ? "" : "s"} adicionada{tile.value === 1 ? "" : "s"}
+              entraram
+            </p>
+            <p
+              className="mt-2 border-t border-white/5 pt-2 text-[11px] tabular-nums"
+              style={{ color: tile.dropped > 0 ? BAD : undefined }}
+            >
+              {tile.dropped > 0 ? (
+                <>
+                  {tile.dropped} caiu{tile.dropped === 1 ? "" : "ram"}
+                </>
+              ) : (
+                <span className="text-gray-600">nenhuma caiu</span>
+              )}
             </p>
           </div>
         ))}
@@ -204,8 +383,8 @@ export default function HealthPage() {
               <p className="text-xs font-medium text-white">
                 {hovered.entry.count} conta{hovered.entry.count === 1 ? "" : "s"}
               </p>
-              <p className="text-[11px] capitalize text-gray-400">
-                {formatDay(hovered.entry.day, "long")}
+              <p className="text-[11px] text-gray-400">
+                {firstUpper(formatDay(hovered.entry.day, "long"))}
               </p>
             </div>
           )}
@@ -246,6 +425,15 @@ export default function HealthPage() {
             <span>{formatDay(data.series[data.series.length - 1]?.day || "")}</span>
           </div>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <MonthCalendar
+          daily={data.daily}
+          dailyDrops={data.dailyDrops}
+          todayKey={todayKey}
+          firstAccountAt={data.firstAccountAt}
+        />
       </div>
 
       {/* Quem caiu e quem está de pé, nome por nome */}
@@ -332,7 +520,7 @@ export default function HealthPage() {
           <div className="divide-y divide-white/5">
             {recentDays.map((entry) => (
               <div key={entry.day} className="flex items-center justify-between py-2.5">
-                <span className="text-sm capitalize text-gray-300">{formatDay(entry.day, "long")}</span>
+                <span className="text-sm text-gray-300">{firstUpper(formatDay(entry.day, "long"))}</span>
                 <span className="text-sm font-medium tabular-nums text-white">
                   {entry.count} conta{entry.count === 1 ? "" : "s"}
                 </span>

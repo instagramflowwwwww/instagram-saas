@@ -50,6 +50,25 @@ export async function GET() {
     counts.set(day, (counts.get(day) || 0) + 1)
   }
 
+  // Quando uma conta é desconectada, lastActiveAt guarda o instante da queda.
+  // Um token que só venceu não gera evento: aí a queda é a data de validade.
+  const now = new Date()
+  const drops = new Map<string, number>()
+  for (const account of accounts) {
+    if (!requiresInstagramReconnect(account)) continue
+
+    const fellAt =
+      account.connectionType === INSTAGRAM_DISCONNECTED_CONNECTION
+        ? account.lastActiveAt
+        : account.tokenExpiresAt && account.tokenExpiresAt <= now
+          ? account.tokenExpiresAt
+          : null
+
+    if (!fellAt) continue
+    const day = localDay(fellAt)
+    drops.set(day, (drops.get(day) || 0) + 1)
+  }
+
   // Série contínua: dias sem nenhuma conta precisam aparecer como zero,
   // senão o gráfico mente sobre o ritmo.
   const today = localDay(new Date())
@@ -101,6 +120,8 @@ export async function GET() {
     {
       today: counts.get(today) || 0,
       yesterday: counts.get(yesterday) || 0,
+      droppedToday: drops.get(today) || 0,
+      droppedYesterday: drops.get(yesterday) || 0,
       last7,
       last30,
       total: accounts.length,
@@ -110,6 +131,10 @@ export async function GET() {
       activeDays,
       firstAccountAt: firstAccount,
       series,
+      // Todo o histórico por dia, para o calendário poder voltar meses.
+      // São poucas linhas: um número por dia em que houve conta.
+      daily: Object.fromEntries(counts),
+      dailyDrops: Object.fromEntries(drops),
       offline,
       online,
     },
