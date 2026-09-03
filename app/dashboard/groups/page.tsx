@@ -329,19 +329,19 @@ export default function GroupsPage() {
                     <p className="text-gray-500 text-sm">Nenhuma conta nesta pasta ainda.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
                     {group.members.map((member) => (
-                      <div key={member.instagramAccountId} className="flex items-center gap-2 bg-white/[0.025] border border-white/5 rounded-lg px-3 py-2">
-                        {member.instagramAccount.profilePicture ? (
-                          <img src={member.instagramAccount.profilePicture} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
-                        ) : (
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-                            <Instagram size={12} className="text-white" />
-                          </div>
-                        )}
-                        <span className="text-xs text-white truncate flex-1">@{member.instagramAccount.username}</span>
+                      <div key={member.instagramAccountId} className="flex items-center gap-2 bg-white/[0.025] border border-white/[0.07] rounded-lg px-2 py-1.5">
+                        <span className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0 overflow-hidden">
+                          {member.instagramAccount.profilePicture ? (
+                            <img src={member.instagramAccount.profilePicture} alt="" className="w-5 h-5 rounded-full object-cover" />
+                          ) : (
+                            <Instagram size={12} className="text-purple-400" />
+                          )}
+                        </span>
+                        <span className="text-[11px] text-white truncate flex-1">@{member.instagramAccount.username}</span>
                         <button onClick={() => removeMember(group.id, member.instagramAccountId)} className="text-gray-600 hover:text-red-400 shrink-0">
-                          <UserMinus size={12} />
+                          <UserMinus size={11} />
                         </button>
                       </div>
                     ))}
@@ -354,23 +354,23 @@ export default function GroupsPage() {
                     {availableToAdd.length === 0 ? (
                       <p className="text-xs text-gray-500">Todas as contas já estão nesta pasta.</p>
                     ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-3">
                         {availableToAdd.map((account) => {
                           const isSelected = selectedToAdd.includes(account.id)
                           return (
                             <button
                               key={account.id}
                               onClick={() => setSelectedToAdd((c) => isSelected ? c.filter((id) => id !== account.id) : [...c, account.id])}
-                              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors border ${isSelected ? "border-purple-500/40 bg-purple-500/15" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                              className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors border ${isSelected ? "border-purple-500/40 bg-purple-500/15" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                             >
-                              {account.profilePicture ? (
-                                <img src={account.profilePicture} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
-                              ) : (
-                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-                                  <Instagram size={10} className="text-white" />
-                                </div>
-                              )}
-                              <span className="text-xs text-white truncate">@{account.username}</span>
+                              <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${isSelected ? "bg-purple-500/20" : "bg-white/5"}`}>
+                                {account.profilePicture ? (
+                                  <img src={account.profilePicture} alt="" className="w-5 h-5 rounded-full object-cover" />
+                                ) : (
+                                  <Instagram size={12} className="text-purple-400" />
+                                )}
+                              </span>
+                              <span className="text-[11px] text-white truncate">@{account.username}</span>
                             </button>
                           )
                         })}
