@@ -16,6 +16,8 @@ import {
   XCircle,
   CheckSquare,
   Square,
+  Check,
+  FolderPlus,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast, toastWarning } from "@/lib/toast"
@@ -36,6 +38,13 @@ type InstagramAccount = {
   autoDeleteAt: string | null
   appId: string | null
   syncError: string | null
+}
+
+type AccountGroup = {
+  id: string
+  name: string
+  color: string | null
+  members: { instagramAccountId: string }[]
 }
 
 type FilterType = "all" | "connected" | "error"
@@ -89,6 +98,9 @@ export default function AccountsPage() {
   const [filter, setFilter] = useState<FilterType>("all")
   const [selected, setSelected] = useState<string[]>([])
   const [deletingBulk, setDeletingBulk] = useState(false)
+  const [groups, setGroups] = useState<AccountGroup[]>([])
+  const [folderMenuFor, setFolderMenuFor] = useState<string | null>(null)
+  const [savingFolder, setSavingFolder] = useState<string | null>(null)
 
   const fetchAccounts = async (manual = false) => {
     if (manual) setRefreshing(true)
@@ -117,6 +129,45 @@ export default function AccountsPage() {
   }
 
   useEffect(() => { fetchAccounts() }, [])
+
+  const fetchGroups = async () => {
+    try {
+      const response = await fetch("/api/account-groups", { cache: "no-store" })
+      const data = await response.json()
+      setGroups(Array.isArray(data) ? data : [])
+    } catch {
+      // a lista de pastas é secundária aqui: falhar não pode derrubar a tela de contas
+    }
+  }
+
+  useEffect(() => { fetchGroups() }, [])
+
+  const groupsOfAccount = (accountId: string) =>
+    groups.filter((group) =>
+      group.members.some((member) => member.instagramAccountId === accountId)
+    )
+
+  const toggleFolder = async (accountId: string, group: AccountGroup, isIn: boolean) => {
+    setSavingFolder(`${accountId}:${group.id}`)
+    try {
+      const response = await fetch("/api/account-groups/members", {
+        method: isIn ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: group.id, accountIds: [accountId] }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || "Não foi possível salvar a pasta.")
+
+      toast.success(isIn ? `Removida de "${group.name}".` : `Adicionada a "${group.name}".`)
+      await fetchGroups()
+    } catch (folderError) {
+      toast.error(
+        folderError instanceof Error ? folderError.message : "Não foi possível salvar a pasta."
+      )
+    } finally {
+      setSavingFolder(null)
+    }
+  }
 
   const isError = (account: InstagramAccount) =>
     account.connectionType !== "official" ||
@@ -351,6 +402,8 @@ export default function AccountsPage() {
             const connected = isConnected(account)
             const hasError = isError(account)
             const isSelected = selected.includes(account.id)
+            const accountGroups = groupsOfAccount(account.id)
+            const folderMenuOpen = folderMenuFor === account.id
 
             return (
               <div
@@ -426,6 +479,90 @@ export default function AccountsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-red-400/70">Remoção automática</span>
                       <span className="text-red-300/80">{formatDate(account.autoDeleteAt)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-[10px] text-gray-600 uppercase tracking-wide">Pastas</span>
+                    <button
+                      onClick={() => setFolderMenuFor(folderMenuOpen ? null : account.id)}
+                      className="inline-flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300"
+                    >
+                      <FolderPlus size={12} />
+                      {folderMenuOpen ? "Fechar" : "Escolher"}
+                    </button>
+                  </div>
+
+                  {accountGroups.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {accountGroups.map((group) => (
+                        <span
+                          key={group.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] px-2 py-1 text-[11px] text-gray-300"
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: group.color || "#7C3AED" }}
+                          />
+                          {group.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-600">Ainda não está em nenhuma pasta.</p>
+                  )}
+
+                  {folderMenuOpen && (
+                    <div className="mt-2 rounded-xl border border-purple-500/20 bg-purple-500/[0.05] p-2">
+                      {groups.length === 0 ? (
+                        <Link
+                          href="/dashboard/groups"
+                          className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-purple-400 hover:text-purple-300"
+                        >
+                          <FolderPlus size={12} />
+                          Criar a primeira pasta
+                        </Link>
+                      ) : (
+                        <div className="max-h-40 overflow-y-auto space-y-1">
+                          {groups.map((group) => {
+                            const isIn = group.members.some(
+                              (member) => member.instagramAccountId === account.id
+                            )
+                            const busy = savingFolder === `${account.id}:${group.id}`
+
+                            return (
+                              <button
+                                key={group.id}
+                                onClick={() => toggleFolder(account.id, group, isIn)}
+                                disabled={busy}
+                                className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors disabled:opacity-50 ${
+                                  isIn
+                                    ? "bg-purple-500/15 text-purple-200"
+                                    : "text-gray-400 hover:bg-white/5 hover:text-white"
+                                }`}
+                              >
+                                <span
+                                  className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                                  style={{ backgroundColor: `${group.color || "#7C3AED"}22` }}
+                                >
+                                  <span
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: group.color || "#7C3AED" }}
+                                  />
+                                </span>
+                                <span className="truncate flex-1">{group.name}</span>
+                                {busy ? (
+                                  <Loader2 size={11} className="animate-spin shrink-0" />
+                                ) : isIn ? (
+                                  <Check size={12} className="text-purple-300 shrink-0" />
+                                ) : null}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
