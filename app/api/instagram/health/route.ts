@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import {
   INSTAGRAM_DISCONNECTED_CONNECTION,
+  instagramDisconnectDeadline,
   requiresInstagramReconnect,
 } from "@/lib/instagram-account-lifecycle"
 
@@ -29,7 +30,11 @@ export async function GET() {
   const accounts = await prisma.instagramAccount.findMany({
     where: { userId: session.user.id },
     select: {
+      id: true,
+      username: true,
+      profilePicture: true,
       createdAt: true,
+      lastActiveAt: true,
       connectionType: true,
       isActive: true,
       accessToken: true,
@@ -65,6 +70,27 @@ export async function GET() {
     (account) => account.connectionType === INSTAGRAM_DISCONNECTED_CONNECTION
   ).length
 
+  // As duas listas que interessam de fato: quem caiu e quem está de pé.
+  const toSummary = (account: (typeof accounts)[number]) => ({
+    id: account.id,
+    username: account.username,
+    profilePicture: account.profilePicture,
+    createdAt: account.createdAt,
+    lastActiveAt: account.lastActiveAt,
+    tokenExpiresAt: account.tokenExpiresAt,
+    autoDeleteAt: instagramDisconnectDeadline(account),
+  })
+
+  const offline = accounts
+    .filter((account) => requiresInstagramReconnect(account))
+    .sort((a, b) => b.lastActiveAt.getTime() - a.lastActiveAt.getTime())
+    .map(toSummary)
+
+  const online = accounts
+    .filter((account) => !requiresInstagramReconnect(account))
+    .sort((a, b) => a.username.localeCompare(b.username))
+    .map(toSummary)
+
   const last7 = series.slice(-7).reduce((total, entry) => total + entry.count, 0)
   const last30 = series.reduce((total, entry) => total + entry.count, 0)
 
@@ -84,6 +110,8 @@ export async function GET() {
       activeDays,
       firstAccountAt: firstAccount,
       series,
+      offline,
+      online,
     },
     { headers: { "Cache-Control": "private, no-store, max-age=0" } }
   )

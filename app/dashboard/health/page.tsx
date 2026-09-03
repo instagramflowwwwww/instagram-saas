@@ -3,10 +3,21 @@
 export const dynamic = "force-dynamic"
 
 import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { Activity, CheckCircle, Instagram, Loader2, RefreshCw, XCircle } from "lucide-react"
 import toast from "react-hot-toast"
 
 type DayEntry = { day: string; count: number }
+
+type AccountSummary = {
+  id: string
+  username: string
+  profilePicture: string | null
+  createdAt: string
+  lastActiveAt: string
+  tokenExpiresAt: string | null
+  autoDeleteAt: string | null
+}
 
 type HealthData = {
   today: number
@@ -20,6 +31,8 @@ type HealthData = {
   activeDays: number
   firstAccountAt: string | null
   series: DayEntry[]
+  offline: AccountSummary[]
+  online: AccountSummary[]
 }
 
 // Cores conferidas com o validador de paleta contra o fundo #111:
@@ -36,6 +49,18 @@ function formatDay(day: string, style: "short" | "long" = "short") {
     month: style === "long" ? "long" : "2-digit",
     ...(style === "long" ? { weekday: "long" } : {}),
   })
+}
+
+function AccountFace({ account }: { account: AccountSummary }) {
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/5">
+      {account.profilePicture ? (
+        <img src={account.profilePicture} alt="" className="h-6 w-6 rounded-full object-cover" />
+      ) : (
+        <Instagram size={13} className="text-gray-500" />
+      )}
+    </span>
+  )
 }
 
 export default function HealthPage() {
@@ -221,6 +246,81 @@ export default function HealthPage() {
             <span>{formatDay(data.series[data.series.length - 1]?.day || "")}</span>
           </div>
         </div>
+      </div>
+
+      {/* Quem caiu e quem está de pé, nome por nome */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <XCircle size={15} style={{ color: BAD }} />
+              <h2 className="text-sm font-semibold text-white">Caíram</h2>
+            </div>
+            <span className="text-xs tabular-nums text-gray-500">{data.offline.length}</span>
+          </div>
+
+          {data.offline.length === 0 ? (
+            <p className="text-xs text-gray-500">Nenhuma conta caiu. Todas estão publicando.</p>
+          ) : (
+            <>
+              <div className="divide-y divide-white/5">
+                {data.offline.map((account) => (
+                  <div key={account.id} className="flex items-center gap-3 py-2.5">
+                    <AccountFace account={account} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-white">@{account.username}</p>
+                      <p className="text-[11px] text-gray-600">
+                        Última atividade em {new Date(account.lastActiveAt).toLocaleDateString("pt-BR")}
+                        {account.autoDeleteAt && (
+                          <span style={{ color: BAD }}>
+                            {" "}· some em {new Date(account.autoDeleteAt).toLocaleDateString("pt-BR")}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Link
+                href="/dashboard/meta-app"
+                className="mt-4 flex items-center justify-center gap-1.5 rounded-lg border border-purple-500/25 bg-purple-500/10 py-2.5 text-xs font-medium text-purple-300 hover:bg-purple-500/15"
+              >
+                <RefreshCw size={13} />
+                Reconectar pelo App Meta
+              </Link>
+            </>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={15} style={{ color: GOOD }} />
+              <h2 className="text-sm font-semibold text-white">Funcionando</h2>
+            </div>
+            <span className="text-xs tabular-nums text-gray-500">{data.online.length}</span>
+          </div>
+
+          {data.online.length === 0 ? (
+            <p className="text-xs text-gray-500">Nenhuma conta ativa no momento.</p>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {data.online.map((account) => (
+                <div key={account.id} className="flex items-center gap-3 py-2.5">
+                  <AccountFace account={account} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-white">@{account.username}</p>
+                    <p className="text-[11px] text-gray-600">
+                      {account.tokenExpiresAt
+                        ? `Acesso válido até ${new Date(account.tokenExpiresAt).toLocaleDateString("pt-BR")}`
+                        : "Conectada"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       {/* Os mesmos dados em número, para quem prefere ler */}
