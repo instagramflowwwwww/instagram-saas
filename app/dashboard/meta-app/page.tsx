@@ -1,8 +1,10 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Check,
+  FolderPlus,
   Clipboard,
   ExternalLink,
   Eye,
@@ -55,6 +57,13 @@ type InstagramAccount = {
   autoDeleteAt: string | null
   appConfigId: string | null
   appId: string | null
+}
+
+type AccountGroup = {
+  id: string
+  name: string
+  color: string | null
+  members: { instagramAccountId: string }[]
 }
 
 type OAuthResult = {
@@ -116,6 +125,9 @@ export default function MetaAppPage() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const handledOAuthEventRef = useRef<string | null>(null)
+  const [groups, setGroups] = useState<AccountGroup[]>([])
+  const [folderPrompt, setFolderPrompt] = useState<{ id: string; username: string } | null>(null)
+  const [savingFolderId, setSavingFolderId] = useState<string | null>(null)
 
   const configured = apps.length > 0
   const selectedApp = useMemo(
@@ -130,7 +142,7 @@ export default function MetaAppPage() {
   // Username é opcional — conecta sem precisar digitar o @
   const canConnect = Boolean(selectedAppId) && (normalizedUsername === "" || /^[a-z0-9._]{1,30}$/.test(normalizedUsername))
 
-  const loadData = async (preferredAppId?: string) => {
+  const loadData = async (preferredAppId?: string): Promise<InstagramAccount[]> => {
     try {
       const [appResponse, accountsResponse] = await Promise.all([
         fetch("/api/instagram/meta-app", { cache: "no-store" }),
@@ -145,22 +157,61 @@ export default function MetaAppPage() {
 
       const loadedApps: MetaApp[] = Array.isArray(appData.apps) ? appData.apps : []
 
+      const loadedAccounts: InstagramAccount[] = Array.isArray(accountsData) ? accountsData : []
+
       setMetaData(appData)
       setApps(loadedApps)
-      setAccounts(Array.isArray(accountsData) ? accountsData : [])
+      setAccounts(loadedAccounts)
       setSelectedAppId((current) => {
         const requested = preferredAppId || current
         if (requested && loadedApps.some((app) => app.id === requested)) return requested
         // Auto-seleciona o primeiro app se houver apenas um
         return loadedApps[0]?.id || ""
       })
+
+      return loadedAccounts
     } catch (loadError) {
       toast.error(
         loadError instanceof Error ? loadError.message : "Não foi possível carregar a configuração.",
         { id: "meta-app-load-error" }
       )
+      return []
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadGroups = async () => {
+    try {
+      const response = await fetch("/api/account-groups", { cache: "no-store" })
+      const data = await response.json()
+      setGroups(Array.isArray(data) ? data : [])
+    } catch {
+      // sem pastas carregadas o app segue normal: só não oferecemos a escolha
+    }
+  }
+
+  const assignFolder = async (group: AccountGroup) => {
+    if (!folderPrompt) return
+    setSavingFolderId(group.id)
+    try {
+      const response = await fetch("/api/account-groups/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: group.id, accountIds: [folderPrompt.id] }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || "Não foi possível salvar a pasta.")
+
+      toast.success(`@${folderPrompt.username} entrou na pasta "${group.name}".`)
+      setFolderPrompt(null)
+      void loadGroups()
+    } catch (folderError) {
+      toast.error(
+        folderError instanceof Error ? folderError.message : "Não foi possível salvar a pasta."
+      )
+    } finally {
+      setSavingFolderId(null)
     }
   }
 
@@ -196,25 +247,35 @@ export default function MetaAppPage() {
       ? { eventId: `${Date.now()}-${Math.random().toString(36).slice(2)}`, success, errorCode, callbackMessage, connectedUsername, expected, connected, appConfigId: callbackAppConfigId }
       : null
 
-    const processOAuthResult = (result: OAuthResult) => {
+    const processOAuthResult = async (result: OAuthResult) => {
       if (!result?.eventId || handledOAuthEventRef.current === result.eventId) return
       handledOAuthEventRef.current = result.eventId
       if (result.success === "connected") setUsername("")
       showOAuthResultToast(result)
-      void loadData(result.appConfigId)
+
+      const loadedAccounts = await loadData(result.appConfigId)
+      if (result.success !== "connected" || !result.connectedUsername) return
+
+      // Acha a conta recém-conectada para oferecer a pasta na hora
+      const wanted = result.connectedUsername.replace(/^@/, "").toLowerCase()
+      const account = loadedAccounts.find((item) => item.username.toLowerCase() === wanted)
+      if (!account) return
+
+      await loadGroups()
+      setFolderPrompt({ id: account.id, username: account.username })
     }
 
     let channel: BroadcastChannel | null = null
     if ("BroadcastChannel" in window) {
       channel = new BroadcastChannel(OAUTH_CHANNEL_NAME)
       channel.addEventListener("message", (event: MessageEvent<OAuthResult>) => {
-        processOAuthResult(event.data)
+        void processOAuthResult(event.data)
       })
     }
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== OAUTH_STORAGE_KEY || !event.newValue) return
-      try { processOAuthResult(JSON.parse(event.newValue) as OAuthResult) } catch { }
+      try { void processOAuthResult(JSON.parse(event.newValue) as OAuthResult) } catch { }
     }
 
     const handleFocus = () => { void loadData() }
@@ -231,7 +292,7 @@ export default function MetaAppPage() {
       window.history.replaceState({}, "", "/dashboard/meta-app")
       window.close()
       const closeFallbackTimer = window.setTimeout(() => {
-        if (!window.closed) processOAuthResult(callbackResult)
+        if (!window.closed) void processOAuthResult(callbackResult)
       }, 300)
       return () => {
         window.clearTimeout(closeFallbackTimer)
@@ -692,6 +753,83 @@ export default function MetaAppPage() {
           </ol>
         </section>
       </div>
+
+      {folderPrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setFolderPrompt(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111] p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-white font-semibold">Selecione a pasta</h3>
+              <button
+                onClick={() => setFolderPrompt(null)}
+                className="text-gray-500 hover:text-white shrink-0"
+                aria-label="Fechar"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1 mb-4">
+              @{folderPrompt.username} foi conectada. Escolha onde ela vai ficar.
+            </p>
+
+            {groups.length === 0 ? (
+              <Link
+                href="/dashboard/groups"
+                className="flex items-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/[0.06] px-3 py-3 text-xs text-purple-300 hover:bg-purple-500/10"
+              >
+                <FolderPlus size={14} />
+                Você ainda não tem pastas. Criar a primeira
+              </Link>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {groups.map((group) => {
+                  const alreadyIn = group.members.some(
+                    (member) => member.instagramAccountId === folderPrompt.id
+                  )
+                  const busy = savingFolderId === group.id
+
+                  return (
+                    <button
+                      key={group.id}
+                      onClick={() => assignFolder(group)}
+                      disabled={busy || alreadyIn}
+                      className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-gray-300 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
+                    >
+                      <span
+                        className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `${group.color || "#7C3AED"}22` }}
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: group.color || "#7C3AED" }}
+                        />
+                      </span>
+                      <span className="truncate flex-1">{group.name}</span>
+                      {busy ? (
+                        <Loader2 size={13} className="animate-spin shrink-0" />
+                      ) : alreadyIn ? (
+                        <Check size={13} className="text-purple-400 shrink-0" />
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            <button
+              onClick={() => setFolderPrompt(null)}
+              className="w-full mt-3 rounded-lg py-2 text-xs text-gray-500 hover:text-white hover:bg-white/5"
+            >
+              Agora não
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
