@@ -32,12 +32,65 @@ type GroupMember = {
   instagramAccount: InstagramAccount
 }
 
+type GroupWindowStats = {
+  today: number
+  yesterday: number
+  last7: number
+  last30: number
+}
+
 type AccountGroup = {
   id: string
   name: string
   color: string | null
   createdAt: string
   members: GroupMember[]
+  stats?: {
+    added: GroupWindowStats
+    dropped: GroupWindowStats
+    droppedNow: number
+  }
+}
+
+const DROPPED_COLOR = "#F2596B"
+
+function GroupStatsRow({ stats }: { stats: NonNullable<AccountGroup["stats"]> }) {
+  const chips: { label: string; value: number }[] = [
+    { label: "Hoje", value: stats.added.today },
+    { label: "Ontem", value: stats.added.yesterday },
+    { label: "7 dias", value: stats.added.last7 },
+    { label: "30 dias", value: stats.added.last30 },
+  ]
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+      {chips.map((chip) => (
+        <span key={chip.label} className="flex items-center gap-1 text-xs text-gray-400">
+          <span className="text-gray-600">{chip.label}</span>
+          <span className={`font-medium tabular-nums ${chip.value > 0 ? "text-white" : "text-gray-600"}`}>
+            {chip.value > 0 ? `+${chip.value}` : "0"}
+          </span>
+        </span>
+      ))}
+
+      <span className="h-3 w-px bg-white/10" />
+
+      <span className="flex items-center gap-1 text-xs">
+        <span className="text-gray-600">Caíram</span>
+        <span
+          className="font-medium tabular-nums"
+          style={{ color: stats.droppedNow > 0 ? DROPPED_COLOR : undefined }}
+        >
+          {stats.droppedNow > 0 ? stats.droppedNow : <span className="text-gray-600">0</span>}
+        </span>
+        {stats.dropped.last30 > stats.droppedNow && (
+          <span className="text-gray-600">
+            · {stats.dropped.last30} nos últimos 30 dias
+          </span>
+        )}
+      </span>
+    </div>
+  )
 }
 
 const COLORS = [
@@ -323,6 +376,8 @@ export default function GroupsPage() {
                     )}
                   </div>
                 </div>
+
+                {group.stats && <GroupStatsRow stats={group.stats} />}
 
                 {group.members.length === 0 ? (
                   <div className="border border-dashed border-white/10 rounded-xl py-6 text-center mb-3">

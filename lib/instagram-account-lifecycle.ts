@@ -44,6 +44,27 @@ export function instagramDisconnectDeadline(account: {
   return new Date(account.lastActiveAt.getTime() + INSTAGRAM_RECONNECT_GRACE_MS)
 }
 
+// O instante em que uma conta deixou de publicar. Uma conta explicitamente
+// desconectada carimba lastActiveAt na hora da queda; uma conta que só teve
+// o token vencido não gera esse evento, então a queda é a própria validade.
+// Retorna null para uma conta que nunca caiu.
+export function accountFellAt(
+  account: InstagramAccountState & { lastActiveAt: Date },
+  now = Date.now()
+): Date | null {
+  if (!requiresInstagramReconnect(account)) return null
+
+  if (account.connectionType === INSTAGRAM_DISCONNECTED_CONNECTION) {
+    return account.lastActiveAt
+  }
+
+  if (account.tokenExpiresAt && account.tokenExpiresAt.getTime() <= now) {
+    return account.tokenExpiresAt
+  }
+
+  return null
+}
+
 export function isInstagramDisconnectError(error: unknown) {
   const metaCode = (error as Error & { metaCode?: number })?.metaCode
   if (metaCode === 190) return true

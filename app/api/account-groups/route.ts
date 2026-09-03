@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { requiresInstagramReconnect } from "@/lib/instagram-account-lifecycle"
+import { accountFellAt, requiresInstagramReconnect } from "@/lib/instagram-account-lifecycle"
+import { countByDay, windowStats } from "@/lib/day-metrics"
 
 export const runtime = "nodejs"
 
@@ -28,6 +29,7 @@ export async function GET() {
               accessToken: true,
               appConfigId: true,
               tokenExpiresAt: true,
+              lastActiveAt: true,
             },
           },
         },
@@ -35,29 +37,56 @@ export async function GET() {
     },
   })
 
+  const now = Date.now()
+
   // requiresReconnect não é coluna do banco: é derivado do estado da conta,
-  // com o mesmo critério usado em /api/instagram/accounts.
-  const serialized = groups.map((group) => ({
-    ...group,
-    members: group.members.map((member) => {
-      const { accessToken, appConfigId, tokenExpiresAt, ...account } =
+  // com o mesmo critério usado em /api/instagram/accounts. E as estatísticas
+  // da pasta usam o mesmo critério de "quando entrou" e "quando caiu" que a
+  // tela de Saúde das contas — só que "entrou" aqui é a data em que a conta
+  // foi adicionada a ESTA pasta (AccountGroupMember.createdAt), não a data em
+  // que ela foi conectada ao Instagram.
+  const serialized = groups.map((group) => {
+    const members = group.members.map((member) => {
+      const { accessToken, appConfigId, tokenExpiresAt, lastActiveAt, ...account } =
         member.instagramAccount
+
+      const state = {
+        connectionType: account.connectionType,
+        isActive: account.isActive,
+        accessToken,
+        appConfigId,
+        tokenExpiresAt,
+        lastActiveAt,
+      }
 
       return {
         ...member,
         instagramAccount: {
           ...account,
-          requiresReconnect: requiresInstagramReconnect({
-            connectionType: account.connectionType,
-            isActive: account.isActive,
-            accessToken,
-            appConfigId,
-            tokenExpiresAt,
-          }),
+          requiresReconnect: requiresInstagramReconnect(state),
         },
+        fellAt: accountFellAt(state, now),
       }
-    }),
-  }))
+    })
+
+    const addedCounts = countByDay(members.map((member) => member.createdAt))
+    const droppedCounts = countByDay(
+      members
+        .map((member) => member.fellAt)
+        .filter((date): date is Date => date !== null)
+    )
+    const droppedNow = members.filter((member) => member.fellAt !== null).length
+
+    return {
+      ...group,
+      members: members.map(({ fellAt, ...member }) => member),
+      stats: {
+        added: windowStats(addedCounts),
+        dropped: windowStats(droppedCounts),
+        droppedNow,
+      },
+    }
+  })
 
   return NextResponse.json(serialized)
 }
