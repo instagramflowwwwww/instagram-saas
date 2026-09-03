@@ -1,7 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import {
+  BarChart3,
   Clock3,
   FileText,
   Instagram,
@@ -307,8 +309,21 @@ export default function AdminPage() {
                 return (
                   <tr key={user.id} className="border-b border-white/5 last:border-0">
                     <td className="px-5 py-4">
-                      <p className="font-medium text-white">{user.name || "Sem nome"}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">{user.email || "—"}</p>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="font-medium text-white">{user.name || "Sem nome"}</p>
+                          <p className="mt-0.5 text-xs text-gray-500">{user.email || "—"}</p>
+                        </div>
+                        {user.postsCount > 0 && (
+                          <Link
+                            href={`/dashboard/admin/performance/${user.id}`}
+                            title="Ver performance dos posts (só leitura)"
+                            className="rounded-lg p-1.5 text-gray-600 hover:bg-purple-500/10 hover:text-purple-400"
+                          >
+                            <BarChart3 size={14} />
+                          </Link>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
