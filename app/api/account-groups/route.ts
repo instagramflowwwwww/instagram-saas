@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { requiresInstagramReconnect } from "@/lib/instagram-account-lifecycle"
 
 export const runtime = "nodejs"
 
@@ -23,8 +24,10 @@ export async function GET() {
               username: true,
               profilePicture: true,
               isActive: true,
-              requiresReconnect: true,
               connectionType: true,
+              accessToken: true,
+              appConfigId: true,
+              tokenExpiresAt: true,
             },
           },
         },
@@ -32,7 +35,31 @@ export async function GET() {
     },
   })
 
-  return NextResponse.json(groups)
+  // requiresReconnect não é coluna do banco: é derivado do estado da conta,
+  // com o mesmo critério usado em /api/instagram/accounts.
+  const serialized = groups.map((group) => ({
+    ...group,
+    members: group.members.map((member) => {
+      const { accessToken, appConfigId, tokenExpiresAt, ...account } =
+        member.instagramAccount
+
+      return {
+        ...member,
+        instagramAccount: {
+          ...account,
+          requiresReconnect: requiresInstagramReconnect({
+            connectionType: account.connectionType,
+            isActive: account.isActive,
+            accessToken,
+            appConfigId,
+            tokenExpiresAt,
+          }),
+        },
+      }
+    }),
+  }))
+
+  return NextResponse.json(serialized)
 }
 
 export async function POST(request: Request) {
