@@ -601,18 +601,6 @@ export default function LibraryPage() {
                     </div>
                   )}
                   <div className="absolute bottom-3 right-3 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    {item.type === "video" && (
-                      <button
-                        onClick={() => {
-                          setCaptionFor(item)
-                          setCaptionResult(null)
-                        }}
-                        className="rounded-lg bg-purple-500/80 p-2 text-white backdrop-blur hover:bg-purple-500"
-                        title="Gerar legenda com IA"
-                      >
-                        <Sparkles size={15} />
-                      </button>
-                    )}
                     <button
                       onClick={() => copyUrl(item.url)}
                       className="rounded-lg bg-black/70 p-2 text-white backdrop-blur hover:bg-black/90"
@@ -642,6 +630,19 @@ export default function LibraryPage() {
                     <span>{formatBytes(item.bytes)}</span>
                     <span>{new Date(item.createdAt).toLocaleDateString("pt-BR")}</span>
                   </div>
+
+                  {item.type === "video" && (
+                    <button
+                      onClick={() => {
+                        setCaptionFor(item)
+                        setCaptionResult(null)
+                      }}
+                      className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-purple-500/25 bg-purple-500/10 py-2 text-xs font-medium text-purple-300 transition-colors hover:border-purple-500/45 hover:bg-purple-500/15 hover:text-purple-200"
+                    >
+                      <Sparkles size={13} />
+                      Gerar legenda com IA
+                    </button>
+                  )}
                 </div>
               </div>
             )
