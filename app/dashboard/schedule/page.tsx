@@ -69,6 +69,15 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function shuffle<T>(items: T[]): T[] {
+  const result = [...items]
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const [media, setMedia] = useState<MediaItem[]>([])
@@ -170,14 +179,25 @@ export default function SchedulePage() {
     }
   }, [sharedCover, videoItems])
 
+  const availableVideos = useMemo(
+    () => media.filter((item) => item.type === "video").length,
+    [media]
+  )
+
   const timeline = useMemo(() => {
     const first = new Date(startAt)
     if (Number.isNaN(first.getTime())) return []
     const items = randomMode
-      ? Array.from({ length: randomCount }, (_, i) => ({ id: `random-${i}`, url: "", type: "video" as const, fileName: `Vídeo aleatório ${i + 1}`, createdAt: "" }))
+      ? Array.from({ length: randomCount }, (_, i) => ({
+          id: `random-${i}`,
+          url: "",
+          type: "video" as const,
+          fileName: `Rodada ${i + 1} · ${selectedAccounts.length || "?"} vídeo(s) sorteado(s)`,
+          createdAt: "",
+        }))
       : selectedItems
     return items.map((item, index) => ({ item, scheduledAt: new Date(first.getTime() + index * intervalMinutes * 60_000) }))
-  }, [intervalMinutes, selectedItems, startAt, randomMode, randomCount])
+  }, [intervalMinutes, selectedItems, startAt, randomMode, randomCount, selectedAccounts.length])
 
   const toggleMedia = (id: string) => {
     setSelectedMedia((current) =>
@@ -254,25 +274,60 @@ export default function SchedulePage() {
     if (!startAt) return toast.error("Informe quando a sequência deve começar.")
     const videos = media.filter((m) => m.type === "video")
     if (videos.length === 0) return toast.error("Nenhum vídeo na biblioteca para sortear.")
+    if (randomCount * selectedAccounts.length > 300) {
+      return toast.error(
+        `Isso daria ${randomCount * selectedAccounts.length} publicações. O limite por automação é 300 — reduza as rodadas ou as contas.`
+      )
+    }
+    if (videos.length < selectedAccounts.length) {
+      return toast.error(
+        `Para cada conta receber um vídeo diferente, a biblioteca precisa de pelo menos ${selectedAccounts.length} vídeo(s). Você tem ${videos.length}.`
+      )
+    }
     setSubmitting(true)
     try {
-      const randomMediaIds = Array.from({ length: randomCount }, () => {
-        const random = videos[Math.floor(Math.random() * videos.length)]
-        return random.id
-      })
+      // Distribui os vídeos: em cada rodada, nenhuma conta repete a outra, e um
+      // vídeo só volta a ser sorteado depois que todos já tiverem sido usados.
+      const assignments: { round: number; accountId: string; mediaId: string }[] = []
+      let pool: string[] = []
+
+      for (let round = 0; round < randomCount; round += 1) {
+        const usedThisRound = new Set<string>()
+
+        for (const accountId of selectedAccounts) {
+          if (pool.length === 0) {
+            pool = shuffle(videos.map((video) => video.id))
+          }
+
+          // Evita que dois perfis publiquem o mesmo vídeo no mesmo horário
+          let index = pool.findIndex((mediaId) => !usedThisRound.has(mediaId))
+          if (index === -1) {
+            pool = shuffle(videos.map((video) => video.id).filter((id) => !usedThisRound.has(id)))
+            index = 0
+          }
+
+          const mediaId = pool.splice(index, 1)[0]
+          usedThisRound.add(mediaId)
+          assignments.push({ round, accountId, mediaId })
+        }
+      }
+
+      const usedMediaIds = Array.from(new Set(assignments.map((entry) => entry.mediaId)))
+
       const response = await fetch("/api/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name || "Automação aleatória",
-          mediaIds: randomMediaIds,
+          mediaIds: usedMediaIds,
           accountIds: selectedAccounts,
+          assignments,
           startAt: new Date(startAt).toISOString(),
           intervalMinutes,
           captionMode,
           singleCaption,
           singleHashtags,
-          itemCaptions: randomMediaIds.map((mediaId) => ({ mediaId, caption: singleCaption, hashtags: singleHashtags })),
+          itemCaptions: usedMediaIds.map((mediaId) => ({ mediaId, caption: singleCaption, hashtags: singleHashtags })),
           rotationCaptions,
           itemCovers: [],
         }),
@@ -377,15 +432,32 @@ export default function SchedulePage() {
             <Shuffle size={16} className="text-green-400" />
             <h2 className="text-sm font-semibold text-white">Modo aleatório</h2>
           </div>
-          <p className="text-sm text-gray-400 mb-4">Cada publicação usará um vídeo diferente sorteado da sua biblioteca.</p>
+          <p className="text-sm text-gray-400 mb-4">
+            Em cada rodada, toda conta recebe um vídeo diferente das outras. As contas publicam
+            no mesmo horário, e um vídeo só volta a ser sorteado depois que todos já tiverem saído.
+          </p>
           <div>
-            <label className="mb-1.5 block text-xs text-gray-400">Quantos vídeos sortear?</label>
+            <label className="mb-1.5 block text-xs text-gray-400">Quantas rodadas?</label>
             <input
               type="number" min={1} max={50} value={randomCount}
               onChange={(e) => setRandomCount(Math.min(50, Math.max(1, Number(e.target.value))))}
               className="w-32 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:border-green-500 focus:outline-none"
             />
-            <p className="mt-1 text-xs text-gray-600">{media.filter(m => m.type === "video").length} vídeo(s) disponíveis na biblioteca</p>
+            <p className="mt-1 text-xs text-gray-600">
+              {availableVideos} vídeo(s) na biblioteca · {selectedAccounts.length} conta(s) selecionada(s)
+            </p>
+            {selectedAccounts.length > 0 && (
+              <p className="mt-1 text-xs text-gray-500">
+                {randomCount} rodada(s) × {selectedAccounts.length} conta(s) ={" "}
+                <span className="text-white">{randomCount * selectedAccounts.length} publicação(ões)</span>
+              </p>
+            )}
+            {selectedAccounts.length > availableVideos && (
+              <p className="mt-2 text-xs text-yellow-300">
+                Para cada conta receber um vídeo diferente, você precisa de pelo menos{" "}
+                {selectedAccounts.length} vídeos na biblioteca.
+              </p>
+            )}
           </div>
         </div>
       )}

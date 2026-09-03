@@ -20,6 +20,13 @@ type CoverEntry = {
 }
 
 const CAPTION_MODES = new Set(["single", "per_media", "rotate"])
+const MAX_ASSIGNMENTS = 300
+
+type AssignmentEntry = {
+  round?: unknown
+  accountId?: unknown
+  mediaId?: unknown
+}
 
 function cleanText(value: unknown, max = 2200) {
   return String(value || "").trim().slice(0, max)
@@ -111,7 +118,13 @@ export async function POST(request: Request) {
     await maintainInstagramAccounts(session.user.id)
     const body = await request.json()
 
-    const mediaIds = uniqueStrings(body.mediaIds, 50)
+    // Modo aleatório por conta: cada item já vem com a conta e o vídeo dele.
+    const rawAssignments = Array.isArray(body.assignments)
+      ? (body.assignments as AssignmentEntry[]).slice(0, MAX_ASSIGNMENTS)
+      : []
+    const perAccountMode = rawAssignments.length > 0
+
+    const mediaIds = uniqueStrings(body.mediaIds, perAccountMode ? MAX_ASSIGNMENTS : 50)
     const accountIds = uniqueStrings(body.accountIds)
 
     const publicationType = String(body.publicationType || "post").toLowerCase()
@@ -191,6 +204,31 @@ export async function POST(request: Request) {
       )
     }
 
+    const accountIdSet = new Set(accounts.map((account) => account.id))
+    const mediaIdSet = new Set(mediaIds)
+
+    const assignments = rawAssignments.map((entry) => ({
+      round: Number(entry.round),
+      accountId: String(entry.accountId || ""),
+      mediaId: String(entry.mediaId || ""),
+    }))
+
+    if (
+      perAccountMode &&
+      !assignments.every(
+        (entry) =>
+          Number.isInteger(entry.round) &&
+          entry.round >= 0 &&
+          accountIdSet.has(entry.accountId) &&
+          mediaIdSet.has(entry.mediaId)
+      )
+    ) {
+      return NextResponse.json(
+        { error: "A distribuição de vídeos por conta veio inválida." },
+        { status: 400 }
+      )
+    }
+
     const mediaMap = new Map(mediaRecords.map((media) => [media.id, media]))
     const itemCaptions = Array.isArray(body.itemCaptions)
       ? (body.itemCaptions as CaptionEntry[])
@@ -249,16 +287,32 @@ export async function POST(request: Request) {
       return { caption: singleCaption, hashtags: singleHashtags }
     }
 
-    const batchItems = mediaIds.map((mediaId, index) => {
+    // Sem modo por conta, cada mídia vira um item que vai para todas as contas.
+    // Com modo por conta, cada par (rodada, conta) vira um item próprio — todas
+    // as contas de uma mesma rodada saem no mesmo horário.
+    const plannedItems = perAccountMode
+      ? assignments.map((entry) => ({
+          mediaId: entry.mediaId,
+          slot: entry.round,
+          instagramAccountId: entry.accountId as string | null,
+        }))
+      : mediaIds.map((mediaId, index) => ({
+          mediaId,
+          slot: index,
+          instagramAccountId: null as string | null,
+        }))
+
+    const batchItems = plannedItems.map((planned, index) => {
+      const mediaId = planned.mediaId
       const media = mediaMap.get(mediaId)
       if (!media) {
         throw new Error("Mídia não encontrada durante o agendamento.")
       }
 
       const scheduledAt = new Date(
-        startAt.getTime() + index * intervalMinutes * 60 * 1000
+        startAt.getTime() + planned.slot * intervalMinutes * 60 * 1000
       )
-      const text = getCaption(mediaId, index)
+      const text = getCaption(mediaId, planned.slot)
       const caption = publicationType === "story" ? "" : text.caption
       const hashtags = publicationType === "story" ? "" : text.hashtags
       const coverUrl =
@@ -268,6 +322,7 @@ export async function POST(request: Request) {
 
       return {
         position: index,
+        instagramAccountId: planned.instagramAccountId,
         caption,
         hashtags,
         scheduledAt,
@@ -300,7 +355,7 @@ export async function POST(request: Request) {
         publicationType,
         intervalMinutes,
         startAt,
-        totalItems: mediaIds.length,
+        totalItems: batchItems.length,
         accounts: {
           create: accounts.map((account) => ({
             instagramAccountId: account.id,

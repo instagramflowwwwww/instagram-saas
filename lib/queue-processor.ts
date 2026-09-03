@@ -241,9 +241,10 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
     return null
   }
 
-  const targetAccountIds = item.batch.accounts.map(
-    (account) => account.instagramAccountId
-  )
+  // Item com conta própria publica só nela; sem conta, vale o lote inteiro.
+  const targetAccountIds = item.instagramAccountId
+    ? [item.instagramAccountId]
+    : item.batch.accounts.map((account) => account.instagramAccountId)
 
   try {
     const before = await getProgress(item.post.id, targetAccountIds)

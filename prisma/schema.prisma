@@ -284,6 +284,9 @@ model PostingBatchItem {
   batchId             String
   mediaId             String?
   postId              String?       @unique
+  // Quando preenchido, este item publica só nesta conta (modo aleatório por
+  // conta). Quando null, publica em todas as contas do lote, como sempre.
+  instagramAccountId  String?
   position            Int
   caption             String?
   hashtags            String?
@@ -302,4 +305,5 @@ model PostingBatchItem {
   @@unique([batchId, position])
   @@index([status, scheduledAt])
   @@index([batchId, status])
+  @@index([instagramAccountId])
 }
