@@ -17,12 +17,14 @@ import {
   Move,
   Pencil,
   Play,
+  Sparkles,
   Trash2,
   Upload,
   X,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { uploadFileToR2 } from "@/lib/r2-upload"
+import { extractVideoFrames } from "@/lib/video-frames"
 import { confirmToast } from "@/lib/toast"
 
 type MediaItem = {
@@ -37,6 +39,12 @@ type MediaItem = {
   duration: number | null
   format: string | null
   createdAt: string
+}
+
+type GeneratedCaption = {
+  caption: string
+  hashtags: string
+  description: string
 }
 
 type MediaFolder = {
@@ -68,6 +76,11 @@ export default function LibraryPage() {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [captionFor, setCaptionFor] = useState<MediaItem | null>(null)
+  const [captionContext, setCaptionContext] = useState("")
+  const [captionLoading, setCaptionLoading] = useState(false)
+  const [captionStep, setCaptionStep] = useState("")
+  const [captionResult, setCaptionResult] = useState<GeneratedCaption | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [moving, setMoving] = useState(false)
   const [folderSaving, setFolderSaving] = useState(false)
@@ -148,6 +161,33 @@ export default function LibraryPage() {
     }
 
     throw new Error(`${file.name}: formato não suportado.`)
+  }
+
+  const generateCaption = async (item: MediaItem) => {
+    setCaptionLoading(true)
+    setCaptionResult(null)
+    try {
+      setCaptionStep("Lendo o vídeo...")
+      const frames = await extractVideoFrames(item.url, 4)
+
+      setCaptionStep("A IA está escrevendo...")
+      const response = await fetch("/api/ai/caption", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frames, context: captionContext }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Não foi possível gerar a legenda.")
+
+      setCaptionResult(data as GeneratedCaption)
+    } catch (captionError) {
+      toast.error(
+        captionError instanceof Error ? captionError.message : "Não foi possível gerar a legenda."
+      )
+    } finally {
+      setCaptionLoading(false)
+      setCaptionStep("")
+    }
   }
 
   const uploadFiles = async (files: File[]) => {
@@ -561,6 +601,18 @@ export default function LibraryPage() {
                     </div>
                   )}
                   <div className="absolute bottom-3 right-3 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                    {item.type === "video" && (
+                      <button
+                        onClick={() => {
+                          setCaptionFor(item)
+                          setCaptionResult(null)
+                        }}
+                        className="rounded-lg bg-purple-500/80 p-2 text-white backdrop-blur hover:bg-purple-500"
+                        title="Gerar legenda com IA"
+                      >
+                        <Sparkles size={15} />
+                      </button>
+                    )}
                     <button
                       onClick={() => copyUrl(item.url)}
                       className="rounded-lg bg-black/70 p-2 text-white backdrop-blur hover:bg-black/90"
@@ -704,6 +756,89 @@ export default function LibraryPage() {
             {folders.length === 0 && activeFolderId === null && (
               <p className="mt-4 text-center text-xs text-gray-600">Crie uma pasta primeiro para mover os arquivos.</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {captionFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => !captionLoading && setCaptionFor(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#111] p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-purple-400" />
+                <h3 className="font-semibold text-white">Gerar legenda com IA</h3>
+              </div>
+              <button
+                onClick={() => setCaptionFor(null)}
+                disabled={captionLoading}
+                className="shrink-0 text-gray-500 hover:text-white disabled:opacity-40"
+                aria-label="Fechar"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              A IA olha 4 frames do vídeo e escreve a legenda. Mandar só os frames custa uma
+              fração do que custaria mandar o vídeo inteiro.
+            </p>
+
+            <div className="mt-4">
+              <label className="mb-1.5 block text-xs text-gray-400">
+                Sobre o perfil e o tom <span className="text-gray-600">(opcional, mas ajuda muito)</span>
+              </label>
+              <textarea
+                value={captionContext}
+                onChange={(event) => setCaptionContext(event.target.value)}
+                rows={2}
+                placeholder="Ex: perfil de cortes de futebol, tom debochado, falo direto com torcedor"
+                className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+
+            {captionResult && (
+              <div className="mt-4 space-y-3">
+                <p className="text-[11px] text-gray-500">
+                  A IA viu: {captionResult.description}
+                </p>
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-600">Legenda</p>
+                  <p className="mt-1.5 whitespace-pre-wrap text-sm text-white">
+                    {captionResult.caption}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-600">Hashtags</p>
+                  <p className="mt-1.5 text-sm text-purple-300">{captionResult.hashtags}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      `${captionResult.caption}\n\n${captionResult.hashtags}`
+                    )
+                    toast.success("Legenda copiada.")
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-xs text-gray-300 hover:bg-white/[0.06] hover:text-white"
+                >
+                  <Copy size={13} />
+                  Copiar legenda e hashtags
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => generateCaption(captionFor)}
+              disabled={captionLoading}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            >
+              {captionLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {captionLoading ? captionStep : captionResult ? "Gerar outra" : "Gerar legenda"}
+            </button>
           </div>
         </div>
       )}
