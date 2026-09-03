@@ -8,29 +8,30 @@ datasource db {
 }
 
 model User {
-  id               String             @id @default(cuid())
-  name             String?
-  email            String?            @unique
-  emailVerified    DateTime?
-  image            String?
-  password         String?
-  accounts         Account[]
-  sessions         Session[]
-  instagramApps    InstagramApp[]
-  igAccounts       InstagramAccount[]
-  posts            Post[]
-  media            MediaLibrary[]
-  mediaFolders     MediaFolder[]
-  accountGroups    AccountGroup[]
-  postingBatches   PostingBatch[]
-  accessStatus     String             @default("approved")
-  planName         String?
-  planDurationDays Int?
-  accessStartsAt   DateTime?
-  accessExpiresAt  DateTime?
-  approvedAt       DateTime?
-  rejectedAt       DateTime?
-  createdAt        DateTime           @default(now())
+  id                String             @id @default(cuid())
+  name              String?
+  email             String?            @unique
+  emailVerified     DateTime?
+  image             String?
+  password          String?
+  accounts          Account[]
+  sessions          Session[]
+  instagramApps     InstagramApp[]
+  igAccounts        InstagramAccount[]
+  posts             Post[]
+  pushSubscriptions PushSubscription[]
+  media             MediaLibrary[]
+  mediaFolders      MediaFolder[]
+  accountGroups     AccountGroup[]
+  postingBatches    PostingBatch[]
+  accessStatus      String             @default("approved")
+  planName          String?
+  planDurationDays  Int?
+  accessStartsAt    DateTime?
+  accessExpiresAt   DateTime?
+  approvedAt        DateTime?
+  rejectedAt        DateTime?
+  createdAt         DateTime           @default(now())
 }
 
 model Account {
@@ -59,6 +60,18 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -83,13 +96,13 @@ model InstagramApp {
 }
 
 model AccountGroup {
-  id        String                    @id @default(cuid())
+  id        String               @id @default(cuid())
   userId    String
   name      String
   color     String?
-  createdAt DateTime                  @default(now())
-  updatedAt DateTime                  @updatedAt
-  user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   members   AccountGroupMember[]
 
   @@index([userId])
@@ -200,6 +213,9 @@ model PostLog {
   performancePublishedAt      DateTime?
   performanceUpdatedAt        DateTime?
   performanceError            String?
+  // Marca quando o post cruzou a marca de viral e a notificação já foi
+  // enviada, para o cron de checagem não avisar duas vezes o mesmo vídeo.
+  viralNotifiedAt             DateTime?
   createdAt                   DateTime         @default(now())
   post                        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
   instagramAccount            InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)

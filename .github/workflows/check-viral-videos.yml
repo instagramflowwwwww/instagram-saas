@@ -1,0 +1,63 @@
+name: Check Viral Videos
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: instagram-viral-check
+  cancel-in-progress: false
+
+jobs:
+  check-viral:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate configuration
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          QUEUE_CRON_SECRET: ${{ secrets.QUEUE_CRON_SECRET }}
+        run: |
+          test -n "$APP_URL" || (echo "APP_URL secret is missing" && exit 1)
+          test -n "$QUEUE_CRON_SECRET" || (echo "QUEUE_CRON_SECRET secret is missing" && exit 1)
+          case "$APP_URL" in
+            https://*) ;;
+            *) echo "APP_URL must start with https://" && exit 1 ;;
+          esac
+
+      - name: Check for videos crossing the viral threshold
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          QUEUE_CRON_SECRET: ${{ secrets.QUEUE_CRON_SECRET }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          endpoint="${APP_URL%/}/api/cron/check-viral"
+
+          body_file="$(mktemp)"
+          http_code="$(curl \
+            --silent \
+            --show-error \
+            --location \
+            --connect-timeout 20 \
+            --max-time 280 \
+            --retry 2 \
+            --retry-all-errors \
+            --request POST \
+            --header "Authorization: Bearer $QUEUE_CRON_SECRET" \
+            --header "Content-Type: application/json" \
+            --output "$body_file" \
+            --write-out "%{http_code}" \
+            "$endpoint")"
+
+          echo "Viral check returned HTTP $http_code"
+          cat "$body_file"
+          echo
+
+          if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            rm -f "$body_file"
+            exit 1
+          fi
+
+          rm -f "$body_file"

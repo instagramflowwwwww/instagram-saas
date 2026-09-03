@@ -1,8 +1,112 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useSession, signOut } from "next-auth/react"
-import { User, Lock, LogOut, Save, Eye, EyeOff } from "lucide-react"
+import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing } from "lucide-react"
 import toast from "react-hot-toast"
+import {
+  disablePush,
+  enablePush,
+  getCurrentPushSubscription,
+  isPushSupported,
+} from "@/lib/push-client"
+
+type PushStatus = "loading" | "unsupported" | "off" | "on"
+
+function NotificationsCard() {
+  const [status, setStatus] = useState<PushStatus>("loading")
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!isPushSupported()) {
+      setStatus("unsupported")
+      return
+    }
+    getCurrentPushSubscription()
+      .then((subscription) => setStatus(subscription ? "on" : "off"))
+      .catch(() => setStatus("off"))
+  }, [])
+
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      if (status === "on") {
+        await disablePush()
+        setStatus("off")
+        toast.success("Notificações desativadas neste aparelho.")
+      } else {
+        const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+        if (!publicKey) throw new Error("Notificações não configuradas no servidor.")
+        await enablePush(publicKey)
+        setStatus("on")
+        toast.success("Notificações ativadas neste aparelho.")
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível mudar a notificação.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendTest = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Não foi possível enviar o teste.")
+      toast.success("Teste enviado — confira a notificação.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar o teste.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-2">
+        <BellRing size={16} className="text-purple-400" />
+        <h2 className="font-semibold text-white text-sm">Notificações</h2>
+      </div>
+      <p className="text-sm text-gray-500 mb-5">
+        Receba um aviso neste aparelho quando um vídeo passar de 50 mil visualizações.
+        No iPhone, funciona depois de adicionar o InstaFlow à Tela de Início pelo Safari.
+      </p>
+
+      {status === "unsupported" ? (
+        <p className="text-sm text-gray-500">Este navegador não aceita notificações push.</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={toggle}
+            disabled={busy || status === "loading"}
+            className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50 ${
+              status === "on"
+                ? "bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300"
+                : "bg-purple-600 hover:bg-purple-700 text-white"
+            }`}
+          >
+            {status === "on" ? <BellOff size={14} /> : <Bell size={14} />}
+            {status === "loading"
+              ? "Verificando..."
+              : status === "on"
+                ? "Desativar notificações"
+                : "Ativar notificações"}
+          </button>
+
+          {status === "on" && (
+            <button
+              onClick={sendTest}
+              disabled={busy}
+              className="text-sm text-gray-400 hover:text-white px-3 py-2.5 disabled:opacity-50"
+            >
+              Enviar notificação de teste
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function SettingsPage() {
   const { data: session, update } = useSession()
@@ -173,6 +277,9 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        <NotificationsCard />
+
         <div className="bg-[#111] border border-white/5 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <LogOut size={16} className="text-red-400" />
