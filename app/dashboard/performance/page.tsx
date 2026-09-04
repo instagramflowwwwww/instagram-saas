@@ -262,7 +262,11 @@ export default function PerformancePage() {
     }
   }, [selectedPeriod])
 
-  const [storiesTotalViews, setStoriesTotalViews] = useState<number | null>(null)
+  const [storiesSummary, setStoriesSummary] = useState<{
+    totalViews: number
+    storiesCount: number
+    storiesWithData: number
+  } | null>(null)
   const [storiesLoading, setStoriesLoading] = useState(true)
 
   useEffect(() => {
@@ -280,10 +284,15 @@ export default function PerformancePage() {
     fetch(`/api/posts/stories-performance/summary${query ? `?${query}` : ""}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((data) => {
-        if (!cancelled) setStoriesTotalViews(typeof data.totalViews === "number" ? data.totalViews : 0)
+        if (cancelled) return
+        setStoriesSummary({
+          totalViews: typeof data.totalViews === "number" ? data.totalViews : 0,
+          storiesCount: typeof data.storiesCount === "number" ? data.storiesCount : 0,
+          storiesWithData: typeof data.storiesWithData === "number" ? data.storiesWithData : 0,
+        })
       })
       .catch(() => {
-        if (!cancelled) setStoriesTotalViews(null)
+        if (!cancelled) setStoriesSummary(null)
       })
       .finally(() => {
         if (!cancelled) setStoriesLoading(false)
@@ -468,10 +477,25 @@ export default function PerformancePage() {
             <Star size={14} className="text-yellow-400" />
           </div>
           <p className="text-2xl font-bold text-white">
-            {storiesLoading || storiesTotalViews === null
+            {storiesLoading || !storiesSummary
               ? "..."
-              : numberFormatter.format(storiesTotalViews)}
+              : storiesSummary.storiesCount === 0
+                ? "—"
+                : numberFormatter.format(storiesSummary.totalViews)}
           </p>
+          {!storiesLoading && storiesSummary && storiesSummary.storiesCount > 0 && storiesSummary.storiesWithData === 0 && (
+            <p className="mt-1 text-[11px] text-yellow-300">
+              Abra Stories e atualize para buscar as views
+            </p>
+          )}
+          {!storiesLoading &&
+            storiesSummary &&
+            storiesSummary.storiesWithData > 0 &&
+            storiesSummary.storiesWithData < storiesSummary.storiesCount && (
+              <p className="mt-1 text-[11px] text-gray-600">
+                {storiesSummary.storiesWithData} de {storiesSummary.storiesCount} com dado
+              </p>
+            )}
         </div>
       </div>
 
