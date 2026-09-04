@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client"
-import { ADMIN_EMAIL } from "@/lib/account-access"
+import { ADMIN_EMAILS } from "@/lib/account-access"
 import {
   isInstagramAccountUsable,
   maintainInstagramAccounts,
@@ -375,7 +375,7 @@ export async function processDueQueue(options: {
       ...(options.userId ? { userId: options.userId } : {}),
       user: {
         OR: [
-          { email: ADMIN_EMAIL },
+          { email: { in: ADMIN_EMAILS } },
           {
             accessStatus: "approved",
             OR: [

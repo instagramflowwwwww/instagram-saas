@@ -1,4 +1,4 @@
-export const ADMIN_EMAIL = "jfontesdacunha@gmail.com"
+export const ADMIN_EMAILS = ["jfontesdacunha@gmail.com", "biel2@gmail.com"]
 
 export const ACCESS_PLANS = {
   vip: {
@@ -23,7 +23,9 @@ type UserAccess = {
 }
 
 export function isAdminEmail(email?: string | null) {
-  return Boolean(email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase())
+  if (!email) return false
+  const normalized = email.toLowerCase()
+  return ADMIN_EMAILS.some((adminEmail) => adminEmail.toLowerCase() === normalized)
 }
 
 export function getEffectiveAccessStatus(user: UserAccess): AccessStatus {
