@@ -29,11 +29,15 @@ export async function DELETE(
     )
   }
 
-  const pendingItems = await prisma.postingBatchItem.findMany({
-    where: { batchId: batch.id, status: "pending" },
+  // "processing" entra junto com "pending": sem isso, um item pego bem na
+  // hora do cancelamento fica preso nesse estado pra sempre — nunca mais é
+  // selecionado (a fila já ignora lote cancelado), mas também nunca aparece
+  // como cancelado na tela, parecendo que o cancelamento não funcionou.
+  const openItems = await prisma.postingBatchItem.findMany({
+    where: { batchId: batch.id, status: { in: ["pending", "processing"] } },
     select: { id: true, postId: true },
   })
-  const postIds = pendingItems.flatMap((item) => (item.postId ? [item.postId] : []))
+  const postIds = openItems.flatMap((item) => (item.postId ? [item.postId] : []))
 
   await prisma.$transaction([
     prisma.postingBatch.update({
@@ -41,8 +45,8 @@ export async function DELETE(
       data: { status: "cancelled" },
     }),
     prisma.postingBatchItem.updateMany({
-      where: { batchId: batch.id, status: "pending" },
-      data: { status: "cancelled", processedAt: new Date() },
+      where: { batchId: batch.id, status: { in: ["pending", "processing"] } },
+      data: { status: "cancelled", processedAt: new Date(), processingStartedAt: null },
     }),
     ...(postIds.length > 0
       ? [
