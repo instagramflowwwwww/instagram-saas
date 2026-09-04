@@ -29,6 +29,24 @@ export async function POST(request: Request) {
           new Set(body.accountIds.map((accountId: unknown) => String(accountId)))
         )
       : []
+    const rawScheduledAt = typeof body.scheduledAt === "string" ? body.scheduledAt.trim() : ""
+    const scheduledAt = rawScheduledAt ? new Date(rawScheduledAt) : null
+
+    if (rawScheduledAt && Number.isNaN(scheduledAt?.getTime())) {
+      return NextResponse.json({ error: "Data de agendamento inválida." }, { status: 400 })
+    }
+    if (scheduledAt && scheduledAt.getTime() < Date.now() - 2 * 60 * 1000) {
+      return NextResponse.json(
+        { error: "A data de agendamento precisa estar no futuro." },
+        { status: 400 }
+      )
+    }
+    if (scheduledAt && scheduledAt.getTime() > Date.now() + 180 * 24 * 60 * 60 * 1000) {
+      return NextResponse.json(
+        { error: "O agendamento pode ser feito em até 180 dias." },
+        { status: 400 }
+      )
+    }
 
     if ((!videoUrl && !imageUrl) || (videoUrl && imageUrl)) {
       return NextResponse.json(
@@ -75,14 +93,17 @@ export async function POST(request: Request) {
     }
 
     // Lotes grandes não são mais publicados dentro de uma única Function da
-    // Vercel. Eles entram na mesma fila resiliente das automações e são
-    // processados em blocos pequenos, evitando timeout e republicação.
-    if (accountIds.length > 4) {
-      const startAt = new Date()
+    // Vercel — entram na mesma fila resiliente das automações e são
+    // processados em blocos pequenos, evitando timeout e republicação. Um
+    // post agendado para o futuro precisa do mesmo caminho, não importa
+    // quantas contas: publicar "daqui a 2 horas" não pode acontecer dentro
+    // desta mesma requisição.
+    if (accountIds.length > 4 || scheduledAt) {
+      const startAt = scheduledAt || new Date()
       const batch = await prisma.postingBatch.create({
         data: {
           userId: session.user.id,
-          name: "Publicação imediata",
+          name: scheduledAt ? "Publicação agendada" : "Publicação imediata",
           status: "scheduled",
           captionMode: "single",
           publicationType: "post",

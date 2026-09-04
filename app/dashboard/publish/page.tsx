@@ -3,12 +3,14 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import {
+  CalendarClock,
   CheckCircle,
   Film,
   Image,
   Instagram,
   Loader2,
   Layers3,
+  Send,
   Upload,
   X,
   XCircle,
@@ -57,6 +59,8 @@ export default function PublishPage() {
   const [publishStage, setPublishStage] = useState("")
   const [results, setResults] = useState<PublishResult[]>([])
   const [randomMode, setRandomMode] = useState(false)
+  const [scheduleMode, setScheduleMode] = useState<"now" | "later">("now")
+  const [scheduledAt, setScheduledAt] = useState("")
   const [library, setLibrary] = useState<LibraryMedia[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(false)
   const videoRef = useRef<HTMLInputElement>(null)
@@ -262,6 +266,14 @@ export default function PublishPage() {
       toast.error("O vídeo pode ter no máximo 200 MB")
       return
     }
+    if (scheduleMode === "later" && !scheduledAt) {
+      toast.error("Escolha a data e a hora do agendamento.")
+      return
+    }
+    if (scheduleMode === "later" && new Date(scheduledAt).getTime() < Date.now()) {
+      toast.error("A data de agendamento precisa estar no futuro.")
+      return
+    }
 
     setPublishing(true)
     setResults([])
@@ -275,8 +287,9 @@ export default function PublishPage() {
         coverFile ? uploadMedia(coverFile) : Promise.resolve(""),
       ])
 
-      setPublishStage("Publicando no Instagram...")
-      toast.loading("Publicando no Instagram...", { id: toastId })
+      const isScheduled = scheduleMode === "later"
+      setPublishStage(isScheduled ? "Agendando..." : "Publicando no Instagram...")
+      toast.loading(isScheduled ? "Agendando..." : "Publicando no Instagram...", { id: toastId })
       const response = await fetch("/api/posts/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -287,6 +300,7 @@ export default function PublishPage() {
           caption,
           hashtags,
           accountIds: selectedAccounts,
+          ...(isScheduled ? { scheduledAt: new Date(scheduledAt).toISOString() } : {}),
         }),
       })
       const data = await response.json()
@@ -298,7 +312,9 @@ export default function PublishPage() {
       if (data.queued) {
         setResults([])
         toast.success(
-          `Publicação enviada para a fila de ${Number(data.accountCount || selectedAccounts.length)} conta(s). O processamento continuará automaticamente.`,
+          isScheduled
+            ? `Agendado para ${new Date(scheduledAt).toLocaleString("pt-BR")} em ${Number(data.accountCount || selectedAccounts.length)} conta(s).`
+            : `Publicação enviada para a fila de ${Number(data.accountCount || selectedAccounts.length)} conta(s). O processamento continuará automaticamente.`,
           { id: toastId }
         )
         return
@@ -495,13 +511,75 @@ export default function PublishPage() {
             </div>
           </div>
 
+          {!randomMode && (
+            <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-3">
+              <h2 className="font-semibold text-white text-sm">Quando publicar</h2>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setScheduleMode("now")}
+                  className={`flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                    scheduleMode === "now"
+                      ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                      : "border-white/10 bg-white/5 text-gray-400 hover:text-white"
+                  }`}
+                >
+                  <Send size={14} />
+                  Agora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleMode("later")}
+                  className={`flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                    scheduleMode === "later"
+                      ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                      : "border-white/10 bg-white/5 text-gray-400 hover:text-white"
+                  }`}
+                >
+                  <CalendarClock size={14} />
+                  Agendar
+                </button>
+              </div>
+
+              {scheduleMode === "later" && (
+                <div>
+                  <label className="text-xs text-gray-400 mb-1.5 block">Data e hora</label>
+                  <input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                    onChange={(event) => setScheduledAt(event.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500 [color-scheme:dark]"
+                  />
+                  <p className="mt-1.5 text-[11px] text-gray-600">
+                    O post entra na fila e sai sozinho nesse horário — não precisa deixar a tela aberta.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             onClick={publish}
-            disabled={publishing || (randomMode && library.length === 0)}
+            disabled={publishing || (randomMode && library.length === 0) || (scheduleMode === "later" && !scheduledAt)}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-opacity"
           >
-            {publishing ? <Loader2 size={16} className="animate-spin" /> : randomMode ? <Shuffle size={16} /> : <Upload size={16} />}
-            {publishing ? publishStage : randomMode ? `Publicar aleatório em ${selectedAccounts.length} conta(s)` : `Publicar em ${selectedAccounts.length} conta(s)`}
+            {publishing ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : randomMode ? (
+              <Shuffle size={16} />
+            ) : scheduleMode === "later" ? (
+              <CalendarClock size={16} />
+            ) : (
+              <Upload size={16} />
+            )}
+            {publishing
+              ? publishStage
+              : randomMode
+                ? `Publicar aleatório em ${selectedAccounts.length} conta(s)`
+                : scheduleMode === "later"
+                  ? `Agendar para ${selectedAccounts.length} conta(s)`
+                  : `Publicar em ${selectedAccounts.length} conta(s)`}
           </button>
 
           {results.length > 0 && (
