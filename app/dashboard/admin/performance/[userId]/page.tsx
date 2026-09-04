@@ -57,23 +57,37 @@ export default function AdminUserPerformancePage() {
   const [user, setUser] = useState<AdminUserSummary | null>(null)
   const [posts, setPosts] = useState<AdminPost[]>([])
   const [loading, setLoading] = useState(true)
+  const [fromDate, setFromDate] = useState("")
+  const [toDate, setToDate] = useState("")
+
+  const load = async (from?: string, to?: string) => {
+    setLoading(true)
+    try {
+      const query = new URLSearchParams()
+      if (from) query.set("from", new Date(from).toISOString())
+      if (to) {
+        // "até" inclui o dia inteiro escolhido, não só o instante 00:00 dele.
+        const toEndOfDay = new Date(to)
+        toEndOfDay.setDate(toEndOfDay.getDate() + 1)
+        query.set("to", toEndOfDay.toISOString())
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : ""
+
+      const response = await fetch(`/api/admin/users/${params.userId}/performance${suffix}`, {
+        cache: "no-store",
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Não foi possível carregar.")
+      setUser(data.user)
+      setPosts(data.posts)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao carregar.")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch(`/api/admin/users/${params.userId}/performance`, {
-          cache: "no-store",
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || "Não foi possível carregar.")
-        setUser(data.user)
-        setPosts(data.posts)
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Erro ao carregar.")
-      } finally {
-        setLoading(false)
-      }
-    }
     void load()
   }, [params.userId])
 
@@ -114,6 +128,47 @@ export default function AdminUserPerformancePage() {
         <p className="mt-1 text-sm text-gray-500">
           {user?.email} · dados já salvos no banco — esta tela não consulta a Meta.
         </p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-white/[0.07] bg-[#111] p-4">
+        <div>
+          <label className="mb-1 block text-[11px] text-gray-500">De</label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(event) => setFromDate(event.target.value)}
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white [color-scheme:dark]"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-gray-500">Até</label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(event) => setToDate(event.target.value)}
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white [color-scheme:dark]"
+          />
+        </div>
+        <button
+          onClick={() => load(fromDate || undefined, toDate || undefined)}
+          disabled={loading}
+          className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+        >
+          Filtrar
+        </button>
+        {(fromDate || toDate) && (
+          <button
+            onClick={() => {
+              setFromDate("")
+              setToDate("")
+              void load()
+            }}
+            disabled={loading}
+            className="text-sm text-gray-400 hover:text-white disabled:opacity-50"
+          >
+            Limpar
+          </button>
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

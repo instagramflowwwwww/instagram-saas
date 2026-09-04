@@ -6,6 +6,12 @@ import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
 
+function parseDate(value: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 // Só leitura: mostra o que já está salvo no banco (o mesmo dado que a
 // própria tela de Performance do usuário exibiria). Não chama a Meta, não
 // atualiza nada — é o admin olhando, não republicando nem re-sincronizando.
@@ -29,10 +35,19 @@ export async function GET(
     return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 })
   }
 
+  const requestUrl = new URL(request.url)
+  const from = parseDate(requestUrl.searchParams.get("from"))
+  const to = parseDate(requestUrl.searchParams.get("to"))
+  const createdAt =
+    from || to
+      ? { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) }
+      : undefined
+
   const logs = await prisma.postLog.findMany({
     where: {
       status: "success",
       mediaId: { not: null },
+      ...(createdAt ? { createdAt } : {}),
       post: { userId: targetUserId, publicationType: "post" },
     },
     select: {
