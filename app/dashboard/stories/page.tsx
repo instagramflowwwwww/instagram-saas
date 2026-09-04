@@ -104,11 +104,12 @@ function StoriesPerformance() {
   }
 
   useEffect(() => {
-    load()
+    // Busca "ao vivo" já na primeira carga — é o que descobre os stories
+    // postados direto pelo celular, sem passar pelo InstaFlow.
+    load(true)
   }, [])
 
   if (loading) return null
-  if (!stories || stories.length === 0) return null
 
   return (
     <div className="mb-6 rounded-2xl border border-white/[0.07] bg-[#111] p-5">
@@ -127,10 +128,16 @@ function StoriesPerformance() {
         </button>
       </div>
       <p className="mb-4 text-xs text-gray-500">
-        Só é possível ver visualizações enquanto o story ainda está no ar (até 24h). Depois disso, fica o
-        último número visto.
+        Mostra stories publicados pelo InstaFlow ou direto pelo app, de qualquer conta conectada. Só dá
+        pra ver visualizações enquanto o story ainda está no ar (até 24h); depois disso, fica o último
+        número visto.
       </p>
 
+      {!stories || stories.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-white/10 py-6 text-center text-xs text-gray-500">
+          Nenhum story nas últimas 24h.
+        </p>
+      ) : (
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {stories.map((story) => (
           <div
@@ -161,6 +168,7 @@ function StoriesPerformance() {
           </div>
         ))}
       </div>
+      )}
     </div>
   )
 }

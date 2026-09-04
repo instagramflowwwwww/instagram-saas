@@ -187,7 +187,7 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
-async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
+export async function refreshAccessTokenIfNeeded(account: OfficialAccount) {
   if (!account.accessToken) {
     throw new Error("Conta sem token oficial. Reconecte pelo App Meta.")
   }
@@ -550,9 +550,52 @@ export function storyExpiresAt(createdAt: Date) {
   return new Date(createdAt.getTime() + STORY_EXPIRY_MS)
 }
 
+export type LiveStoryMedia = {
+  id: string
+  mediaType: string | null
+  timestamp: string | null
+}
+
+// Lista os stories que estão no ar AGORA numa conta — publicados pelo
+// InstaFlow ou direto pelo celular, tanto faz: a Meta devolve todos. Assim
+// que um story expira, ele some dessa lista (a Meta simplesmente não fala
+// mais dele), então isso só serve pra quem ainda está ativo.
+export async function fetchLiveStoryMedia(
+  igUserId: string,
+  token: string,
+  accountId: string
+): Promise<LiveStoryMedia[]> {
+  const url = new URL(`${GRAPH_BASE}/${igUserId}/stories`)
+  url.searchParams.set("fields", "id,media_type,media_product_type,timestamp")
+  url.searchParams.set("access_token", token)
+
+  const response = await fetchInstagramRequest(url, metaRequestInit())
+  const { payload } = await readJsonResponse(response)
+
+  if (!response.ok || !payload) {
+    const metaError = getMetaError(payload)
+    if (isFatalMetaCode(metaError?.code)) {
+      throw Object.assign(new Error(metaErrorMessage(metaError)), {
+        metaCode: metaError?.code,
+      })
+    }
+    // Conta sem story ativo, ou instabilidade pontual: trata como lista vazia.
+    return []
+  }
+
+  const data = Array.isArray(payload?.data) ? payload.data : []
+  return data
+    .map((item: Record<string, unknown>) => ({
+      id: String(item.id || ""),
+      mediaType: typeof item.media_type === "string" ? item.media_type : null,
+      timestamp: typeof item.timestamp === "string" ? item.timestamp : null,
+    }))
+    .filter((item: LiveStoryMedia) => item.id)
+}
+
 // O nome do campo de visualização de story mudou entre versões da API da
 // Meta. Tenta o nome atual e cai para o antigo se a Meta rejeitar.
-async function fetchStoryViews(
+export async function fetchStoryViews(
   mediaId: string,
   accessToken: string,
   accountId: string
