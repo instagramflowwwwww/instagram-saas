@@ -394,6 +394,7 @@ export async function processDueQueue(options: {
     postId: true,
     scheduledAt: true,
     position: true,
+    instagramAccountId: true,
     post: {
       select: {
         scheduledAt: true,
@@ -566,18 +567,54 @@ export async function processDueQueue(options: {
     return a.position - b.position
   }
 
+  // Um item do modo "vídeo por conta" representa só UMA conta — diferente de
+  // um item comum, que já publica várias contas por dentro (em fatias de
+  // ACCOUNT_CHUNK_SIZE, a cada ciclo). Se cada item por conta ocupasse
+  // sozinho o único slot do usuário, uma rodada de 70 contas levaria 70
+  // execuções (70 minutos) só para começar a próxima rodada — e ela nem
+  // teria terminado quando a próxima já estivesse vencendo. Por isso, quando
+  // o representante da batch é um item por conta, o slot do usuário processa
+  // junto todos os outros itens da MESMA rodada (mesmo horário pretendido),
+  // até ACCOUNT_CHUNK_SIZE por execução — igual ao que um item comum já faz
+  // internamente.
+  const bestGroupPerBatch = new Map<string, (typeof enrichedCandidates)[number][]>()
+  for (const [batchId, representative] of Array.from(bestPerBatch.entries())) {
+    if (!representative.instagramAccountId) {
+      bestGroupPerBatch.set(batchId, [representative])
+      continue
+    }
+
+    const siblings = enrichedCandidates.filter(
+      (candidate) =>
+        candidate.id !== representative.id &&
+        candidate.batchId === batchId &&
+        candidate.instagramAccountId &&
+        candidate.intendedScheduledAt.getTime() ===
+          representative.intendedScheduledAt.getTime()
+    )
+
+    bestGroupPerBatch.set(
+      batchId,
+      [representative, ...siblings].slice(0, ACCOUNT_CHUNK_SIZE)
+    )
+  }
+
   // Um usuário só ocupa um slot por execução. Assim três usuários podem ser
   // processados em paralelo sem um único cliente monopolizar a fila global.
-  const bestPerUser = new Map<string, (typeof enrichedCandidates)[number]>()
-  for (const candidate of bestPerBatch.values()) {
-    const userId = candidate.batch.userId
-    const current = bestPerUser.get(userId)
-    if (!current || compareUserCandidate(candidate, current) < 0) {
-      bestPerUser.set(userId, candidate)
+  const bestGroupPerUser = new Map<string, (typeof enrichedCandidates)[number][]>()
+  for (const group of Array.from(bestGroupPerBatch.values())) {
+    const representative = group[0]
+    const userId = representative.batch.userId
+    const currentGroup = bestGroupPerUser.get(userId)
+    if (!currentGroup || compareUserCandidate(representative, currentGroup[0]) < 0) {
+      bestGroupPerUser.set(userId, group)
     }
   }
 
-  const prioritizedUsers = Array.from(bestPerUser.values()).sort((a, b) => {
+  const prioritizedGroups = Array.from(bestGroupPerUser.values()).sort((groupA, groupB) => {
+    const a = groupA[0]
+    const b = groupB[0]
+
     if (a.nearSchedule !== b.nearSchedule) return a.nearSchedule ? -1 : 1
 
     if (a.nearSchedule && b.nearSchedule) {
@@ -597,7 +634,7 @@ export async function processDueQueue(options: {
     return a.intendedScheduledAt.getTime() - b.intendedScheduledAt.getTime()
   })
 
-  const dueItems = prioritizedUsers.slice(0, requestedLimit)
+  const dueItems = prioritizedGroups.slice(0, requestedLimit).flat()
 
   console.info("[queue] Due items found", {
     userId: options.userId || "all",
@@ -606,7 +643,7 @@ export async function processDueQueue(options: {
     nearCandidates: nearDue.length,
     busyUsers: busyUserIds.size,
     candidates: dueCandidates.length,
-    candidateUsers: bestPerUser.size,
+    candidateUsers: bestGroupPerUser.size,
     count: dueItems.length,
     selected: dueItems.map((item) => ({
       itemId: item.id,
@@ -669,15 +706,15 @@ export async function processDueQueue(options: {
     }
   }
 
-  // Na fila global, cada item pertence a um usuário diferente e roda em
-  // paralelo. Cada um publica no máximo 4 contas. Na fila manual do dashboard
-  // continua sendo apenas um usuário/um item.
+  // dueItems já veio agrupado por rodada quando aplicável: na fila global,
+  // cada slot pertence a um usuário diferente (podendo ter vários itens, se
+  // for uma rodada por conta); na fila manual do dashboard, todos os itens
+  // são do mesmo usuário. Nos dois casos é seguro processar em paralelo —
+  // contas diferentes usam tokens diferentes e não compartilham estado.
   const rawProcessed =
     dueItems.length === 0
       ? []
-      : options.userId
-        ? [await processCandidate(dueItems[0].id)]
-        : await Promise.all(dueItems.map((candidate) => processCandidate(candidate.id)))
+      : await Promise.all(dueItems.map((candidate) => processCandidate(candidate.id)))
 
   const processed = rawProcessed.filter(
     (entry): entry is ProcessedQueueItem => Boolean(entry)
