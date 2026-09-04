@@ -279,6 +279,52 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
       .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
       .join(" | ")
 
+    // Limite diário de publicação da própria Meta (25 posts/24h por conta):
+    // não é falha da conta, é questão de esperar a cota liberar. Sem este
+    // tratamento, o log de erro já gravado marca a conta como "processada"
+    // e o item finaliza como falho de vez — toda rodada seguinte do mesmo
+    // dia falharia igual, e uma conta que só publicou parte do previsto
+    // nunca mais tentaria de novo. Em vez disso, apaga o log de erro desta
+    // tentativa (senão a próxima nem chegaria a rodar) e reagenda o item
+    // para quando a Meta libera a cota.
+    const quotaLimited = result.results.filter(
+      (entry) => entry.status === "error" && entry.retryAfterMs
+    )
+    if (quotaLimited.length > 0) {
+      const retryAfterMs = Math.max(
+        ...quotaLimited.map((entry) => entry.retryAfterMs || 0)
+      )
+      await prisma.postLog.deleteMany({
+        where: {
+          postId: item.post.id,
+          instagramAccountId: { in: quotaLimited.map((entry) => entry.accountId) },
+          status: "error",
+        },
+      })
+      await prisma.$transaction([
+        prisma.postingBatchItem.update({
+          where: { id: item.id },
+          data: {
+            status: "pending",
+            scheduledAt: new Date(Date.now() + retryAfterMs),
+            processingStartedAt: null,
+            lastError: "Limite diário de publicação da Meta atingido para esta conta. Nova tentativa agendada automaticamente.",
+          },
+        }),
+        prisma.post.update({
+          where: { id: item.post.id },
+          data: { status: "scheduled" },
+        }),
+      ])
+      await refreshBatchStats(item.batchId)
+      return {
+        itemId: item.id,
+        status: "continuing",
+        error: message || undefined,
+        remainingAccounts: quotaLimited.length,
+      }
+    }
+
     const after = await getProgress(item.post.id, targetAccountIds)
 
     if (after.remainingIds.length > 0) {
