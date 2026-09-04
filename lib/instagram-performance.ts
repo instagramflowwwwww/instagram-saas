@@ -508,3 +508,149 @@ export async function refreshPerformanceLogs(
 
   return refreshedResults
 }
+
+// --- Stories ---
+// Diferente de posts/reels, um story some da API 24h depois de publicado —
+// a Meta simplesmente para de responder sobre ele. Por isso guardamos o
+// último número visto e paramos de tentar atualizar depois desse prazo, em
+// vez de mostrar um erro toda vez que a Meta diz "não encontrado".
+const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000
+
+export type StoryLog = {
+  id: string
+  mediaId: string | null
+  createdAt: Date
+  performanceViewsCount: number | null
+  performanceViewsMetric: string | null
+  performanceUpdatedAt: Date | null
+  performanceError: string | null
+  instagramAccount: {
+    id: string
+    username: string
+    profilePicture: string | null
+    accessToken: string | null
+    tokenExpiresAt: Date | null
+  }
+}
+
+export type StoryPerformanceResult = {
+  id: string
+  username: string
+  profilePicture: string | null
+  viewsCount: number | null
+  viewsMetric: string | null
+  publishedAt: Date
+  expiresAt: Date
+  expired: boolean
+  error: string | null
+  performanceUpdatedAt: Date | null
+}
+
+export function storyExpiresAt(createdAt: Date) {
+  return new Date(createdAt.getTime() + STORY_EXPIRY_MS)
+}
+
+// O nome do campo de visualização de story mudou entre versões da API da
+// Meta. Tenta o nome atual e cai para o antigo se a Meta rejeitar.
+async function fetchStoryViews(
+  mediaId: string,
+  accessToken: string,
+  accountId: string
+) {
+  for (const metric of ["views", "impressions"]) {
+    try {
+      const value = await fetchInsightMetric(mediaId, accessToken, metric, accountId)
+      if (value !== null) return { value, metric }
+    } catch (error) {
+      const metaCode = (error as Error & { metaCode?: number }).metaCode
+      if (isFatalMetaCode(metaCode) || isRateLimitCode(metaCode)) throw error
+    }
+  }
+
+  return { value: null, metric: null }
+}
+
+export async function refreshStoryPerformance(
+  logs: StoryLog[],
+  now = Date.now()
+): Promise<StoryPerformanceResult[]> {
+  const tokenPromises = new Map<string, Promise<string>>()
+
+  const getAccessToken = (log: StoryLog) => {
+    const accountId = log.instagramAccount.id
+    const existing = tokenPromises.get(accountId)
+    if (existing) return existing
+
+    const promise = refreshAccessTokenIfNeeded({
+      id: accountId,
+      accessToken: log.instagramAccount.accessToken,
+      tokenExpiresAt: log.instagramAccount.tokenExpiresAt,
+    })
+    tokenPromises.set(accountId, promise)
+    return promise
+  }
+
+  return mapWithConcurrency(logs, MAX_CONCURRENCY, async (log): Promise<StoryPerformanceResult> => {
+    const expiresAt = storyExpiresAt(log.createdAt)
+    const expired = expiresAt.getTime() <= now
+    const updatedAt = new Date()
+
+    const base = {
+      id: log.id,
+      username: log.instagramAccount.username,
+      profilePicture: log.instagramAccount.profilePicture,
+      viewsCount: log.performanceViewsCount,
+      viewsMetric: log.performanceViewsMetric,
+      publishedAt: log.createdAt,
+      expiresAt,
+      performanceUpdatedAt: log.performanceUpdatedAt,
+    }
+
+    // Story expirado: mostra o último número já visto, sem bater na Meta —
+    // ela não vai responder sobre um story que já sumiu do ar.
+    if (expired) {
+      return { ...base, expired: true, error: null }
+    }
+
+    if (!log.mediaId) {
+      return { ...base, expired: false, error: "Story sem ID oficial da Meta." }
+    }
+
+    try {
+      const accessToken = await getAccessToken(log)
+      const views = await fetchStoryViews(log.mediaId, accessToken, log.instagramAccount.id)
+
+      await prisma.postLog.update({
+        where: { id: log.id },
+        data: {
+          performanceViewsCount: views.value,
+          performanceViewsMetric: views.metric,
+          performanceUpdatedAt: updatedAt,
+          performanceError: null,
+        },
+      })
+
+      return {
+        ...base,
+        viewsCount: views.value,
+        viewsMetric: views.metric,
+        performanceUpdatedAt: updatedAt,
+        expired: false,
+        error: null,
+      }
+    } catch (error) {
+      if (isInstagramDisconnectError(error)) {
+        await markInstagramAccountDisconnected(log.instagramAccount.id)
+      }
+
+      const message = normalizeError(error)
+
+      await prisma.postLog.update({
+        where: { id: log.id },
+        data: { performanceError: message, performanceUpdatedAt: updatedAt },
+      })
+
+      return { ...base, expired: false, error: message, performanceUpdatedAt: updatedAt }
+    }
+  })
+}

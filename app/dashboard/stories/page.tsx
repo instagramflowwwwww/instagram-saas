@@ -8,12 +8,14 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
+  Eye,
   Film,
   ImageIcon,
   Instagram,
   Layers3,
   Loader2,
   Play,
+  RefreshCw,
   Sparkles,
   X,
 } from "lucide-react"
@@ -59,6 +61,108 @@ function intervalLabel(minutes: number) {
   if (minutes === 60) return "1 hora"
   if (minutes < 1440) return `${minutes / 60} horas`
   return "24 horas"
+}
+
+type StoryPerformance = {
+  id: string
+  username: string
+  profilePicture: string | null
+  viewsCount: number | null
+  viewsMetric: string | null
+  publishedAt: string
+  expiresAt: string
+  expired: boolean
+  error: string | null
+}
+
+function timeLeft(expiresAt: string) {
+  const ms = new Date(expiresAt).getTime() - Date.now()
+  if (ms <= 0) return "expirado"
+  const hours = Math.floor(ms / (60 * 60 * 1000))
+  const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000))
+  return hours > 0 ? `${hours}h${minutes}min no ar` : `${minutes}min no ar`
+}
+
+function StoriesPerformance() {
+  const [stories, setStories] = useState<StoryPerformance[] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const load = async (refresh = false) => {
+    if (refresh) setRefreshing(true)
+    try {
+      const url = refresh ? "/api/posts/stories-performance?refresh=1" : "/api/posts/stories-performance"
+      const response = await fetch(url, { cache: "no-store" })
+      const data = await response.json()
+      if (response.ok) setStories(Array.isArray(data) ? data : [])
+    } catch {
+      // desempenho de story é informativo — não trava a tela de publicação
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  if (loading) return null
+  if (!stories || stories.length === 0) return null
+
+  return (
+    <div className="mb-6 rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Eye size={15} className="text-purple-400" />
+          <h2 className="text-sm font-semibold text-white">Desempenho dos stories</h2>
+        </div>
+        <button
+          onClick={() => load(true)}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
+          Atualizar
+        </button>
+      </div>
+      <p className="mb-4 text-xs text-gray-500">
+        Só é possível ver visualizações enquanto o story ainda está no ar (até 24h). Depois disso, fica o
+        último número visto.
+      </p>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {stories.map((story) => (
+          <div
+            key={story.id}
+            className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+              story.expired ? "border-white/[0.05] bg-white/[0.015]" : "border-white/[0.07] bg-white/[0.03]"
+            }`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-purple-500/10">
+              {story.profilePicture ? (
+                <img src={story.profilePicture} alt="" className="h-6 w-6 rounded-full object-cover" />
+              ) : (
+                <Instagram size={13} className="text-purple-400" />
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-white">@{story.username}</p>
+              <p className={`text-[11px] ${story.expired ? "text-gray-600" : "text-purple-300"}`}>
+                {timeLeft(story.expiresAt)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold tabular-nums text-white">
+                {story.viewsCount !== null ? story.viewsCount.toLocaleString("pt-BR") : "—"}
+              </p>
+              <p className="text-[10px] text-gray-600">views</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function StoriesPage() {
@@ -281,6 +385,8 @@ export default function StoriesPage() {
           <CalendarClock size={15} /> Ver fila
         </button>
       </div>
+
+      <StoriesPerformance />
 
       <div className="mb-6 grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
