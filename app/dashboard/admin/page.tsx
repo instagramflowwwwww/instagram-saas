@@ -4,9 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   BarChart3,
+  Check,
   Clock3,
+  Copy,
   FileText,
   Instagram,
+  KeyRound,
   Loader2,
   RefreshCw,
   Shield,
@@ -15,6 +18,7 @@ import {
   UserCheck,
   UserRoundX,
   Users,
+  X,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast } from "@/lib/toast"
@@ -93,6 +97,9 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<"all" | UserStatus>("all")
   const [plans, setPlans] = useState<Record<string, PlanId>>({})
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [resettingId, setResettingId] = useState<string | null>(null)
+  const [resetResult, setResetResult] = useState<{ email: string; temporaryPassword: string } | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const loadData = useCallback(async (notifySuccess = false) => {
     try {
@@ -168,6 +175,31 @@ export default function AdminPage() {
       )
     } finally {
       setProcessingId(null)
+    }
+  }
+
+  const resetUserPassword = async (user: AdminUser) => {
+    const confirmed = await confirmToast(
+      `Gerar uma senha nova para ${user.name || user.email || "este usuário"}? A senha atual dela deixa de funcionar.`,
+      { confirmLabel: "Gerar senha nova", danger: true }
+    )
+    if (!confirmed) return
+
+    setResettingId(user.id)
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/reset-password`, {
+        method: "POST",
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || "Não foi possível gerar a senha.")
+      setCopied(false)
+      setResetResult({ email: payload.email, temporaryPassword: payload.temporaryPassword })
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Não foi possível gerar a senha."
+      )
+    } finally {
+      setResettingId(null)
     }
   }
 
@@ -394,6 +426,19 @@ export default function AdminPage() {
                             <UserRoundX size={13} />
                             {active ? "Bloquear" : "Recusar"}
                           </button>
+                          <button
+                            onClick={() => void resetUserPassword(user)}
+                            disabled={resettingId === user.id}
+                            title="Gerar uma senha nova para esta pessoa"
+                            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-medium text-gray-300 hover:bg-white/[0.06] disabled:opacity-40"
+                          >
+                            {resettingId === user.id ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              <KeyRound size={13} />
+                            )}
+                            Senha
+                          </button>
                         </div>
                       )}
                     </td>
@@ -411,6 +456,60 @@ export default function AdminPage() {
           </table>
         </div>
       </div>
+
+      {resetResult && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setResetResult(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111] p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <KeyRound size={16} className="text-purple-400" />
+                <h3 className="font-semibold text-white">Senha gerada</h3>
+              </div>
+              <button
+                onClick={() => setResetResult(null)}
+                className="shrink-0 text-gray-500 hover:text-white"
+                aria-label="Fechar"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Repasse essa senha para {resetResult.email} por fora do sistema. Ela só aparece
+              aqui uma vez — se fechar sem copiar, precisa gerar outra.
+            </p>
+
+            <div className="mt-4 flex items-center gap-2 rounded-lg border border-purple-500/20 bg-purple-500/[0.06] px-3 py-2.5">
+              <code className="flex-1 select-all font-mono text-sm text-white">
+                {resetResult.temporaryPassword}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(resetResult.temporaryPassword)
+                  setCopied(true)
+                  toast.success("Senha copiada.")
+                }}
+                className="shrink-0 rounded-lg p-1.5 text-purple-300 hover:bg-purple-500/15"
+                aria-label="Copiar senha"
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+            </div>
+
+            <button
+              onClick={() => setResetResult(null)}
+              className="mt-4 w-full rounded-lg bg-purple-600 py-2.5 text-sm font-medium text-white hover:bg-purple-500"
+            >
+              Já copiei, fechar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
