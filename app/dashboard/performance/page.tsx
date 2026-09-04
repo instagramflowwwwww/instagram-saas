@@ -8,6 +8,7 @@ import {
   MessageCircle,
   Play,
   RefreshCw,
+  Star,
   TrendingUp,
 } from "lucide-react"
 import toast from "react-hot-toast"
@@ -261,6 +262,38 @@ export default function PerformancePage() {
     }
   }, [selectedPeriod])
 
+  const [storiesTotalViews, setStoriesTotalViews] = useState<number | null>(null)
+  const [storiesLoading, setStoriesLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setStoriesLoading(true)
+
+    const range = getPeriodRange(selectedPeriod)
+    const params = new URLSearchParams()
+    if (range) {
+      params.set("from", range.from.toISOString())
+      params.set("to", range.to.toISOString())
+    }
+    const query = params.toString()
+
+    fetch(`/api/posts/stories-performance/summary${query ? `?${query}` : ""}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) setStoriesTotalViews(typeof data.totalViews === "number" ? data.totalViews : 0)
+      })
+      .catch(() => {
+        if (!cancelled) setStoriesTotalViews(null)
+      })
+      .finally(() => {
+        if (!cancelled) setStoriesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPeriod])
+
   const selectedPeriodOption =
     PERIOD_OPTIONS.find((option) => option.value === selectedPeriod) ||
     PERIOD_OPTIONS[0]
@@ -372,7 +405,7 @@ export default function PerformancePage() {
         </div>
       </div>
 
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-xl border border-white/5 bg-[#111] p-5">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-500">
@@ -424,6 +457,20 @@ export default function PerformancePage() {
             {loading || (refreshing && !hasMetrics)
               ? "..."
               : numberFormatter.format(totals.views)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-[#111] p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500">
+              Views nos stories
+            </span>
+            <Star size={14} className="text-yellow-400" />
+          </div>
+          <p className="text-2xl font-bold text-white">
+            {storiesLoading || storiesTotalViews === null
+              ? "..."
+              : numberFormatter.format(storiesTotalViews)}
           </p>
         </div>
       </div>
