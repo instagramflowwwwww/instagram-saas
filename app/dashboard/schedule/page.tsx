@@ -279,15 +279,18 @@ export default function SchedulePage() {
         `Isso daria ${randomCount * selectedAccounts.length} publicações. O limite por automação é 300 — reduza as rodadas ou as contas.`
       )
     }
-    if (videos.length < selectedAccounts.length) {
-      return toast.error(
-        `Para cada conta receber um vídeo diferente, a biblioteca precisa de pelo menos ${selectedAccounts.length} vídeo(s). Você tem ${videos.length}.`
-      )
-    }
     setSubmitting(true)
     try {
-      // Distribui os vídeos: em cada rodada, nenhuma conta repete a outra, e um
-      // vídeo só volta a ser sorteado depois que todos já tiverem sido usados.
+      // Quando há vídeo suficiente para cobrir todas as contas, nenhuma conta
+      // repete a outra na mesma rodada — um vídeo só volta a ser sorteado
+      // depois que todos já tiverem saído. Quando não há vídeo suficiente
+      // (menos vídeos que contas), essa garantia é impossível de cumprir, e
+      // a rodada aceita repetição — mas ainda sorteando de forma equilibrada:
+      // nenhum vídeo é reusado antes que todos os outros já tenham sido
+      // usados pelo menos uma vez nessa rodada.
+      const videoIds = videos.map((video) => video.id)
+      const canAvoidRepeatInRound = videoIds.length >= selectedAccounts.length
+
       const assignments: { round: number; accountId: string; mediaId: string }[] = []
       let pool: string[] = []
 
@@ -296,14 +299,16 @@ export default function SchedulePage() {
 
         for (const accountId of selectedAccounts) {
           if (pool.length === 0) {
-            pool = shuffle(videos.map((video) => video.id))
+            pool = shuffle(videoIds)
           }
 
-          // Evita que dois perfis publiquem o mesmo vídeo no mesmo horário
-          let index = pool.findIndex((mediaId) => !usedThisRound.has(mediaId))
-          if (index === -1) {
-            pool = shuffle(videos.map((video) => video.id).filter((id) => !usedThisRound.has(id)))
-            index = 0
+          let index = 0
+          if (canAvoidRepeatInRound) {
+            index = pool.findIndex((mediaId) => !usedThisRound.has(mediaId))
+            if (index === -1) {
+              pool = shuffle(videoIds.filter((id) => !usedThisRound.has(id)))
+              index = 0
+            }
           }
 
           const mediaId = pool.splice(index, 1)[0]
@@ -452,10 +457,11 @@ export default function SchedulePage() {
                 <span className="text-white">{randomCount * selectedAccounts.length} publicação(ões)</span>
               </p>
             )}
-            {selectedAccounts.length > availableVideos && (
+            {selectedAccounts.length > 0 && selectedAccounts.length > availableVideos && (
               <p className="mt-2 text-xs text-yellow-300">
-                Para cada conta receber um vídeo diferente, você precisa de pelo menos{" "}
-                {selectedAccounts.length} vídeos na biblioteca.
+                Você tem menos vídeos ({availableVideos}) do que contas selecionadas ({selectedAccounts.length}).
+                Dentro da mesma rodada, alguns vídeos vão se repetir em mais de uma conta — mas de forma
+                equilibrada, sem repetir nenhum antes que todos já tenham sido usados uma vez.
               </p>
             )}
           </div>
