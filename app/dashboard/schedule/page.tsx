@@ -274,9 +274,9 @@ export default function SchedulePage() {
     if (!startAt) return toast.error("Informe quando a sequência deve começar.")
     const videos = media.filter((m) => m.type === "video")
     if (videos.length === 0) return toast.error("Nenhum vídeo na biblioteca para sortear.")
-    if (randomCount * selectedAccounts.length > 300) {
+    if (randomCount * selectedAccounts.length > 3000) {
       return toast.error(
-        `Isso daria ${randomCount * selectedAccounts.length} publicações. O limite por automação é 300 — reduza as rodadas ou as contas.`
+        `Isso daria ${randomCount * selectedAccounts.length} publicações. O limite por automação é 3000 — reduza as rodadas ou as contas.`
       )
     }
     setSubmitting(true)
