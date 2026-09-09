@@ -182,7 +182,6 @@ model Post {
   publicationType String            @default("post")
   caption         String?
   hashtags        String?
-  link            String?
   status          String            @default("draft")
   scheduledAt     DateTime?
   publishedAt     DateTime?

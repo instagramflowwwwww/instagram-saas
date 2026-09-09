@@ -20,20 +20,6 @@ type CoverEntry = {
   coverUrl?: string
 }
 
-type LinkEntry = {
-  mediaId?: string
-  link?: string
-}
-
-function isHttpUrl(value: string) {
-  try {
-    const url = new URL(value)
-    return url.protocol === "http:" || url.protocol === "https:"
-  } catch {
-    return false
-  }
-}
-
 const CAPTION_MODES = new Set(["single", "per_media", "rotate", "library"])
 const MAX_ASSIGNMENTS = 3000
 
@@ -281,29 +267,6 @@ export async function POST(request: Request) {
     }
 
     const itemCoverMap = new Map(validCoverEntries.map((entry) => [entry.mediaId, entry.coverUrl]))
-
-    const linkEntries = Array.isArray(body.itemLinks) ? (body.itemLinks as LinkEntry[]) : []
-    const validLinkEntries = linkEntries
-      .map((entry) => ({
-        mediaId: String(entry.mediaId || ""),
-        link: String(entry.link || "").trim().slice(0, 2000),
-      }))
-      .filter((entry) => entry.mediaId && entry.link)
-
-    if (publicationType !== "story" && validLinkEntries.length > 0) {
-      return NextResponse.json(
-        { error: "O link só pode ser adicionado em Stories." },
-        { status: 400 }
-      )
-    }
-    if (!validLinkEntries.every((entry) => isHttpUrl(entry.link))) {
-      return NextResponse.json(
-        { error: "Um dos links informados é inválido." },
-        { status: 400 }
-      )
-    }
-
-    const itemLinkMap = new Map(validLinkEntries.map((entry) => [entry.mediaId, entry.link]))
     const singleCaption = cleanText(body.singleCaption)
     const singleHashtags = cleanText(body.singleHashtags, 500)
 
@@ -374,7 +337,6 @@ export async function POST(request: Request) {
         publicationType === "story" || media.type !== "video"
           ? null
           : itemCoverMap.get(mediaId) || null
-      const link = publicationType === "story" ? itemLinkMap.get(mediaId) || null : null
 
       return {
         position: index,
@@ -396,7 +358,6 @@ export async function POST(request: Request) {
             publicationType,
             caption,
             hashtags,
-            link,
             status: "scheduled",
             scheduledAt,
           },

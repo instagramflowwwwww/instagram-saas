@@ -186,7 +186,6 @@ export default function StoriesPage() {
   )
   const [intervalMinutes, setIntervalMinutes] = useState(10)
   const [name, setName] = useState("")
-  const [linkByMedia, setLinkByMedia] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
@@ -294,10 +293,6 @@ export default function StoriesPage() {
     })
   }
 
-  function setLink(mediaId: string, value: string) {
-    setLinkByMedia((current) => ({ ...current, [mediaId]: value }))
-  }
-
   function toggleAccount(id: string) {
     setSelectedAccounts((current) =>
       current.includes(id)
@@ -332,11 +327,6 @@ export default function StoriesPage() {
         throw new Error("A data da primeira publicação é inválida.")
       }
 
-      const itemLinks = selectedItems
-        .filter((item) => item.type === "image")
-        .map((item) => ({ mediaId: item.id, link: (linkByMedia[item.id] || "").trim() }))
-        .filter((entry) => entry.link)
-
       const response = await fetch("/api/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -353,7 +343,6 @@ export default function StoriesPage() {
           itemCaptions: [],
           rotationCaptions: [],
           itemCovers: [],
-          itemLinks,
         }),
       })
       const payload = await response.json()
@@ -549,9 +538,6 @@ export default function StoriesPage() {
             {selectedItems.length > 0 && (
               <div className="mt-5 space-y-2">
                 <p className="text-xs font-medium text-gray-400">Ordem dos Stories</p>
-                <p className="text-[11px] text-gray-600">
-                  Link de sticker disponível só para Stories em imagem. A Meta pode recusar o link se a conta não for elegível.
-                </p>
                 {selectedItems.map((item, index) => (
                   <div
                     key={item.id}
@@ -569,17 +555,9 @@ export default function StoriesPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-white">{item.fileName}</p>
-                      {item.type === "video" ? (
-                        <p className="text-[11px] text-gray-600">Story em vídeo</p>
-                      ) : (
-                        <input
-                          type="url"
-                          value={linkByMedia[item.id] || ""}
-                          onChange={(event) => setLink(item.id, event.target.value)}
-                          placeholder="Link do story (opcional) — https://..."
-                          className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[11px] text-white placeholder:text-gray-600 focus:border-purple-500/50 focus:outline-none"
-                        />
-                      )}
+                      <p className="text-[11px] text-gray-600">
+                        {item.type === "video" ? "Story em vídeo" : "Story em imagem"}
+                      </p>
                     </div>
                     <button
                       type="button"
