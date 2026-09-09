@@ -357,6 +357,15 @@ export default function SchedulePage() {
       if (coverMode === "single" && !sharedCover) return toast.error("Adicione a capa compartilhada para os vídeos.")
       if (coverMode === "per_video" && videoItems.some((item) => !perVideoCovers[item.id])) return toast.error("Adicione uma capa para cada vídeo selecionado.")
     }
+    if (captionMode === "per_media") {
+      // Sem isso, uma mídia esquecida no meio da lista publica sem legenda
+      // nenhuma, em silêncio — só aparece depois, no Instagram.
+      const missing = selectedItems.find((item) => {
+        const draft = perMedia[item.id]
+        return !draft?.caption?.trim() && !draft?.hashtags?.trim()
+      })
+      if (missing) return toast.error(`Preencha a legenda de "${missing.fileName}" ou troque o modo de legenda.`)
+    }
     setSubmitting(true)
     try {
       const itemCovers: Array<{ mediaId: string; coverUrl: string }> = []

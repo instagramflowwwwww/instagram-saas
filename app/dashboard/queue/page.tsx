@@ -35,6 +35,7 @@ type BatchItem = {
   attempts: number
   lastError: string | null
   processedAt: string | null
+  instagramAccountId: string | null
   media: {
     id: string
     url: string
@@ -45,6 +46,8 @@ type BatchItem = {
     id: string
     status: string
     publishedAt: string | null
+    publicationType: string
+    logs: { instagramAccountId: string; status: string }[]
   } | null
 }
 
@@ -247,6 +250,82 @@ export default function QueuePage() {
     [data.batches]
   )
 
+  // Um item sem instagramAccountId (modo antigo) publica em várias contas ao
+  // mesmo tempo; só o log de cada conta em post.logs diz quem já teve
+  // sucesso ou falhou. Sem isso, uma conta específica travando (por exemplo,
+  // no limite diário da Meta) fica escondida dentro do resultado do lote.
+  const accountSummaries = useMemo(() => {
+    const byAccount = new Map<
+      string,
+      {
+        id: string
+        username: string
+        profilePicture: string | null
+        queued: number
+        published: number
+        failed: number
+        story: number
+        reel: number
+        feed: number
+      }
+    >()
+
+    const ensure = (account: { id: string; username: string; profilePicture: string | null }) => {
+      const existing = byAccount.get(account.id)
+      if (existing) return existing
+      const created = {
+        id: account.id,
+        username: account.username,
+        profilePicture: account.profilePicture,
+        queued: 0,
+        published: 0,
+        failed: 0,
+        story: 0,
+        reel: 0,
+        feed: 0,
+      }
+      byAccount.set(account.id, created)
+      return created
+    }
+
+    for (const batch of data.batches) {
+      for (const { instagramAccount } of batch.accounts) {
+        ensure(instagramAccount)
+      }
+
+      for (const item of batch.items) {
+        const targetIds = item.instagramAccountId
+          ? [item.instagramAccountId]
+          : batch.accounts.map((a) => a.instagramAccount.id)
+
+        const logsByAccount = new Map(
+          (item.post?.logs || []).map((log) => [log.instagramAccountId, log.status])
+        )
+
+        for (const accountId of targetIds) {
+          const summary = byAccount.get(accountId)
+          if (!summary) continue
+
+          const logStatus = logsByAccount.get(accountId)
+          if (logStatus === "success") {
+            summary.published += 1
+            if (item.post?.publicationType === "story") summary.story += 1
+            else if (item.media?.type === "video") summary.reel += 1
+            else summary.feed += 1
+          } else if (logStatus === "error") {
+            summary.failed += 1
+          } else if (["pending", "processing"].includes(item.status)) {
+            summary.queued += 1
+          }
+        }
+      }
+    }
+
+    return Array.from(byAccount.values())
+      .filter((summary) => summary.queued + summary.published + summary.failed > 0)
+      .sort((a, b) => b.failed - a.failed || b.queued - a.queued)
+  }, [data.batches])
+
   return (
     <div>
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
@@ -300,6 +379,56 @@ export default function QueuePage() {
           </div>
         ))}
       </div>
+
+      {accountSummaries.length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-white">Por conta</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {accountSummaries.map((account) => (
+              <div
+                key={account.id}
+                className={`rounded-2xl border bg-[#111] p-4 ${
+                  account.failed > 0 ? "border-red-500/25" : "border-white/[0.07]"
+                }`}
+              >
+                <div className="mb-3 flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-purple-500/10">
+                    {account.profilePicture ? (
+                      <img src={account.profilePicture} alt="" className="h-6 w-6 rounded-full object-cover" />
+                    ) : (
+                      <Instagram size={13} className="text-purple-400" />
+                    )}
+                  </span>
+                  <p className="truncate text-sm font-medium text-white">@{account.username}</p>
+                </div>
+
+                <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-bold text-blue-300">{account.queued}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-600">Na fila</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-green-400">{account.published}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-600">Publicadas</p>
+                  </div>
+                  <div>
+                    <p className={`text-lg font-bold ${account.failed > 0 ? "text-red-400" : "text-gray-600"}`}>
+                      {account.failed}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-600">Falharam</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-gray-500">
+                  <span>Story <span className="text-gray-300">{account.story}</span></span>
+                  <span>Reel <span className="text-gray-300">{account.reel}</span></span>
+                  <span>Feed <span className="text-gray-300">{account.feed}</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-5 flex gap-2">
         {(["all", "active", "done"] as const).map((value) => (

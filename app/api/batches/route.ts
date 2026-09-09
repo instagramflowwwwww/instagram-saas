@@ -93,6 +93,13 @@ export async function GET() {
               id: true,
               status: true,
               publishedAt: true,
+              publicationType: true,
+              // Resultado por conta: um item sem instagramAccountId (modo
+              // antigo) publica em várias contas ao mesmo tempo, e é só
+              // aqui que dá pra saber qual delas já teve sucesso ou falhou.
+              logs: {
+                select: { instagramAccountId: true, status: true },
+              },
             },
           },
         },
