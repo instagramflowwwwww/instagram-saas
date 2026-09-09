@@ -304,6 +304,7 @@ async function createContainer(params: {
   coverUrl?: string
   caption: string
   publicationType: string
+  link?: string
 }) {
   const body = new URLSearchParams({ access_token: params.token })
 
@@ -311,6 +312,7 @@ async function createContainer(params: {
     body.set("media_type", "STORIES")
     if (params.videoUrl) body.set("video_url", params.videoUrl)
     else body.set("image_url", params.imageUrl)
+    if (params.link) body.set("link", params.link)
   } else if (params.videoUrl) {
     body.set("media_type", "REELS")
     body.set("video_url", params.videoUrl)
@@ -412,6 +414,7 @@ async function publishToAccount(params: {
     videoUrl: string | null
     coverUrl: string | null
     publicationType: string
+    link: string | null
   }
   coverUrl?: string
   caption: string
@@ -432,6 +435,7 @@ async function publishToAccount(params: {
         coverUrl: params.coverUrl || params.post.coverUrl || "",
         caption: params.post.publicationType === "story" ? "" : params.caption,
         publicationType: params.post.publicationType,
+        link: params.post.publicationType === "story" ? params.post.link || undefined : undefined,
       })
 
       await waitUntilReady(containerId, token, params.account.id)
@@ -498,6 +502,7 @@ export async function publishExistingPost(params: {
       hashtags: true,
       coverUrl: true,
       publicationType: true,
+      link: true,
     },
   })
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   ArrowDown,
@@ -28,6 +29,8 @@ type MediaItem = {
   type: "image" | "video"
   fileName: string
   createdAt: string
+  caption?: string | null
+  hashtags?: string | null
 }
 
 type InstagramAccount = {
@@ -89,7 +92,7 @@ export default function SchedulePage() {
     toLocalInputValue(new Date(Date.now() + 10 * 60 * 1000))
   )
   const [intervalMinutes, setIntervalMinutes] = useState(10)
-  const [captionMode, setCaptionMode] = useState<"single" | "per_media" | "rotate">("single")
+  const [captionMode, setCaptionMode] = useState<"single" | "per_media" | "rotate" | "library">("single")
   const [singleCaption, setSingleCaption] = useState("")
   const [singleHashtags, setSingleHashtags] = useState("")
   const [perMedia, setPerMedia] = useState<Record<string, CaptionDraft>>({})
@@ -589,14 +592,42 @@ export default function SchedulePage() {
 
           <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
             <h2 className="mb-4 text-sm font-semibold text-white">{randomMode ? "2." : "3."} Configure as legendas</h2>
-            <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {([["single", "Uma para todas"], ["per_media", "Uma por mídia"], ["rotate", "Alternar lista"]] as const).map(([value, label]) => (
+            <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {([["single", "Uma para todas"], ["per_media", "Uma por mídia"], ["rotate", "Alternar lista"], ["library", "Da biblioteca"]] as const).map(([value, label]) => (
                 <button key={value} onClick={() => setCaptionMode(value)} className={`rounded-xl border px-3 py-2.5 text-sm ${captionMode === value ? "border-purple-500/40 bg-purple-500/15 text-purple-300" : "border-white/[0.07] bg-white/[0.025] text-gray-500 hover:text-white"}`}>
                   {label}
                 </button>
               ))}
             </div>
             {captionMode === "single" && <CaptionFields value={{ caption: singleCaption, hashtags: singleHashtags }} onChange={(field, value) => field === "caption" ? setSingleCaption(value) : setSingleHashtags(value)} />}
+            {captionMode === "library" && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">
+                  Cada vídeo publica com a legenda salva nele mesmo, na Biblioteca — nada digitado
+                  aqui. Um vídeo sem legenda salva sai sem legenda.
+                </p>
+                {(randomMode ? media.filter((item) => item.type === "video") : selectedItems).length === 0 ? (
+                  <p className="text-sm text-gray-500">Selecione as mídias primeiro.</p>
+                ) : (
+                  <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-xl border border-white/[0.07] p-2">
+                    {(randomMode ? media.filter((item) => item.type === "video") : selectedItems).map((item) => {
+                      const hasCaption = Boolean(item.caption?.trim() || item.hashtags?.trim())
+                      return (
+                        <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg px-2.5 py-1.5">
+                          <span className="truncate text-xs text-gray-300">{item.fileName}</span>
+                          <span className={`shrink-0 text-[11px] ${hasCaption ? "text-green-400" : "text-yellow-400"}`}>
+                            {hasCaption ? "Tem legenda" : "Sem legenda"}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <Link href="/dashboard/library" className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300">
+                  Editar legendas na Biblioteca
+                </Link>
+              </div>
+            )}
             {captionMode === "per_media" && !randomMode && (
               <div className="space-y-4">
                 {selectedItems.length === 0 ? <p className="text-sm text-gray-500">Selecione as mídias primeiro.</p> : selectedItems.map((item, index) => (

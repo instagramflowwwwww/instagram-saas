@@ -17,6 +17,7 @@ import {
   Move,
   Pencil,
   Play,
+  Save,
   Sparkles,
   Trash2,
   Upload,
@@ -39,6 +40,8 @@ type MediaItem = {
   duration: number | null
   format: string | null
   createdAt: string
+  caption: string | null
+  hashtags: string | null
 }
 
 type GeneratedCaption = {
@@ -81,6 +84,9 @@ export default function LibraryPage() {
   const [captionLoading, setCaptionLoading] = useState(false)
   const [captionStep, setCaptionStep] = useState("")
   const [captionResult, setCaptionResult] = useState<GeneratedCaption | null>(null)
+  const [captionDraft, setCaptionDraft] = useState("")
+  const [hashtagsDraft, setHashtagsDraft] = useState("")
+  const [savingCaption, setSavingCaption] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [moving, setMoving] = useState(false)
   const [folderSaving, setFolderSaving] = useState(false)
@@ -180,6 +186,8 @@ export default function LibraryPage() {
       if (!response.ok) throw new Error(data.error || "Não foi possível gerar a legenda.")
 
       setCaptionResult(data as GeneratedCaption)
+      setCaptionDraft(data.caption || "")
+      setHashtagsDraft(data.hashtags || "")
     } catch (captionError) {
       toast.error(
         captionError instanceof Error ? captionError.message : "Não foi possível gerar a legenda."
@@ -187,6 +195,31 @@ export default function LibraryPage() {
     } finally {
       setCaptionLoading(false)
       setCaptionStep("")
+    }
+  }
+
+  const saveCaption = async (item: MediaItem) => {
+    setSavingCaption(true)
+    try {
+      const response = await fetch(`/api/library/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption: captionDraft, hashtags: hashtagsDraft }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Não foi possível salvar a legenda.")
+
+      setMedia((current) =>
+        current.map((media) =>
+          media.id === item.id ? { ...media, caption: data.caption, hashtags: data.hashtags } : media
+        )
+      )
+      toast.success("Legenda salva no vídeo.")
+      setCaptionFor(null)
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : "Não foi possível salvar a legenda.")
+    } finally {
+      setSavingCaption(false)
     }
   }
 
@@ -631,18 +664,22 @@ export default function LibraryPage() {
                     <span>{new Date(item.createdAt).toLocaleDateString("pt-BR")}</span>
                   </div>
 
-                  {item.type === "video" && (
-                    <button
-                      onClick={() => {
-                        setCaptionFor(item)
-                        setCaptionResult(null)
-                      }}
-                      className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-purple-500/25 bg-purple-500/10 py-2 text-xs font-medium text-purple-300 transition-colors hover:border-purple-500/45 hover:bg-purple-500/15 hover:text-purple-200"
-                    >
-                      <Sparkles size={13} />
-                      Gerar legenda com IA
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      setCaptionFor(item)
+                      setCaptionResult(null)
+                      setCaptionDraft(item.caption || "")
+                      setHashtagsDraft(item.hashtags || "")
+                    }}
+                    className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition-colors ${
+                      item.caption || item.hashtags
+                        ? "border-green-500/25 bg-green-500/10 text-green-300 hover:border-green-500/45 hover:bg-green-500/15"
+                        : "border-purple-500/25 bg-purple-500/10 text-purple-300 hover:border-purple-500/45 hover:bg-purple-500/15 hover:text-purple-200"
+                    }`}
+                  >
+                    <Sparkles size={13} />
+                    {item.caption || item.hashtags ? "Legenda salva" : "Adicionar legenda"}
+                  </button>
                 </div>
               </div>
             )
@@ -773,11 +810,11 @@ export default function LibraryPage() {
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-purple-400" />
-                <h3 className="font-semibold text-white">Gerar legenda com IA</h3>
+                <h3 className="font-semibold text-white">Legenda deste vídeo</h3>
               </div>
               <button
                 onClick={() => setCaptionFor(null)}
-                disabled={captionLoading}
+                disabled={captionLoading || savingCaption}
                 className="shrink-0 text-gray-500 hover:text-white disabled:opacity-40"
                 aria-label="Fechar"
               >
@@ -785,60 +822,66 @@ export default function LibraryPage() {
               </button>
             </div>
             <p className="mt-1 text-xs text-gray-500">
-              A IA olha 4 frames do vídeo e escreve a legenda. Mandar só os frames custa uma
-              fração do que custaria mandar o vídeo inteiro.
+              Fica salva neste arquivo. No modo "Da biblioteca" das automações, é essa legenda
+              que sai publicada — sem precisar redigitar toda vez.
             </p>
 
-            <div className="mt-4">
-              <label className="mb-1.5 block text-xs text-gray-400">
-                Sobre o perfil e o tom <span className="text-gray-600">(opcional, mas ajuda muito)</span>
-              </label>
-              <textarea
-                value={captionContext}
-                onChange={(event) => setCaptionContext(event.target.value)}
-                rows={2}
-                placeholder="Ex: perfil de cortes de futebol, tom debochado, falo direto com torcedor"
-                className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
-              />
-            </div>
-
-            {captionResult && (
-              <div className="mt-4 space-y-3">
-                <p className="text-[11px] text-gray-500">
-                  A IA viu: {captionResult.description}
-                </p>
-                <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
-                  <p className="text-[10px] uppercase tracking-wide text-gray-600">Legenda</p>
-                  <p className="mt-1.5 whitespace-pre-wrap text-sm text-white">
-                    {captionResult.caption}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
-                  <p className="text-[10px] uppercase tracking-wide text-gray-600">Hashtags</p>
-                  <p className="mt-1.5 text-sm text-purple-300">{captionResult.hashtags}</p>
-                </div>
+            {captionFor.type === "video" && (
+              <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3.5">
+                <label className="mb-1.5 block text-xs text-gray-400">
+                  Gerar com IA a partir do vídeo{" "}
+                  <span className="text-gray-600">(opcional — sobre o perfil e o tom ajuda muito)</span>
+                </label>
+                <textarea
+                  value={captionContext}
+                  onChange={(event) => setCaptionContext(event.target.value)}
+                  rows={2}
+                  placeholder="Ex: perfil de cortes de futebol, tom debochado, falo direto com torcedor"
+                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
+                />
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      `${captionResult.caption}\n\n${captionResult.hashtags}`
-                    )
-                    toast.success("Legenda copiada.")
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-xs text-gray-300 hover:bg-white/[0.06] hover:text-white"
+                  onClick={() => generateCaption(captionFor)}
+                  disabled={captionLoading}
+                  className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-purple-500/25 bg-purple-500/10 py-2 text-xs font-medium text-purple-300 hover:bg-purple-500/15 disabled:opacity-50"
                 >
-                  <Copy size={13} />
-                  Copiar legenda e hashtags
+                  {captionLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  {captionLoading ? captionStep : captionResult ? "Gerar outra" : "Gerar com IA"}
                 </button>
+                {captionResult && (
+                  <p className="mt-2 text-[11px] text-gray-500">A IA viu: {captionResult.description}</p>
+                )}
               </div>
             )}
 
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1.5 block text-xs text-gray-400">Legenda</label>
+                <textarea
+                  value={captionDraft}
+                  onChange={(event) => setCaptionDraft(event.target.value)}
+                  rows={3}
+                  placeholder="Escreva a legenda deste vídeo..."
+                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-gray-400">Hashtags</label>
+                <input
+                  value={hashtagsDraft}
+                  onChange={(event) => setHashtagsDraft(event.target.value)}
+                  placeholder="#hashtag1 #hashtag2"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
             <button
-              onClick={() => generateCaption(captionFor)}
-              disabled={captionLoading}
+              onClick={() => saveCaption(captionFor)}
+              disabled={savingCaption || (!captionDraft.trim() && !hashtagsDraft.trim())}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
             >
-              {captionLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-              {captionLoading ? captionStep : captionResult ? "Gerar outra" : "Gerar legenda"}
+              {savingCaption ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              {savingCaption ? "Salvando..." : "Salvar no vídeo"}
             </button>
           </div>
         </div>

@@ -182,6 +182,7 @@ model Post {
   publicationType String            @default("post")
   caption         String?
   hashtags        String?
+  link            String?
   status          String            @default("draft")
   scheduledAt     DateTime?
   publishedAt     DateTime?
@@ -240,6 +241,10 @@ model MediaLibrary {
   height       Int?
   duration     Float?
   format       String?
+  // Legenda salva junto do vídeo/imagem: viaja com a mídia em qualquer
+  // automação futura, sem precisar redigitar toda vez que ela é reusada.
+  caption      String?
+  hashtags     String?
   createdAt    DateTime           @default(now())
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   folder       MediaFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
