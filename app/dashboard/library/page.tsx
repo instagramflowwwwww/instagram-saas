@@ -95,6 +95,20 @@ export default function LibraryPage() {
   const [folderEditor, setFolderEditor] = useState<FolderEditor>(null)
   const [moveOpen, setMoveOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({})
+  const [playingId, setPlayingId] = useState<string | null>(null)
+
+  function toggleCardPlay(item: MediaItem) {
+    const el = videoRefs.current[item.id]
+    if (!el) return
+    if (el.paused) {
+      el.play()
+      setPlayingId(item.id)
+    } else {
+      el.pause()
+      setPlayingId(null)
+    }
+  }
 
   const fetchLibrary = async () => {
     try {
@@ -612,7 +626,20 @@ export default function LibraryPage() {
               >
                 <div className="relative aspect-square bg-black">
                   {item.type === "video" ? (
-                    <video src={item.url} className="h-full w-full object-cover" muted preload="metadata" />
+                    <video
+                      ref={(el) => {
+                        videoRefs.current[item.id] = el
+                      }}
+                      src={item.url}
+                      className="h-full w-full object-cover"
+                      muted={playingId !== item.id}
+                      loop
+                      playsInline
+                      preload="metadata"
+                      controls={playingId === item.id}
+                      onClick={() => toggleCardPlay(item)}
+                      onEnded={() => setPlayingId(null)}
+                    />
                   ) : (
                     <img src={item.url} alt={item.fileName} className="h-full w-full object-cover" />
                   )}
@@ -626,7 +653,7 @@ export default function LibraryPage() {
                   >
                     <Check size={15} />
                   </button>
-                  {item.type === "video" && (
+                  {item.type === "video" && playingId !== item.id && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur">
                         <Play size={17} fill="currentColor" />
@@ -825,6 +852,15 @@ export default function LibraryPage() {
               Fica salva neste arquivo. No modo "Da biblioteca" das automações, é essa legenda
               que sai publicada — sem precisar redigitar toda vez.
             </p>
+
+            {captionFor.type === "video" && (
+              <video
+                src={captionFor.url}
+                controls
+                playsInline
+                className="mt-4 max-h-72 w-full rounded-xl bg-black"
+              />
+            )}
 
             {captionFor.type === "video" && (
               <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3.5">
