@@ -82,7 +82,6 @@ const OAUTH_STORAGE_KEY = "instagram-meta-oauth-result"
 
 const errorMessages: Record<string, string> = {
   app_not_configured: "Salve o Instagram App ID e o App Secret antes de conectar uma conta.",
-  app_required: "Escolha qual App Meta será usado para conectar esta conta.",
   invalid_username: "Informe um usuário do Instagram válido.",
   oauth_cancelled: "A autorização foi cancelada no Instagram.",
   missing_oauth_data: "A Meta não retornou os dados necessários para concluir a conexão.",
@@ -162,11 +161,12 @@ export default function MetaAppPage() {
       setMetaData(appData)
       setApps(loadedApps)
       setAccounts(loadedAccounts)
-      setSelectedAppId((current) => {
-        const requested = preferredAppId || current
-        if (requested && loadedApps.some((app) => app.id === requested)) return requested
-        // Auto-seleciona o primeiro app se houver apenas um
-        return loadedApps[0]?.id || ""
+      setSelectedAppId(() => {
+        if (preferredAppId && loadedApps.some((app) => app.id === preferredAppId)) return preferredAppId
+        if (loadedApps.length === 0) return ""
+        // Sempre o app com menos contas: assim dá pra só clicar em conectar,
+        // sem precisar escolher manualmente, e as contas ficam distribuídas.
+        return [...loadedApps].sort((a, b) => a.accountsCount - b.accountsCount)[0].id
       })
 
       return loadedAccounts
@@ -559,7 +559,10 @@ export default function MetaAppPage() {
         <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
           <div className="mb-5">
             <h2 className="text-white font-semibold">Seus Apps Meta</h2>
-            <p className="text-xs text-gray-500 mt-1">Cada conta fica vinculada ao App Meta usado durante o OAuth.</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Cada conta fica vinculada ao App Meta usado durante o OAuth. Ao conectar, o app com menos
+              contas é escolhido automaticamente — use "Usar para conectar" só pra forçar um específico.
+            </p>
           </div>
 
           {apps.length === 0 ? (
@@ -630,7 +633,7 @@ export default function MetaAppPage() {
               <p className="text-xs text-gray-500 mt-1">
                 {apps.length === 1
                   ? `Usando ${getAppLabel(apps[0], 0)} — clique em conectar para autorizar.`
-                  : "Escolha explicitamente o App Meta que fará a autorização OAuth."}
+                  : "Escolhemos automaticamente o App Meta com menos contas — só troque abaixo se quiser forçar um específico."}
               </p>
             </div>
             <UserPlus size={20} className="text-purple-400" />

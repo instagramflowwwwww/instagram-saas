@@ -53,22 +53,21 @@ export async function GET(request: NextRequest) {
       return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
   } else {
+    // Sem app escolhido: usa o que tem menos contas, pra distribuir sozinho
+    // entre os vários Apps Meta sem precisar selecionar antes de conectar.
     const apps = await prisma.instagramApp.findMany({
       where: { userId: session.user.id },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
         metaAppId: true,
+        _count: { select: { accounts: true } },
       },
-      take: 2,
     })
     if (apps.length === 0) {
       return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
-    if (apps.length > 1) {
-      return redirectToMetaApp(request, "app_required", popupMode)
-    }
-    app = apps[0]
+    app = [...apps].sort((a, b) => a._count.accounts - b._count.accounts)[0]
   }
 
   if (!app) {
