@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Banknote, Calendar, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { Banknote, Calendar, Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import toast from "react-hot-toast"
 
 type DaySeries = { day: string; accounts: number; amount: number }
@@ -19,6 +19,7 @@ type Employee = {
   last30: { accounts: number; amount: number }
   series: DaySeries[]
   counts: Record<string, number>
+  paidDays: string[]
 }
 
 function formatBRL(value: number) {
@@ -71,6 +72,44 @@ export default function PaymentsPage() {
       const base = current[employeeId] || new Date()
       return { ...current, [employeeId]: new Date(base.getFullYear(), base.getMonth() + delta, 1) }
     })
+  }
+
+  async function togglePaid(employeeId: string, day: string, currentlyPaid: boolean) {
+    setEmployees((current) =>
+      current.map((employee) =>
+        employee.id === employeeId
+          ? {
+              ...employee,
+              paidDays: currentlyPaid
+                ? employee.paidDays.filter((paidDay) => paidDay !== day)
+                : [...employee.paidDays, day],
+            }
+          : employee
+      )
+    )
+
+    try {
+      const res = await fetch("/api/payments", {
+        method: currentlyPaid ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: employeeId, day }),
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      toast.error("Erro ao marcar pagamento")
+      setEmployees((current) =>
+        current.map((employee) =>
+          employee.id === employeeId
+            ? {
+                ...employee,
+                paidDays: currentlyPaid
+                  ? [...employee.paidDays, day]
+                  : employee.paidDays.filter((paidDay) => paidDay !== day),
+              }
+            : employee
+        )
+      )
+    }
   }
 
   useEffect(() => {
@@ -234,28 +273,49 @@ export default function PaymentsPage() {
                       calendarMonth[employee.id] || new Date(),
                       employee.counts,
                       employee.payPerAccount
-                    ).map((cell, index) =>
-                      cell === null ? (
-                        <div key={`empty-${index}`} />
-                      ) : (
-                        <div
+                    ).map((cell, index) => {
+                      if (cell === null) return <div key={`empty-${index}`} />
+                      const isPaid = employee.paidDays.includes(cell.key)
+                      const clickable = cell.accounts > 0
+
+                      return (
+                        <button
                           key={cell.key}
+                          type="button"
+                          disabled={!clickable}
+                          onClick={() => clickable && togglePaid(employee.id, cell.key, isPaid)}
                           title={
-                            cell.accounts > 0
-                              ? `${cell.accounts} conta(s) · ${formatBRL(cell.amount)}`
+                            clickable
+                              ? `${cell.accounts} conta(s) · ${formatBRL(cell.amount)} · clique pra marcar ${
+                                  isPaid ? "como pendente" : "como pago"
+                                }`
                               : undefined
                           }
-                          className={`flex aspect-square flex-col items-center justify-center rounded-lg border text-[11px] ${
-                            cell.accounts > 0
-                              ? "border-green-500/25 bg-green-500/10 text-green-300"
-                              : "border-white/[0.05] bg-white/[0.015] text-gray-600"
+                          className={`flex aspect-square flex-col items-center justify-center rounded-lg border text-[11px] transition-colors ${
+                            !clickable
+                              ? "cursor-default border-white/[0.05] bg-white/[0.015] text-gray-600"
+                              : isPaid
+                                ? "cursor-pointer border-blue-500/30 bg-blue-500/15 text-blue-300 hover:bg-blue-500/20"
+                                : "cursor-pointer border-green-500/25 bg-green-500/10 text-green-300 hover:bg-green-500/15"
                           }`}
                         >
                           <span>{cell.day}</span>
-                          {cell.accounts > 0 && <span className="text-[9px]">{cell.accounts}</span>}
-                        </div>
+                          {cell.accounts > 0 &&
+                            (isPaid ? <Check size={11} /> : <span className="text-[9px]">{cell.accounts}</span>)}
+                        </button>
                       )
-                    )}
+                    })}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 pt-3 text-[11px] text-gray-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded bg-green-500/30" />
+                      Pendente
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded bg-blue-500/30" />
+                      Pago
+                    </span>
+                    <span>Clique num dia com conta pra marcar como pago/pendente.</span>
                   </div>
                 </div>
               )}

@@ -19,6 +19,7 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
     include: {
       members: { select: { createdAt: true } },
+      paidDays: { select: { day: true } },
     },
   })
 
@@ -48,6 +49,7 @@ export async function GET() {
       // Mapa completo dia -> contas, pra montar um calendário de qualquer mês
       // no cliente sem precisar de uma chamada nova a cada navegação.
       counts: Object.fromEntries(counts),
+      paidDays: group.paidDays.map((entry) => entry.day),
     }
   })
 
@@ -58,4 +60,61 @@ export async function GET() {
   }
 
   return NextResponse.json({ employees, totals })
+}
+
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+async function findOwnedGroup(userId: string, groupId: string) {
+  return prisma.accountGroup.findFirst({
+    where: { id: groupId, userId, isEmployeeGroup: true },
+    select: { id: true },
+  })
+}
+
+export async function POST(request: Request) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const groupId = String(body.groupId || "").trim()
+  const day = String(body.day || "").trim()
+
+  if (!groupId || !DAY_PATTERN.test(day)) {
+    return NextResponse.json({ error: "Dados inválidos." }, { status: 400 })
+  }
+
+  const group = await findOwnedGroup(session.user.id, groupId)
+  if (!group) return NextResponse.json({ error: "Pasta não encontrada." }, { status: 404 })
+
+  await prisma.employeePaidDay.upsert({
+    where: { groupId_day: { groupId, day } },
+    create: { groupId, day },
+    update: {},
+  })
+
+  return NextResponse.json({ success: true })
+}
+
+export async function DELETE(request: Request) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const groupId = String(body.groupId || "").trim()
+  const day = String(body.day || "").trim()
+
+  if (!groupId || !DAY_PATTERN.test(day)) {
+    return NextResponse.json({ error: "Dados inválidos." }, { status: 400 })
+  }
+
+  const group = await findOwnedGroup(session.user.id, groupId)
+  if (!group) return NextResponse.json({ error: "Pasta não encontrada." }, { status: 404 })
+
+  await prisma.employeePaidDay.deleteMany({ where: { groupId, day } })
+
+  return NextResponse.json({ success: true })
 }

@@ -108,9 +108,24 @@ model AccountGroup {
   updatedAt       DateTime             @updatedAt
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   members         AccountGroupMember[]
+  paidDays        EmployeePaidDay[]
 
   @@index([userId])
   @@index([userId, createdAt])
+}
+
+// Um dia marcado como "já paguei" pra esse funcionário/pasta — clicado no
+// calendário de /dashboard/payments. A existência da linha é o próprio
+// estado: existe = pago, não existe = pendente.
+model EmployeePaidDay {
+  id      String       @id @default(cuid())
+  groupId String
+  day     String
+  paidAt  DateTime     @default(now())
+  group   AccountGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, day])
+  @@index([groupId])
 }
 
 model AccountGroupMember {
