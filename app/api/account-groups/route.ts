@@ -100,13 +100,24 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}))
   const name = String(body.name || "").trim().slice(0, 50)
   const color = String(body.color || "").trim() || null
+  const isEmployeeGroup = Boolean(body.isEmployeeGroup)
+  const payPerAccount = Number(body.payPerAccount)
 
   if (!name) {
     return NextResponse.json({ error: "Informe um nome para a pasta." }, { status: 400 })
   }
+  if (isEmployeeGroup && (!Number.isFinite(payPerAccount) || payPerAccount <= 0)) {
+    return NextResponse.json({ error: "Informe um valor por conta válido." }, { status: 400 })
+  }
 
   const group = await prisma.accountGroup.create({
-    data: { userId: session.user.id, name, color },
+    data: {
+      userId: session.user.id,
+      name,
+      color,
+      isEmployeeGroup,
+      payPerAccount: isEmployeeGroup ? payPerAccount : 2,
+    },
     include: { members: true },
   })
 
@@ -123,9 +134,14 @@ export async function PATCH(request: Request) {
   const groupId = String(body.groupId || "").trim()
   const name = String(body.name || "").trim().slice(0, 50)
   const color = String(body.color || "").trim() || null
+  const isEmployeeGroup = Boolean(body.isEmployeeGroup)
+  const payPerAccount = Number(body.payPerAccount)
 
   if (!groupId) return NextResponse.json({ error: "ID da pasta não informado." }, { status: 400 })
   if (!name) return NextResponse.json({ error: "Informe um nome." }, { status: 400 })
+  if (isEmployeeGroup && (!Number.isFinite(payPerAccount) || payPerAccount <= 0)) {
+    return NextResponse.json({ error: "Informe um valor por conta válido." }, { status: 400 })
+  }
 
   const group = await prisma.accountGroup.findFirst({
     where: { id: groupId, userId: session.user.id },
@@ -134,7 +150,12 @@ export async function PATCH(request: Request) {
 
   const updated = await prisma.accountGroup.update({
     where: { id: groupId },
-    data: { name, color },
+    data: {
+      name,
+      color,
+      isEmployeeGroup,
+      payPerAccount: isEmployeeGroup ? payPerAccount : group.payPerAccount,
+    },
     include: { members: true },
   })
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import {
+  Banknote,
   Folder,
   FolderPlus,
   Instagram,
@@ -44,6 +45,8 @@ type AccountGroup = {
   name: string
   color: string | null
   createdAt: string
+  isEmployeeGroup: boolean
+  payPerAccount: number
   members: GroupMember[]
   stats?: {
     added: GroupWindowStats
@@ -93,6 +96,10 @@ function GroupStatsRow({ stats }: { stats: NonNullable<AccountGroup["stats"]> })
   )
 }
 
+function parseCurrency(value: string) {
+  return Number(value.replace(/\./g, "").replace(",", "."))
+}
+
 const COLORS = [
   { label: "Roxo", value: "#7C3AED" },
   { label: "Rosa", value: "#DB2777" },
@@ -111,10 +118,14 @@ export default function GroupsPage() {
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState("")
   const [newColor, setNewColor] = useState(COLORS[0].value)
+  const [newIsEmployee, setNewIsEmployee] = useState(false)
+  const [newPayPerAccount, setNewPayPerAccount] = useState("2,00")
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [editColor, setEditColor] = useState("")
+  const [editIsEmployee, setEditIsEmployee] = useState(false)
+  const [editPayPerAccount, setEditPayPerAccount] = useState("2,00")
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
   const [selectedToAdd, setSelectedToAdd] = useState<string[]>([])
 
@@ -143,18 +154,29 @@ export default function GroupsPage() {
 
   const createGroup = async () => {
     if (!newName.trim()) return toast.error("Informe um nome para a pasta.")
+    const payPerAccount = parseCurrency(newPayPerAccount)
+    if (newIsEmployee && (!Number.isFinite(payPerAccount) || payPerAccount <= 0)) {
+      return toast.error("Informe um valor por conta válido.")
+    }
     setSaving(true)
     try {
       const res = await fetch("/api/account-groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), color: newColor }),
+        body: JSON.stringify({
+          name: newName.trim(),
+          color: newColor,
+          isEmployeeGroup: newIsEmployee,
+          payPerAccount,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       toast.success("Pasta criada!")
       setNewName("")
       setNewColor(COLORS[0].value)
+      setNewIsEmployee(false)
+      setNewPayPerAccount("2,00")
       setShowNewForm(false)
       await fetchData()
     } catch (err) {
@@ -166,12 +188,22 @@ export default function GroupsPage() {
 
   const saveEdit = async (groupId: string) => {
     if (!editName.trim()) return toast.error("Informe um nome.")
+    const payPerAccount = parseCurrency(editPayPerAccount)
+    if (editIsEmployee && (!Number.isFinite(payPerAccount) || payPerAccount <= 0)) {
+      return toast.error("Informe um valor por conta válido.")
+    }
     setSaving(true)
     try {
       const res = await fetch("/api/account-groups", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId, name: editName.trim(), color: editColor }),
+        body: JSON.stringify({
+          groupId,
+          name: editName.trim(),
+          color: editColor,
+          isEmployeeGroup: editIsEmployee,
+          payPerAccount,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -292,6 +324,31 @@ export default function GroupsPage() {
                 ))}
               </div>
             </div>
+            <label className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newIsEmployee}
+                onChange={(e) => setNewIsEmployee(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-purple-600"
+              />
+              <Banknote size={15} className="text-green-400 shrink-0" />
+              <span className="text-sm text-white">Funcionário de criar contas</span>
+            </label>
+            {newIsEmployee && (
+              <div>
+                <label className="text-xs text-gray-400 mb-1.5 block">Valor por conta (R$)</label>
+                <input
+                  value={newPayPerAccount}
+                  onChange={(e) => setNewPayPerAccount(e.target.value)}
+                  placeholder="2,00"
+                  inputMode="decimal"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                />
+                <p className="mt-1.5 text-[11px] text-gray-600">
+                  Cada conta adicionada nesta pasta soma esse valor no dia, em Pagamentos.
+                </p>
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={createGroup} disabled={saving} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -348,6 +405,12 @@ export default function GroupsPage() {
                       <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: group.color || "#7C3AED" }} />
                       <h2 className="font-semibold text-white">{group.name}</h2>
                       <span className="text-xs text-gray-500">{group.members.length} conta(s)</span>
+                      {group.isEmployeeGroup && (
+                        <span className="flex items-center gap-1 rounded-full border border-green-500/25 bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-300">
+                          <Banknote size={11} />
+                          R$ {group.payPerAccount.toFixed(2).replace(".", ",")}/conta
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -364,7 +427,13 @@ export default function GroupsPage() {
                     ) : (
                       <>
                         <button
-                          onClick={() => { setEditingId(group.id); setEditName(group.name); setEditColor(group.color || COLORS[0].value) }}
+                          onClick={() => {
+                            setEditingId(group.id)
+                            setEditName(group.name)
+                            setEditColor(group.color || COLORS[0].value)
+                            setEditIsEmployee(group.isEmployeeGroup)
+                            setEditPayPerAccount(group.payPerAccount.toFixed(2).replace(".", ","))
+                          }}
                           className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg"
                         >
                           <Pencil size={14} />
@@ -376,6 +445,33 @@ export default function GroupsPage() {
                     )}
                   </div>
                 </div>
+
+                {isEditing && (
+                  <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editIsEmployee}
+                        onChange={(e) => setEditIsEmployee(e.target.checked)}
+                        className="h-4 w-4 rounded border-white/20 bg-white/5 accent-purple-600"
+                      />
+                      <Banknote size={15} className="text-green-400 shrink-0" />
+                      <span className="text-sm text-white">Funcionário de criar contas</span>
+                    </label>
+                    {editIsEmployee && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">R$ por conta</span>
+                        <input
+                          value={editPayPerAccount}
+                          onChange={(e) => setEditPayPerAccount(e.target.value)}
+                          placeholder="2,00"
+                          inputMode="decimal"
+                          className="w-24 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {group.stats && <GroupStatsRow stats={group.stats} />}
 
