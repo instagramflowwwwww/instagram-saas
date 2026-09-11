@@ -38,6 +38,7 @@ type InstagramAccount = {
   autoDeleteAt: string | null
   appId: string | null
   appConfigId: string | null
+  appName: string | null
   syncError: string | null
 }
 
@@ -468,9 +469,17 @@ export default function AccountsPage() {
                       <p className="text-xs text-gray-500 truncate mt-0.5">
                         {account.name || getAccountTypeLabel(account.accountType)}
                       </p>
-                      <p className="text-[10px] text-purple-400/80 mt-1 uppercase tracking-wide">
-                        {getAccountTypeLabel(account.accountType)}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        <p className="text-[10px] text-purple-400/80 uppercase tracking-wide">
+                          {getAccountTypeLabel(account.accountType)}
+                        </p>
+                        {account.appName && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+                            <Boxes size={9} />
+                            {account.appName}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 shadow-[0_0_10px_currentColor] ${

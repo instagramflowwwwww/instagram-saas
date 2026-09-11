@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       lastActiveAt: true,
       createdAt: true,
       appConfig: {
-        select: { metaAppId: true },
+        select: { metaAppId: true, name: true },
       },
     },
   })
@@ -87,6 +87,7 @@ export async function GET(request: Request) {
       createdAt: account.createdAt,
       appConfigId: account.appConfigId || null,
       appId: account.appConfig?.metaAppId || null,
+      appName: account.appConfig?.name || null,
       requiresReconnect: reconnect,
       autoDeleteAt,
       syncError: syncErrors.get(account.id) || null,

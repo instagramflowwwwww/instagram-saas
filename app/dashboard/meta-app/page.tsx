@@ -638,29 +638,13 @@ export default function MetaAppPage() {
             <div>
               <h2 className="text-white font-semibold">Conectar conta</h2>
               <p className="text-xs text-gray-500 mt-1">
-                {apps.length === 1
-                  ? `Usando ${getAppLabel(apps[0], 0)} — clique em conectar para autorizar.`
-                  : "Já vem selecionado automaticamente o App Meta com menos contas — troque abaixo se quiser forçar outro."}
+                Clique em conectar — o App Meta é escolhido sozinho, não precisa selecionar nada.
               </p>
             </div>
             <UserPlus size={20} className="text-purple-400" />
           </div>
 
-          <div className={`grid gap-3 mb-5 ${apps.length > 1 ? "grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto]"}`}>
-            {apps.length > 1 && (
-              <select
-                value={selectedAppId}
-                onChange={(e) => setSelectedAppId(e.target.value)}
-                className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500"
-              >
-                {apps.map((app, index) => (
-                  <option key={app.id} value={app.id}>
-                    {getAppLabel(app, index)} · {maskAppId(app.appId)}
-                  </option>
-                ))}
-              </select>
-            )}
-
+          <div className="grid gap-3 mb-5 grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto]">
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">@</span>
               <input
