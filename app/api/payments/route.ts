@@ -45,6 +45,9 @@ export async function GET() {
       last7: { accounts: stats.last7, amount: stats.last7 * group.payPerAccount },
       last30: { accounts: stats.last30, amount: stats.last30 * group.payPerAccount },
       series,
+      // Mapa completo dia -> contas, pra montar um calendário de qualquer mês
+      // no cliente sem precisar de uma chamada nova a cada navegação.
+      counts: Object.fromEntries(counts),
     }
   })
 

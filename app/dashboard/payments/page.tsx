@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Banknote, Loader2 } from "lucide-react"
+import { Banknote, Calendar, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import toast from "react-hot-toast"
 
 type DaySeries = { day: string; accounts: number; amount: number }
@@ -18,6 +18,7 @@ type Employee = {
   last7: { accounts: number; amount: number }
   last30: { accounts: number; amount: number }
   series: DaySeries[]
+  counts: Record<string, number>
 }
 
 function formatBRL(value: number) {
@@ -29,10 +30,48 @@ function formatDay(day: string) {
   return `${date}/${month}`
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, "0")
+}
+
+const WEEKDAYS = ["D", "S", "T", "Q", "Q", "S", "S"]
+
+function buildCalendarCells(month: Date, counts: Record<string, number>, payPerAccount: number) {
+  const year = month.getFullYear()
+  const monthIndex = month.getMonth()
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
+  const firstWeekday = new Date(year, monthIndex, 1).getDay()
+
+  const cells: ({ key: string; day: number; accounts: number; amount: number } | null)[] = []
+  for (let i = 0; i < firstWeekday; i += 1) cells.push(null)
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = `${year}-${pad(monthIndex + 1)}-${pad(day)}`
+    const accounts = counts[key] || 0
+    cells.push({ key, day, accounts, amount: accounts * payPerAccount })
+  }
+  return cells
+}
+
 export default function PaymentsPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [totals, setTotals] = useState({ today: 0, last7: 0, last30: 0 })
   const [loading, setLoading] = useState(true)
+  const [openCalendar, setOpenCalendar] = useState<Record<string, boolean>>({})
+  const [calendarMonth, setCalendarMonth] = useState<Record<string, Date>>({})
+
+  function toggleCalendar(employeeId: string) {
+    setOpenCalendar((current) => ({ ...current, [employeeId]: !current[employeeId] }))
+    setCalendarMonth((current) =>
+      current[employeeId] ? current : { ...current, [employeeId]: new Date() }
+    )
+  }
+
+  function shiftMonth(employeeId: string, delta: number) {
+    setCalendarMonth((current) => {
+      const base = current[employeeId] || new Date()
+      return { ...current, [employeeId]: new Date(base.getFullYear(), base.getMonth() + delta, 1) }
+    })
+  }
 
   useEffect(() => {
     fetch("/api/payments", { cache: "no-store" })
@@ -154,6 +193,72 @@ export default function PaymentsPage() {
                   ))}
                 </div>
               </div>
+
+              <button
+                onClick={() => toggleCalendar(employee.id)}
+                className="mt-3 flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300"
+              >
+                <Calendar size={13} />
+                {openCalendar[employee.id] ? "Ocultar calendário" : "Ver calendário"}
+              </button>
+
+              {openCalendar[employee.id] && (
+                <div className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <button
+                      onClick={() => shiftMonth(employee.id, -1)}
+                      className="rounded-lg p-1.5 text-gray-500 hover:bg-white/5 hover:text-white"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <p className="text-sm font-medium capitalize text-white">
+                      {(calendarMonth[employee.id] || new Date()).toLocaleDateString("pt-BR", {
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </p>
+                    <button
+                      onClick={() => shiftMonth(employee.id, 1)}
+                      className="rounded-lg p-1.5 text-gray-500 hover:bg-white/5 hover:text-white"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                  <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] text-gray-600">
+                    {WEEKDAYS.map((label, index) => (
+                      <span key={index}>{label}</span>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {buildCalendarCells(
+                      calendarMonth[employee.id] || new Date(),
+                      employee.counts,
+                      employee.payPerAccount
+                    ).map((cell, index) =>
+                      cell === null ? (
+                        <div key={`empty-${index}`} />
+                      ) : (
+                        <div
+                          key={cell.key}
+                          title={
+                            cell.accounts > 0
+                              ? `${cell.accounts} conta(s) · ${formatBRL(cell.amount)}`
+                              : undefined
+                          }
+                          className={`flex aspect-square flex-col items-center justify-center rounded-lg border text-[11px] ${
+                            cell.accounts > 0
+                              ? "border-green-500/25 bg-green-500/10 text-green-300"
+                              : "border-white/[0.05] bg-white/[0.015] text-gray-600"
+                          }`}
+                        >
+                          <span>{cell.day}</span>
+                          {cell.accounts > 0 && <span className="text-[9px]">{cell.accounts}</span>}
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
