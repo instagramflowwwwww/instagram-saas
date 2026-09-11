@@ -37,6 +37,7 @@ type InstagramAccount = {
   lastActiveAt: string
   autoDeleteAt: string | null
   appId: string | null
+  appConfigId: string | null
   syncError: string | null
 }
 
@@ -129,6 +130,41 @@ export default function AccountsPage() {
   }
 
   useEffect(() => { fetchAccounts() }, [])
+
+  // Escuta o mesmo aviso que a tela de Apps Meta usa quando o popup de OAuth
+  // termina, pra recarregar a lista sem precisar sair desta página.
+  useEffect(() => {
+    if (!("BroadcastChannel" in window)) return
+    const channel = new BroadcastChannel("instagram-meta-oauth")
+    const handleMessage = () => { void fetchAccounts() }
+    channel.addEventListener("message", handleMessage)
+    return () => channel.close()
+  }, [])
+
+  const reconnectAccount = (account: InstagramAccount) => {
+    if (!account.appConfigId) {
+      toast.error("Esta conta não tem um App Meta vinculado. Reconecte pela tela de Apps Meta.")
+      return
+    }
+
+    // Sempre o app que já é dela — sem selecionar nada, ela encontra sozinha.
+    const params = new URLSearchParams({ appConfigId: account.appConfigId, username: account.username })
+    const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
+    const authTab = window.open("about:blank", "_blank")
+
+    if (!authTab) {
+      toast.error("O navegador bloqueou a nova aba. A autorização será aberta nesta aba.")
+      window.location.href = sameTabUrl
+      return
+    }
+
+    try { authTab.opener = null } catch { }
+
+    params.set("popup", "1")
+    const popupUrl = new URL(`/api/instagram/oauth/start?${params.toString()}`, window.location.origin).toString()
+
+    try { authTab.location.href = popupUrl } catch { authTab.close(); window.location.href = sameTabUrl }
+  }
 
   const fetchGroups = async () => {
     try {
@@ -574,13 +610,13 @@ export default function AccountsPage() {
                       Conectada
                     </span>
                   ) : (
-                    <Link
-                      href="/dashboard/meta-app"
+                    <button
+                      onClick={() => reconnectAccount(account)}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-medium py-2.5 rounded-lg hover:bg-purple-500/15"
                     >
                       <RefreshCw size={13} />
                       Reconectar
-                    </Link>
+                    </button>
                   )}
                   <button
                     onClick={() => removeAccount(account.id)}

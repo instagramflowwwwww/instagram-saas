@@ -395,8 +395,15 @@ export default function MetaAppPage() {
     if (!selectedAppId) { toast.error("Escolha qual App Meta será usado nesta conta."); return }
     if (!canConnect) { toast.error("Informe um usuário do Instagram válido."); return }
 
+    // Se o usuário digitado já é uma conta conectada (reconexão), usa o app
+    // que ela já está vinculada — não o de menos contas, que a moveria de app à toa.
+    const existingAccount = normalizedUsername
+      ? accounts.find((account) => account.username.toLowerCase() === normalizedUsername)
+      : null
+    const appConfigIdToUse = existingAccount?.appConfigId || selectedAppId
+
     // Username opcional
-    const params = new URLSearchParams({ appConfigId: selectedAppId })
+    const params = new URLSearchParams({ appConfigId: appConfigIdToUse })
     if (normalizedUsername) params.set("username", normalizedUsername)
 
     const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
