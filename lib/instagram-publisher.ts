@@ -424,6 +424,16 @@ async function publishToAccount(params: {
     try {
       const token = await refreshAccessTokenIfNeeded(params.account)
       await ensurePublishingQuota(params.account, token)
+      // Diagnóstico temporário: confirmar o que realmente chega aqui antes de
+      // criar o contêiner, já que o usuário reporta legenda vazia no post
+      // publicado mesmo com a legenda salva certa no sistema.
+      console.info("[publish-debug] caption check", {
+        postId: params.post.id,
+        accountId: params.account.id,
+        publicationType: params.post.publicationType,
+        captionLength: params.caption?.length || 0,
+        captionPreview: params.caption?.slice(0, 60) || "",
+      })
       const containerId = await createContainer({
         account: params.account,
         token,
