@@ -110,10 +110,50 @@ export async function markInstagramAccountDisconnected(accountId: string) {
   })
 }
 
+const CHRONIC_FAILURE_STREAK = 3
+
+// Cobre publicações que falham com um erro que a Meta devolve num formato
+// que os classificadores de cima não reconhecem (mensagem/código novo,
+// diferente do que já vimos). Em vez de depender de prever cada texto de
+// erro possível, se as últimas N tentativas de publicação de uma conta
+// falharam todas seguidas, sem nenhum sucesso no meio, tratamos como
+// desconectada — não tem outra explicação plausível pra isso acontecer.
+async function flagChronicallyFailingAccounts(userWhere: { userId?: string }) {
+  const accounts = await prisma.instagramAccount.findMany({
+    where: {
+      ...userWhere,
+      connectionType: INSTAGRAM_OFFICIAL_CONNECTION,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      postLogs: {
+        orderBy: { createdAt: "desc" },
+        take: CHRONIC_FAILURE_STREAK,
+        select: { status: true },
+      },
+    },
+  })
+
+  const chronicallyFailing = accounts.filter(
+    (account) =>
+      account.postLogs.length === CHRONIC_FAILURE_STREAK &&
+      account.postLogs.every((log) => log.status === "error")
+  )
+
+  await Promise.all(
+    chronicallyFailing.map((account) => markInstagramAccountDisconnected(account.id))
+  )
+
+  return chronicallyFailing.length
+}
+
 export async function maintainInstagramAccounts(userId?: string) {
   const now = new Date()
   const cutoff = new Date(now.getTime() - INSTAGRAM_RECONNECT_GRACE_MS)
   const userWhere = userId ? { userId } : {}
+
+  const chronicallyDisconnected = await flagChronicallyFailingAccounts(userWhere)
 
   // Só remove contas que já entraram no estado explícito de desconexão.
   // Contas antigas/inativas recebem primeiro uma janela completa de 24 horas.
@@ -148,6 +188,7 @@ export async function maintainInstagramAccounts(userId?: string) {
   })
 
   return {
+    chronicallyDisconnected,
     deleted: deleted.count,
     disconnected: disconnected.count,
   }
