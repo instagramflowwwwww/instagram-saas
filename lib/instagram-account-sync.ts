@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client"
 import {
   isInstagramDisconnectError,
+  isInstagramPermanentPublishError,
   maintainInstagramAccounts,
   markInstagramAccountDisconnected,
 } from "@/lib/instagram-account-lifecycle"
@@ -152,7 +153,11 @@ export async function syncInstagramAccountProfiles(
           error: null,
         }
       } catch (error) {
-        const disconnected = isInstagramDisconnectError(error)
+        // Token vencido é só uma parte dos casos permanentes — restrição de
+        // conta, API desativada pela Meta etc. também significam que a conta
+        // não vai voltar a funcionar sozinha, então contam como desconectada.
+        const disconnected =
+          isInstagramDisconnectError(error) || isInstagramPermanentPublishError(error)
 
         if (disconnected) {
           await markInstagramAccountDisconnected(account.id)
