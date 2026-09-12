@@ -42,6 +42,13 @@ type InstagramAccount = {
   requiresReconnect: boolean
 }
 
+type AccountGroup = {
+  id: string
+  name: string
+  color: string | null
+  members: { instagramAccountId: string }[]
+}
+
 type CaptionDraft = {
   caption: string
   hashtags: string
@@ -85,6 +92,7 @@ export default function SchedulePage() {
   const router = useRouter()
   const [media, setMedia] = useState<MediaItem[]>([])
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
+  const [groups, setGroups] = useState<AccountGroup[]>([])
   const [selectedMedia, setSelectedMedia] = useState<string[]>([])
   const [showAllMedia, setShowAllMedia] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([])
@@ -125,10 +133,15 @@ export default function SchedulePage() {
             !account.requiresReconnect
         ) as InstagramAccount[]
       }),
+      fetch("/api/account-groups", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json().catch(() => [])
+        return Array.isArray(data) ? (data as AccountGroup[]) : []
+      }),
     ])
-      .then(([library, accountList]) => {
+      .then(([library, accountList, groupList]) => {
         setMedia(library)
         setAccounts(accountList)
+        setGroups(groupList)
         setSelectedAccounts(accountList.map((account) => account.id))
         const params = new URLSearchParams(window.location.search)
         const requested = String(params.get("media") || "").split(",").filter(Boolean)
@@ -678,6 +691,35 @@ export default function SchedulePage() {
                 {selectedAccounts.length === accounts.length ? "Limpar" : "Todas"}
               </button>
             </div>
+            {groups.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {groups.map((group) => {
+                  const groupAccountIds = group.members
+                    .map((member) => member.instagramAccountId)
+                    .filter((id) => accounts.some((account) => account.id === id))
+                  if (groupAccountIds.length === 0) return null
+                  const isActive =
+                    groupAccountIds.length === selectedAccounts.length &&
+                    groupAccountIds.every((id) => selectedAccounts.includes(id))
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => setSelectedAccounts(groupAccountIds)}
+                      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        isActive
+                          ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                          : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color || "#7C3AED" }} />
+                      {group.name}
+                      <span className="text-gray-600">({groupAccountIds.length})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div className="space-y-2">
               {accounts.map((account) => {
                 const selected = selectedAccounts.includes(account.id)
