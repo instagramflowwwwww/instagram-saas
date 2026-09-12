@@ -31,6 +31,12 @@ type MediaItem = {
   createdAt: string
   caption?: string | null
   hashtags?: string | null
+  folderId?: string | null
+}
+
+type MediaFolder = {
+  id: string
+  name: string
 }
 
 type InstagramAccount = {
@@ -93,6 +99,8 @@ export default function SchedulePage() {
   const [media, setMedia] = useState<MediaItem[]>([])
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
   const [groups, setGroups] = useState<AccountGroup[]>([])
+  const [mediaFolders, setMediaFolders] = useState<MediaFolder[]>([])
+  const [randomSelectedMedia, setRandomSelectedMedia] = useState<string[]>([])
   const [selectedMedia, setSelectedMedia] = useState<string[]>([])
   const [showAllMedia, setShowAllMedia] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([])
@@ -137,11 +145,16 @@ export default function SchedulePage() {
         const data = await response.json().catch(() => [])
         return Array.isArray(data) ? (data as AccountGroup[]) : []
       }),
+      fetch("/api/library/folders", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json().catch(() => [])
+        return Array.isArray(data) ? (data as MediaFolder[]) : []
+      }),
     ])
-      .then(([library, accountList, groupList]) => {
+      .then(([library, accountList, groupList, folderList]) => {
         setMedia(library)
         setAccounts(accountList)
         setGroups(groupList)
+        setMediaFolders(folderList)
         setSelectedAccounts(accountList.map((account) => account.id))
         const params = new URLSearchParams(window.location.search)
         const requested = String(params.get("media") || "").split(",").filter(Boolean)
@@ -195,10 +208,19 @@ export default function SchedulePage() {
     }
   }, [sharedCover, videoItems])
 
-  const availableVideos = useMemo(
-    () => media.filter((item) => item.type === "video").length,
-    [media]
+  const allVideos = useMemo(() => media.filter((item) => item.type === "video"), [media])
+
+  // Sem seleção, sorteia entre todos os vídeos da biblioteca — selecionar
+  // alguns (à mão ou por pasta) restringe o sorteio só a eles.
+  const randomVideoPool = useMemo(
+    () =>
+      randomSelectedMedia.length > 0
+        ? allVideos.filter((item) => randomSelectedMedia.includes(item.id))
+        : allVideos,
+    [allVideos, randomSelectedMedia]
   )
+
+  const availableVideos = randomVideoPool.length
 
   const timeline = useMemo(() => {
     const first = new Date(startAt)
@@ -288,8 +310,8 @@ export default function SchedulePage() {
   const submitRandom = async () => {
     if (selectedAccounts.length === 0) return toast.error("Selecione pelo menos uma conta.")
     if (!startAt) return toast.error("Informe quando a sequência deve começar.")
-    const videos = media.filter((m) => m.type === "video")
-    if (videos.length === 0) return toast.error("Nenhum vídeo na biblioteca para sortear.")
+    const videos = randomVideoPool
+    if (videos.length === 0) return toast.error("Nenhum vídeo selecionado para sortear.")
     if (randomCount * selectedAccounts.length > 3000) {
       return toast.error(
         `Isso daria ${randomCount * selectedAccounts.length} publicações. O limite por automação é 3000 — reduza as rodadas ou as contas.`
@@ -474,7 +496,8 @@ export default function SchedulePage() {
               className="w-32 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:border-green-500 focus:outline-none"
             />
             <p className="mt-1 text-xs text-gray-600">
-              {availableVideos} vídeo(s) na biblioteca · {selectedAccounts.length} conta(s) selecionada(s)
+              {availableVideos} vídeo(s) {randomSelectedMedia.length > 0 ? "selecionado(s)" : "na biblioteca"} ·{" "}
+              {selectedAccounts.length} conta(s) selecionada(s)
             </p>
             {selectedAccounts.length > 0 && (
               <p className="mt-1 text-xs text-gray-500">
@@ -488,6 +511,79 @@ export default function SchedulePage() {
                 Dentro da mesma rodada, alguns vídeos vão se repetir em mais de uma conta — mas de forma
                 equilibrada, sem repetir nenhum antes que todos já tenham sido usados uma vez.
               </p>
+            )}
+          </div>
+
+          <div className="mt-5 border-t border-white/10 pt-4">
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-xs text-gray-400">Vídeos pro sorteio</label>
+              <button
+                onClick={() => setRandomSelectedMedia(randomSelectedMedia.length > 0 ? [] : allVideos.map((v) => v.id))}
+                className="text-xs text-purple-400 hover:text-purple-300"
+              >
+                {randomSelectedMedia.length > 0 ? "Usar todos" : "Selecionar específicos"}
+              </button>
+            </div>
+
+            {mediaFolders.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {mediaFolders.map((folder) => {
+                  const folderVideoIds = allVideos
+                    .filter((item) => item.folderId === folder.id)
+                    .map((item) => item.id)
+                  if (folderVideoIds.length === 0) return null
+                  const isActive =
+                    folderVideoIds.length === randomSelectedMedia.length &&
+                    folderVideoIds.every((id) => randomSelectedMedia.includes(id))
+                  return (
+                    <button
+                      key={folder.id}
+                      type="button"
+                      onClick={() => setRandomSelectedMedia(folderVideoIds)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        isActive
+                          ? "border-green-500/40 bg-green-500/15 text-green-300"
+                          : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      {folder.name} <span className="text-gray-600">({folderVideoIds.length})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {randomSelectedMedia.length > 0 && (
+              <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+                {allVideos.map((item) => {
+                  const selected = randomSelectedMedia.includes(item.id)
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() =>
+                        setRandomSelectedMedia((current) =>
+                          current.includes(item.id)
+                            ? current.filter((id) => id !== item.id)
+                            : [...current, item.id]
+                        )
+                      }
+                      className={`relative overflow-hidden rounded-lg border ${
+                        selected ? "border-green-500/60" : "border-white/[0.07] hover:border-white/20"
+                      }`}
+                    >
+                      <div className="aspect-square bg-black">
+                        <video src={item.url} className="h-full w-full object-cover" muted preload="metadata" />
+                      </div>
+                      {selected && (
+                        <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-white">
+                          <CheckCircle2 size={12} />
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -619,11 +715,11 @@ export default function SchedulePage() {
                   Cada vídeo publica com a legenda salva nele mesmo, na Biblioteca — nada digitado
                   aqui. Um vídeo sem legenda salva sai sem legenda.
                 </p>
-                {(randomMode ? media.filter((item) => item.type === "video") : selectedItems).length === 0 ? (
+                {(randomMode ? randomVideoPool : selectedItems).length === 0 ? (
                   <p className="text-sm text-gray-500">Selecione as mídias primeiro.</p>
                 ) : (
                   <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-xl border border-white/[0.07] p-2">
-                    {(randomMode ? media.filter((item) => item.type === "video") : selectedItems).map((item) => {
+                    {(randomMode ? randomVideoPool : selectedItems).map((item) => {
                       const hasCaption = Boolean(item.caption?.trim() || item.hashtags?.trim())
                       return (
                         <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg px-2.5 py-1.5">
