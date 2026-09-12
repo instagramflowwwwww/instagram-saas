@@ -568,7 +568,7 @@ export default function MetaAppPage() {
             <h2 className="text-white font-semibold">Seus Apps Meta</h2>
             <p className="text-xs text-gray-500 mt-1">
               Cada conta fica vinculada ao App Meta usado durante o OAuth. Ao conectar, o app com menos
-              contas é escolhido automaticamente — use "Usar para conectar" só pra forçar um específico.
+              contas é escolhido automaticamente — não precisa selecionar nada aqui.
             </p>
           </div>
 
@@ -579,56 +579,40 @@ export default function MetaAppPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {apps.map((app, index) => {
-                const selected = app.id === selectedAppId
-                return (
-                  <div key={app.id} className={`rounded-xl border p-4 transition-colors ${selected ? "border-purple-500/40 bg-purple-500/[0.06]" : "border-white/[0.07] bg-white/[0.025]"}`}>
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-semibold flex items-center justify-center shrink-0">
-                          {index + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{getAppLabel(app, index)}</p>
-                          <p className="text-xs text-gray-500 font-mono">{maskAppId(app.appId)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => editApp(app)} className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg">
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => deleteApp(app)} disabled={deletingId === app.id} className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50">
-                          {deletingId === app.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                        </button>
+              {apps.map((app, index) => (
+                <div key={app.id} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 text-xs font-semibold flex items-center justify-center shrink-0">
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{getAppLabel(app, index)}</p>
+                        <p className="text-xs text-gray-500 font-mono">{maskAppId(app.appId)}</p>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-2 gap-3 text-xs mb-4">
-                      <div>
-                        <p className="text-gray-600">Contas</p>
-                        <p className="text-white font-medium mt-1">{app.accountsCount}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Última validação</p>
-                        <p className="text-gray-300 mt-1">{formatDate(app.lastValidatedAt)}</p>
-                      </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => editApp(app)} className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg">
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => deleteApp(app)} disabled={deletingId === app.id} className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50">
+                        {deletingId === app.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAppId(app.id)}
-                      className={`w-full inline-flex items-center justify-center gap-2 text-xs font-semibold py-2.5 rounded-lg border ${
-                        selected
-                          ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
-                          : "bg-white/[0.03] border-white/10 text-gray-400 hover:text-white hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      {selected ? <Check size={13} /> : <PlugZap size={13} />}
-                      {selected ? "Selecionado" : "Usar para conectar"}
-                    </button>
                   </div>
-                )
-              })}
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="text-gray-600">Contas</p>
+                      <p className="text-white font-medium mt-1">{app.accountsCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Última validação</p>
+                      <p className="text-gray-300 mt-1">{formatDate(app.lastValidatedAt)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
