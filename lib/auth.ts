@@ -70,6 +70,9 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: "jwt",
+    // Fica logado por 180 dias sem precisar entrar de novo, em vez do
+    // padrão de 30 dias do NextAuth.
+    maxAge: 180 * 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
