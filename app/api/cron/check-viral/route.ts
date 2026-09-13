@@ -13,7 +13,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 280
 
-const VIRAL_VIEWS_THRESHOLD = 50_000
+const VIRAL_VIEWS_THRESHOLD = 100_000
 // Vídeo com mais de 14 dias não vale mais a pena checar toda hora: se ainda
 // não bombou até aqui, é bem improvável que bombe de repente amanhã.
 const LOOKBACK_DAYS = 14
