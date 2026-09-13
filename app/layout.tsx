@@ -14,6 +14,11 @@ export const metadata: Metadata = {
     shortcut: "/logo/logosfundo.png",
     apple: "/icons/icon-192.png",
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "InstaFlow",
+  },
 }
 
 export const viewport = {
