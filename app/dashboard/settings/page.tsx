@@ -69,8 +69,8 @@ function NotificationsCard() {
       </div>
       <p className="text-sm text-gray-500 mb-5">
         Receba um aviso neste aparelho quando um vídeo passar de 100 mil visualizações, e um
-        resumo com o total de todas as contas às 08h, 12h, 14h, 18h e 22h. No iPhone, funciona
-        depois de adicionar o InstaFlow à Tela de Início pelo Safari.
+        resumo das visualizações de hoje, somando todas as contas, às 08h, 12h, 14h, 18h e 22h.
+        No iPhone, funciona depois de adicionar o InstaFlow à Tela de Início pelo Safari.
       </p>
 
       {status === "unsupported" ? (

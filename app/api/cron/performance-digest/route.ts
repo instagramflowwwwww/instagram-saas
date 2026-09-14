@@ -46,14 +46,31 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Soma as visualizações de todas as contas do usuário de uma vez — não
-    // dá pra fazer isso com groupBy do Prisma porque o total mora no
-    // PostLog e o dono da publicação mora no Post.
+    // "Hoje" em horário de Brasília (UTC-3, fixo — sem horário de verão).
+    // 00h em Brasília é 03h UTC, então dá pra calcular sem depender do
+    // fuso horário de onde a function roda.
+    const now = new Date()
+    const brtNow = new Date(now.getTime() - 3 * 60 * 60 * 1000)
+    const todayStartUtc = new Date(
+      Date.UTC(brtNow.getUTCFullYear(), brtNow.getUTCMonth(), brtNow.getUTCDate(), 3, 0, 0, 0)
+    )
+    const tomorrowStartUtc = new Date(todayStartUtc.getTime() + 24 * 60 * 60 * 1000)
+
+    // Soma as visualizações de hoje de todas as contas do usuário de uma vez
+    // — não dá pra fazer isso com groupBy do Prisma porque o total mora no
+    // PostLog e o dono da publicação mora no Post. Mesmo critério de "Hoje"
+    // já usado na tela de Performance: post (não story), log de sucesso,
+    // criado dentro do dia de hoje.
     const totals = await prisma.$queryRaw<{ userId: string; totalViews: bigint | null }[]>`
       SELECT p."userId" as "userId", SUM(pl."performanceViewsCount") as "totalViews"
       FROM "PostLog" pl
       JOIN "Post" p ON p.id = pl."postId"
-      WHERE pl.status = 'success' AND pl."performanceViewsCount" IS NOT NULL
+      WHERE pl.status = 'success'
+        AND pl."mediaId" IS NOT NULL
+        AND pl."performanceViewsCount" IS NOT NULL
+        AND p."publicationType" = 'post'
+        AND pl."createdAt" >= ${todayStartUtc}
+        AND pl."createdAt" < ${tomorrowStartUtc}
       GROUP BY p."userId"
     `
 
@@ -64,8 +81,8 @@ export async function POST(request: Request) {
 
       try {
         const result = await sendPushToUser(row.userId, {
-          title: "📊 Performance das suas contas",
-          body: `${formatCompactViews(totalViews)} visualizações no total, somando todas as contas.`,
+          title: "📊 Performance de hoje",
+          body: `${formatCompactViews(totalViews)} visualizações hoje, somando todas as contas.`,
           url: "/dashboard/performance",
           tag: "performance-digest",
         })
