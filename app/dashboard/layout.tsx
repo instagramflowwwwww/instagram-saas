@@ -110,7 +110,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <button
           onClick={() => setMobileOpen(false)}
-          className="md:hidden text-gray-500 hover:text-white"
+          className="text-gray-500 hover:text-white"
         >
           <X size={20} />
         </button>
@@ -171,28 +171,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex">
-      {/* Sidebar desktop */}
-      <div className="hidden md:flex w-60 fixed h-full flex-col">
-        <Sidebar />
-      </div>
-
-      {/* Overlay mobile */}
+      {/* Overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          className="fixed inset-0 bg-black/60 z-40"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Sidebar mobile */}
-      <div className={`fixed top-0 left-0 h-full w-72 z-50 md:hidden transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      {/* Menu — gaveta que abre por cima do conteúdo, em qualquer tamanho de tela */}
+      <div className={`fixed top-0 left-0 h-full w-72 z-50 transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <Sidebar />
       </div>
 
       {/* Conteúdo principal */}
-      <main className="flex-1 md:ml-60 flex flex-col min-h-screen">
-        {/* Header mobile */}
-        <div className="md:hidden flex items-center justify-between px-4 py-3 bg-[#0d0d0d] border-b border-white/5 sticky top-0 z-30">
+      <main className="flex-1 flex flex-col min-h-screen">
+        {/* Header com o hambúrguer */}
+        <div className="flex items-center justify-between px-4 py-3 bg-[#0d0d0d] border-b border-white/5 sticky top-0 z-30 md:px-6">
           <button
             onClick={() => setMobileOpen(true)}
             className="text-gray-400 hover:text-white p-1"
