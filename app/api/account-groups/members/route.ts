@@ -24,15 +24,30 @@ export async function POST(request: Request) {
 
   const validAccounts = await prisma.instagramAccount.findMany({
     where: { id: { in: accountIds }, userId: session.user.id },
-    select: { id: true },
+    select: { id: true, username: true },
   })
 
   const validIds = validAccounts.map((a) => a.id)
+  const addedAt = new Date()
 
   await prisma.accountGroupMember.createMany({
-    data: validIds.map((instagramAccountId) => ({ groupId, instagramAccountId })),
+    data: validIds.map((instagramAccountId) => ({ groupId, instagramAccountId, createdAt: addedAt })),
     skipDuplicates: true,
   })
+
+  // Pra pasta de funcionário, guarda também um retrato permanente da entrada
+  // — não referencia a conta, então o pagamento continua contando mesmo se
+  // ela cair e for apagada depois.
+  if (group.isEmployeeGroup) {
+    await prisma.employeeAccountLog.createMany({
+      data: validAccounts.map((account) => ({
+        groupId,
+        username: account.username,
+        addedAt,
+      })),
+      skipDuplicates: true,
+    })
+  }
 
   return NextResponse.json({ success: true, added: validIds.length })
 }

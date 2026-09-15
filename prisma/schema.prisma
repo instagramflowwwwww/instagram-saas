@@ -109,6 +109,7 @@ model AccountGroup {
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   members         AccountGroupMember[]
   paidDays        EmployeePaidDay[]
+  employeeLogs    EmployeeAccountLog[]
 
   @@index([userId])
   @@index([userId, createdAt])
@@ -126,6 +127,22 @@ model EmployeePaidDay {
 
   @@unique([groupId, day])
   @@index([groupId])
+}
+
+// Registro permanente de "essa conta entrou nessa pasta nesse dia", pra
+// pagamento. Guarda o username como retrato do momento em vez de referenciar
+// InstagramAccount, então continua contando mesmo se a conta cair e for
+// apagada depois — o funcionário já fez o trabalho, o pagamento não some.
+model EmployeeAccountLog {
+  id       String       @id @default(cuid())
+  groupId  String
+  username String
+  addedAt  DateTime
+  group    AccountGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, username, addedAt])
+  @@index([groupId])
+  @@index([groupId, addedAt])
 }
 
 model AccountGroupMember {

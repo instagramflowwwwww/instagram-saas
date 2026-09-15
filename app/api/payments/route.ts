@@ -18,16 +18,53 @@ export async function GET() {
     where: { userId: session.user.id, isEmployeeGroup: true },
     orderBy: { createdAt: "asc" },
     include: {
-      members: { select: { createdAt: true } },
+      members: { select: { createdAt: true, instagramAccount: { select: { username: true } } } },
+      employeeLogs: { select: { username: true, addedAt: true } },
       paidDays: { select: { day: true } },
     },
   })
 
-  // Um pagamento por conta que entrou na pasta: a data de entrada
-  // (AccountGroupMember.createdAt) é o dia que o funcionário criou aquela
-  // conta, então é isso que vira "quanto pagar nesse dia".
+  // Contas que ainda existem mas nunca ganharam um retrato permanente
+  // (criadas antes desse registro existir) — grava agora, pra não perder a
+  // contagem quando a conta cair e for apagada depois.
+  await Promise.all(
+    groups
+      .filter((group) => group.members.length > 0)
+      .map((group) =>
+        prisma.employeeAccountLog.createMany({
+          data: group.members.map((member) => ({
+            groupId: group.id,
+            username: member.instagramAccount.username,
+            addedAt: member.createdAt,
+          })),
+          skipDuplicates: true,
+        })
+      )
+  )
+
+  // Um pagamento por conta que já entrou na pasta algum dia — usa o retrato
+  // permanente (EmployeeAccountLog), que continua contando mesmo depois que
+  // a conta cai e é apagada. As contas ainda vivas entram por aqui também,
+  // deduplicadas com o retrato que acabou de ser gravado acima.
   const employees = groups.map((group) => {
-    const counts = countByDay(group.members.map((member) => member.createdAt))
+    const seen = new Set<string>()
+    const dates: Date[] = []
+    for (const log of group.employeeLogs) {
+      const key = `${log.username}|${log.addedAt.getTime()}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        dates.push(log.addedAt)
+      }
+    }
+    for (const member of group.members) {
+      const key = `${member.instagramAccount.username}|${member.createdAt.getTime()}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        dates.push(member.createdAt)
+      }
+    }
+
+    const counts = countByDay(dates)
     const stats = windowStats(counts)
     const series = recentSeries(counts, SERIES_DAYS).map((entry) => ({
       day: entry.day,
@@ -40,7 +77,7 @@ export async function GET() {
       name: group.name,
       color: group.color,
       payPerAccount: group.payPerAccount,
-      totalAccounts: group.members.length,
+      totalAccounts: dates.length,
       today: { accounts: stats.today, amount: stats.today * group.payPerAccount },
       yesterday: { accounts: stats.yesterday, amount: stats.yesterday * group.payPerAccount },
       last7: { accounts: stats.last7, amount: stats.last7 * group.payPerAccount },
