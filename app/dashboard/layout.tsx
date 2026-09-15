@@ -58,6 +58,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [desktopExpanded, setDesktopExpanded] = useState(false)
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -97,31 +98,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ]
     : navGroups
 
-  const Sidebar = () => (
-    <aside className="flex flex-col h-full bg-[#0d0d0d] border-r border-white/5">
-      <div className="p-6 border-b border-white/5 flex items-center justify-between">
+  const Sidebar = ({ collapsed = false, onClose }: { collapsed?: boolean; onClose?: () => void }) => (
+    <aside className="flex h-full flex-col overflow-hidden bg-[#0d0d0d] border-r border-white/5">
+      <div className={`flex items-center border-b border-white/5 ${collapsed ? "justify-center p-4" : "justify-between p-6"}`}>
         <div className="flex items-center gap-3">
           <img
             src="/logo/logosfundo.png"
             alt="Logo InstaFlow"
-            className="h-8 w-8 rounded-lg object-contain"
+            className="h-8 w-8 shrink-0 rounded-lg object-contain"
           />
-          <span className="font-bold text-white">InstaFlow</span>
+          {!collapsed && <span className="whitespace-nowrap font-bold text-white">InstaFlow</span>}
         </div>
-        <button
-          onClick={() => setMobileOpen(false)}
-          className="text-gray-500 hover:text-white"
-        >
-          <X size={20} />
-        </button>
+        {!collapsed && onClose && (
+          <button onClick={onClose} className="text-gray-500 hover:text-white">
+            <X size={20} />
+          </button>
+        )}
       </div>
 
-      <nav className="flex-1 p-4 space-y-5 overflow-y-auto">
+      <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden p-4">
         {groups.map((group) => (
           <div key={group.label}>
-            <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider px-3 mb-2">
-              {group.label}
-            </p>
+            {!collapsed && (
+              <p className="mb-2 whitespace-nowrap px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+                {group.label}
+              </p>
+            )}
             <div className="space-y-1">
               {group.items.map((item) => {
                 const active = pathname === item.href
@@ -129,14 +131,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    title={collapsed ? item.label : undefined}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+                      collapsed ? "justify-center" : ""
+                    } ${
                       active
                         ? "bg-purple-500/15 text-purple-400"
-                        : "text-gray-500 hover:text-gray-200 hover:bg-white/5"
+                        : "text-gray-500 hover:bg-white/5 hover:text-gray-200"
                     }`}
                   >
-                    <item.icon size={16} />
-                    {item.label}
+                    <item.icon size={16} className="shrink-0" />
+                    {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
                   </Link>
                 )
               })}
@@ -145,25 +150,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ))}
       </nav>
 
-      <div className="p-4 border-t border-white/5">
-        <div className="flex items-center gap-3 mb-3">
+      <div className={`border-t border-white/5 ${collapsed ? "p-3" : "p-4"}`}>
+        <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : "mb-3"}`}>
           {session?.user?.image && (
-            <img src={session.user.image} alt="" className="w-8 h-8 rounded-full" />
+            <img src={session.user.image} alt="" className="h-8 w-8 shrink-0 rounded-full" />
           )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{session?.user?.name}</p>
-            <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{session?.user?.name}</p>
+              <p className="truncate text-xs text-gray-500">{session?.user?.email}</p>
+            </div>
+          )}
         </div>
         <button
           onClick={() => {
             toast.success("Sessão encerrada.")
             void signOut({ callbackUrl: "/login" })
           }}
-          className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+          title={collapsed ? "Sair" : undefined}
+          className={`flex items-center gap-2 text-xs text-gray-500 transition-colors hover:text-gray-300 ${
+            collapsed ? "mt-3 w-full justify-center" : ""
+          }`}
         >
           <LogOut size={13} />
-          Sair
+          {!collapsed && <span className="whitespace-nowrap">Sair</span>}
         </button>
       </div>
     </aside>
@@ -171,23 +181,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex">
-      {/* Overlay */}
+      {/* Overlay mobile */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-40"
+          className="fixed inset-0 bg-black/60 z-40 md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Menu — gaveta que abre por cima do conteúdo, em qualquer tamanho de tela */}
-      <div className={`fixed top-0 left-0 h-full w-72 z-50 transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <Sidebar />
+      {/* Menu mobile — gaveta que só abre com o toque no hambúrguer */}
+      <div className={`fixed top-0 left-0 h-full w-72 z-50 md:hidden transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <Sidebar onClose={() => setMobileOpen(false)} />
+      </div>
+
+      {/* Menu desktop — trilho fino que expande ao passar o mouse por cima */}
+      <div
+        onMouseEnter={() => setDesktopExpanded(true)}
+        onMouseLeave={() => setDesktopExpanded(false)}
+        className={`fixed top-0 left-0 z-40 hidden h-full transition-all duration-200 md:block ${
+          desktopExpanded ? "w-60" : "w-16"
+        }`}
+      >
+        <Sidebar collapsed={!desktopExpanded} />
       </div>
 
       {/* Conteúdo principal */}
       <main className="flex-1 flex flex-col min-h-screen">
-        {/* Header com o hambúrguer */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#0d0d0d] border-b border-white/5 sticky top-0 z-30 md:px-6">
+        {/* Header mobile com o hambúrguer */}
+        <div className="flex items-center justify-between px-4 py-3 bg-[#0d0d0d] border-b border-white/5 sticky top-0 z-30 md:hidden">
           <button
             onClick={() => setMobileOpen(true)}
             className="text-gray-400 hover:text-white p-1"
@@ -205,7 +226,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="w-8" />
         </div>
 
-        <div className="flex-1 p-4 md:p-8">
+        <div className="flex-1 p-4 md:p-8 md:ml-16">
           {children}
         </div>
       </main>
