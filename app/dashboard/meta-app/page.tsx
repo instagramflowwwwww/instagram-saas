@@ -124,6 +124,7 @@ export default function MetaAppPage() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const handledOAuthEventRef = useRef<string | null>(null)
+  const userPickedAppRef = useRef(false)
   const [groups, setGroups] = useState<AccountGroup[]>([])
   const [folderPrompt, setFolderPrompt] = useState<{ id: string; username: string } | null>(null)
   const [savingFolderId, setSavingFolderId] = useState<string | null>(null)
@@ -161,11 +162,18 @@ export default function MetaAppPage() {
       setMetaData(appData)
       setApps(loadedApps)
       setAccounts(loadedAccounts)
-      setSelectedAppId(() => {
+      setSelectedAppId((current) => {
         if (preferredAppId && loadedApps.some((app) => app.id === preferredAppId)) return preferredAppId
+        // Depois que o usuário escolhe manualmente, essa escolha fica valendo
+        // nos recarregamentos seguintes (ex.: a aba ganhar foco de novo) —
+        // sem isso, o app "com menos contas" era recalculado e substituía a
+        // seleção da pessoa sozinho.
+        if (userPickedAppRef.current && current && loadedApps.some((app) => app.id === current)) {
+          return current
+        }
         if (loadedApps.length === 0) return ""
-        // Sempre o app com menos contas: assim dá pra só clicar em conectar,
-        // sem precisar escolher manualmente, e as contas ficam distribuídas.
+        // Sem escolha manual ainda: usa o app com menos contas, assim dá pra
+        // só clicar em conectar sem precisar selecionar nada.
         return [...loadedApps].sort((a, b) => a.accountsCount - b.accountsCount)[0].id
       })
 
@@ -616,7 +624,7 @@ export default function MetaAppPage() {
 
                     <button
                       type="button"
-                      onClick={() => setSelectedAppId(app.id)}
+                      onClick={() => { userPickedAppRef.current = true; setSelectedAppId(app.id) }}
                       className={`w-full inline-flex items-center justify-center gap-2 text-xs font-semibold py-2.5 rounded-lg border ${
                         selected
                           ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
@@ -650,7 +658,7 @@ export default function MetaAppPage() {
             {apps.length > 1 && (
               <select
                 value={selectedAppId}
-                onChange={(e) => setSelectedAppId(e.target.value)}
+                onChange={(e) => { userPickedAppRef.current = true; setSelectedAppId(e.target.value) }}
                 className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500"
               >
                 {apps.map((app, index) => (
