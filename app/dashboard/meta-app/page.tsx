@@ -770,7 +770,7 @@ export default function MetaAppPage() {
           onClick={() => setFolderPrompt(null)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111] p-5"
+            className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">

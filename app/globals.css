@@ -31,3 +31,12 @@ body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: #0a0a0a; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+/* Abaixo de 16px o Safari/iOS dá zoom na página inteira ao focar um campo —
+   os componentes usam text-sm (14px) nos inputs, então forçamos 16px só na
+   tela estreita pra não perder o zoom automático sem mudar o visual no desktop. */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}

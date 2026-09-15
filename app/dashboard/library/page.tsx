@@ -716,7 +716,7 @@ export default function LibraryPage() {
 
       {folderEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold text-white">
@@ -768,7 +768,7 @@ export default function LibraryPage() {
 
       {moveOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold text-white">Mover arquivos</h2>
@@ -831,7 +831,7 @@ export default function LibraryPage() {
           onClick={() => !captionLoading && setCaptionFor(null)}
         >
           <div
-            className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#111] p-5"
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">

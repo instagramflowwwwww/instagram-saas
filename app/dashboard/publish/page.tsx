@@ -375,8 +375,8 @@ export default function PublishPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-5 gap-6">
-        <div className="col-span-3 space-y-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-5">
+        <div className="space-y-4 md:col-span-3">
           {!randomMode && (
             <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
               <h2 className="font-semibold text-white text-sm">Conteúdo</h2>
@@ -602,7 +602,7 @@ export default function PublishPage() {
           )}
         </div>
 
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <div className="bg-[#111] border border-white/5 rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-white text-sm">Contas</h2>
