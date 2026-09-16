@@ -794,14 +794,20 @@ export default function SchedulePage() {
                     .map((member) => member.instagramAccountId)
                     .filter((id) => accounts.some((account) => account.id === id))
                   if (groupAccountIds.length === 0) return null
-                  const isActive =
-                    groupAccountIds.length === selectedAccounts.length &&
-                    groupAccountIds.every((id) => selectedAccounts.includes(id))
+                  // Ativo = todas as contas dessa pasta já estão selecionadas —
+                  // clicar soma/tira só as dela, sem mexer nas de outras pastas.
+                  const isActive = groupAccountIds.every((id) => selectedAccounts.includes(id))
                   return (
                     <button
                       key={group.id}
                       type="button"
-                      onClick={() => setSelectedAccounts(groupAccountIds)}
+                      onClick={() =>
+                        setSelectedAccounts((current) =>
+                          isActive
+                            ? current.filter((id) => !groupAccountIds.includes(id))
+                            : Array.from(new Set([...current, ...groupAccountIds]))
+                        )
+                      }
                       className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                         isActive
                           ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
