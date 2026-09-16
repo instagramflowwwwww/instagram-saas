@@ -13,6 +13,13 @@ import {
 } from "lucide-react"
 import toast from "react-hot-toast"
 
+type AccountGroup = {
+  id: string
+  name: string
+  color: string | null
+  members: { instagramAccount: { username: string } }[]
+}
+
 type PerformancePost = {
   id: string
   mediaId: string | null
@@ -118,6 +125,8 @@ function getPerformanceUrl(
 
 export default function PerformancePage() {
   const [posts, setPosts] = useState<PerformancePost[]>([])
+  const [groups, setGroups] = useState<AccountGroup[]>([])
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([])
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("today")
   const [sortBy, setSortBy] = useState<SortKey>("recent")
   const [loading, setLoading] = useState(true)
@@ -262,6 +271,30 @@ export default function PerformancePage() {
     }
   }, [selectedPeriod])
 
+  useEffect(() => {
+    fetch("/api/account-groups", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => setGroups(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
+
+  // Sem pasta selecionada, mostra tudo — selecionar uma ou mais restringe
+  // aos usernames que fazem parte delas.
+  const folderUsernames = useMemo(() => {
+    if (selectedFolderIds.length === 0) return null
+    const usernames = new Set<string>()
+    for (const group of groups) {
+      if (!selectedFolderIds.includes(group.id)) continue
+      for (const member of group.members) usernames.add(member.instagramAccount.username)
+    }
+    return usernames
+  }, [groups, selectedFolderIds])
+
+  const filteredPosts = useMemo(
+    () => (folderUsernames ? posts.filter((post) => folderUsernames.has(post.username)) : posts),
+    [posts, folderUsernames]
+  )
+
   const [storiesSummary, setStoriesSummary] = useState<{
     totalViews: number
     storiesCount: number
@@ -309,7 +342,7 @@ export default function PerformancePage() {
 
   const totals = useMemo(
     () =>
-      posts.reduce(
+      filteredPosts.reduce(
         (summary, post) => ({
           likes: summary.likes + (post.likeCount ?? 0),
           comments: summary.comments + (post.commentsCount ?? 0),
@@ -317,12 +350,12 @@ export default function PerformancePage() {
         }),
         { likes: 0, comments: 0, views: 0 }
       ),
-    [posts]
+    [filteredPosts]
   )
 
   const hasMetrics = useMemo(
-    () => posts.some((post) => Boolean(post.performanceUpdatedAt && !post.error)),
-    [posts]
+    () => filteredPosts.some((post) => Boolean(post.performanceUpdatedAt && !post.error)),
+    [filteredPosts]
   )
 
   const sortedPosts = useMemo(() => {
@@ -333,7 +366,7 @@ export default function PerformancePage() {
       return new Date(post.publishedAt).getTime()
     }
 
-    return [...posts].sort((a, b) => {
+    return [...filteredPosts].sort((a, b) => {
       const difference = metricValue(b) - metricValue(a)
       if (difference !== 0) return difference
 
@@ -341,7 +374,7 @@ export default function PerformancePage() {
         new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
       )
     })
-  }, [posts, sortBy])
+  }, [filteredPosts, sortBy])
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
@@ -413,6 +446,46 @@ export default function PerformancePage() {
           </button>
         </div>
       </div>
+
+      {groups.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-gray-500">Pastas:</span>
+          <button
+            type="button"
+            onClick={() => setSelectedFolderIds([])}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              selectedFolderIds.length === 0
+                ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+            }`}
+          >
+            Todas
+          </button>
+          {groups.map((group) => {
+            const active = selectedFolderIds.includes(group.id)
+            return (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() =>
+                  setSelectedFolderIds((current) =>
+                    active ? current.filter((id) => id !== group.id) : [...current, group.id]
+                  )
+                }
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                    : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color || "#7C3AED" }} />
+                {group.name}
+                <span className="text-gray-600">({group.members.length})</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-xl border border-white/5 bg-[#111] p-5">
