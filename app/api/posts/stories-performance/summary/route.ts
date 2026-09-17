@@ -42,18 +42,36 @@ export async function GET(request: Request) {
     ?.split(",")
     .map((id) => id.trim())
     .filter(Boolean)
+  const usernames = requestUrl.searchParams
+    .get("usernames")
+    ?.split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
 
   const createdAt =
     from || to
       ? { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) }
       : undefined
 
+  // Casa por @usuário gravado no próprio log (sobrevive à conta cair e ser
+  // apagada) OU pelo id da conta (registros antigos, de antes desse campo
+  // existir, que ainda apontam pra uma conta viva).
+  const folderFilter =
+    usernames?.length || accountIds?.length
+      ? {
+          OR: [
+            ...(usernames?.length ? [{ username: { in: usernames } }] : []),
+            ...(accountIds?.length ? [{ instagramAccountId: { in: accountIds } }] : []),
+          ],
+        }
+      : {}
+
   const trackedLogs = await prisma.postLog.findMany({
     where: {
       status: "success",
       mediaId: { not: null },
       ...(createdAt ? { createdAt } : {}),
-      ...(accountIds?.length ? { instagramAccountId: { in: accountIds } } : {}),
+      ...folderFilter,
       post: { userId: session.user.id, publicationType: "story" },
     },
     select: { mediaId: true, performanceViewsCount: true },

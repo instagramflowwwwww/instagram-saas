@@ -147,12 +147,12 @@ async function replacePostLogSafely(params: {
   mediaId?: string
   errorMessage?: string
 }) {
-  const accountExists = await prisma.instagramAccount.findUnique({
+  const account = await prisma.instagramAccount.findUnique({
     where: { id: params.accountId },
-    select: { id: true },
+    select: { id: true, username: true },
   })
 
-  if (!accountExists) {
+  if (!account) {
     console.warn("Skipping PostLog because Instagram account was removed", {
       postId: params.postId,
       accountId: params.accountId,
@@ -174,6 +174,7 @@ async function replacePostLogSafely(params: {
         data: {
           postId: params.postId,
           instagramAccountId: params.accountId,
+          username: account.username,
           status: params.status,
           mediaId: params.mediaId,
           errorMessage: params.errorMessage,

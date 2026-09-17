@@ -327,6 +327,9 @@ export default function PerformancePage() {
     if (selectedAccountIds) {
       params.set("accountIds", selectedAccountIds.join(","))
     }
+    if (folderUsernames) {
+      params.set("usernames", Array.from(folderUsernames).join(","))
+    }
     const query = params.toString()
 
     fetch(`/api/posts/stories-performance/summary${query ? `?${query}` : ""}`, { cache: "no-store" })
@@ -349,7 +352,7 @@ export default function PerformancePage() {
     return () => {
       cancelled = true
     }
-  }, [selectedPeriod, selectedAccountIds])
+  }, [selectedPeriod, selectedAccountIds, folderUsernames])
 
   const selectedPeriodOption =
     PERIOD_OPTIONS.find((option) => option.value === selectedPeriod) ||
