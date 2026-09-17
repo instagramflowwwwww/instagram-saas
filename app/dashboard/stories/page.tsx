@@ -75,6 +75,13 @@ type StoryPerformance = {
   error: string | null
 }
 
+type AccountGroup = {
+  id: string
+  name: string
+  color: string | null
+  members: { instagramAccount: { username: string } }[]
+}
+
 function timeLeft(expiresAt: string) {
   const ms = new Date(expiresAt).getTime() - Date.now()
   if (ms <= 0) return "expirado"
@@ -87,6 +94,8 @@ function StoriesPerformance() {
   const [stories, setStories] = useState<StoryPerformance[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [groups, setGroups] = useState<AccountGroup[]>([])
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([])
 
   const load = async (refresh = false) => {
     if (refresh) setRefreshing(true)
@@ -108,6 +117,35 @@ function StoriesPerformance() {
     // postados direto pelo celular, sem passar pelo InstaFlow.
     load(true)
   }, [])
+
+  useEffect(() => {
+    fetch("/api/account-groups", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => setGroups(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
+
+  // Sem pasta selecionada, conta tudo — selecionar uma ou mais soma só as
+  // views das contas que fazem parte delas.
+  const folderUsernames = useMemo(() => {
+    if (selectedFolderIds.length === 0) return null
+    const usernames = new Set<string>()
+    for (const group of groups) {
+      if (!selectedFolderIds.includes(group.id)) continue
+      for (const member of group.members) usernames.add(member.instagramAccount.username)
+    }
+    return usernames
+  }, [groups, selectedFolderIds])
+
+  const filteredStories = useMemo(
+    () => (folderUsernames ? (stories || []).filter((story) => folderUsernames.has(story.username)) : stories || []),
+    [stories, folderUsernames]
+  )
+
+  const totalViews = useMemo(
+    () => filteredStories.reduce((sum, story) => sum + (story.viewsCount ?? 0), 0),
+    [filteredStories]
+  )
 
   if (loading) return null
 
@@ -133,13 +171,59 @@ function StoriesPerformance() {
         número visto.
       </p>
 
-      {!stories || stories.length === 0 ? (
+      {groups.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setSelectedFolderIds([])}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              selectedFolderIds.length === 0
+                ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+            }`}
+          >
+            Todas
+          </button>
+          {groups.map((group) => {
+            const active = selectedFolderIds.includes(group.id)
+            return (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() =>
+                  setSelectedFolderIds((current) =>
+                    active ? current.filter((id) => id !== group.id) : [...current, group.id]
+                  )
+                }
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                    : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color || "#7C3AED" }} />
+                {group.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {filteredStories.length > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/5 px-3.5 py-2.5">
+          <Eye size={13} className="text-purple-300" />
+          <span className="text-xs text-gray-400">Total de views{selectedFolderIds.length > 0 ? " nas pastas selecionadas" : ""}</span>
+          <span className="ml-auto text-sm font-semibold text-white">{totalViews.toLocaleString("pt-BR")}</span>
+        </div>
+      )}
+
+      {filteredStories.length === 0 ? (
         <p className="rounded-xl border border-dashed border-white/10 py-6 text-center text-xs text-gray-500">
-          Nenhum story nas últimas 24h.
+          {stories && stories.length > 0 ? "Nenhum story nessas pastas." : "Nenhum story nas últimas 24h."}
         </p>
       ) : (
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {stories.map((story) => (
+        {filteredStories.map((story) => (
           <div
             key={story.id}
             className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
