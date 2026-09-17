@@ -37,6 +37,11 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const from = parseDate(requestUrl.searchParams.get("from"))
   const to = parseDate(requestUrl.searchParams.get("to"))
+  const accountIds = requestUrl.searchParams
+    .get("accountIds")
+    ?.split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
 
   const createdAt =
     from || to
@@ -48,6 +53,7 @@ export async function GET(request: Request) {
       status: "success",
       mediaId: { not: null },
       ...(createdAt ? { createdAt } : {}),
+      ...(accountIds?.length ? { instagramAccountId: { in: accountIds } } : {}),
       post: { userId: session.user.id, publicationType: "story" },
     },
     select: { mediaId: true, performanceViewsCount: true },
@@ -72,6 +78,7 @@ export async function GET(request: Request) {
         accessToken: { not: null },
         appConfigId: { not: null },
         tokenExpiresAt: { gt: new Date() },
+        ...(accountIds?.length ? { id: { in: accountIds } } : {}),
       },
       select: { id: true, igUserId: true, accessToken: true, tokenExpiresAt: true },
     })

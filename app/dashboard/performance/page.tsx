@@ -17,7 +17,7 @@ type AccountGroup = {
   id: string
   name: string
   color: string | null
-  members: { instagramAccount: { username: string } }[]
+  members: { instagramAccountId: string; instagramAccount: { username: string } }[]
 }
 
 type PerformancePost = {
@@ -295,6 +295,18 @@ export default function PerformancePage() {
     [posts, folderUsernames]
   )
 
+  // Mesma seleção, mas em IDs de conta — usado no resumo de Stories, que
+  // filtra no servidor em vez de por username no cliente.
+  const selectedAccountIds = useMemo(() => {
+    if (selectedFolderIds.length === 0) return null
+    const ids = new Set<string>()
+    for (const group of groups) {
+      if (!selectedFolderIds.includes(group.id)) continue
+      for (const member of group.members) ids.add(member.instagramAccountId)
+    }
+    return Array.from(ids)
+  }, [groups, selectedFolderIds])
+
   const [storiesSummary, setStoriesSummary] = useState<{
     totalViews: number
     storiesCount: number
@@ -311,6 +323,9 @@ export default function PerformancePage() {
     if (range) {
       params.set("from", range.from.toISOString())
       params.set("to", range.to.toISOString())
+    }
+    if (selectedAccountIds) {
+      params.set("accountIds", selectedAccountIds.join(","))
     }
     const query = params.toString()
 
@@ -334,7 +349,7 @@ export default function PerformancePage() {
     return () => {
       cancelled = true
     }
-  }, [selectedPeriod])
+  }, [selectedPeriod, selectedAccountIds])
 
   const selectedPeriodOption =
     PERIOD_OPTIONS.find((option) => option.value === selectedPeriod) ||
