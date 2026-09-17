@@ -449,6 +449,29 @@ async function publishToAccount(params: {
       stage = "publish"
       const mediaId = await publishContainer(params.account, containerId, token)
 
+      // Diagnóstico temporário: pergunta pra própria Meta qual legenda ela
+      // realmente gravou, pra saber se a perda acontece do lado dela mesmo
+      // depois de recebermos a legenda certa (já confirmado pelo log acima).
+      try {
+        const verify = await metaRequest(mediaId, params.account.id, {
+          method: "GET",
+          searchParams: { fields: "caption", access_token: token },
+        })
+        console.info("[publish-debug] caption verify", {
+          postId: params.post.id,
+          mediaId,
+          sentLength: params.caption?.length || 0,
+          metaCaptionLength: typeof verify.caption === "string" ? verify.caption.length : null,
+          metaCaptionPreview: typeof verify.caption === "string" ? verify.caption.slice(0, 60) : null,
+        })
+      } catch (verifyError) {
+        console.warn("[publish-debug] caption verify failed", {
+          postId: params.post.id,
+          mediaId,
+          error: verifyError instanceof Error ? verifyError.message : String(verifyError),
+        })
+      }
+
       await prisma.instagramAccount.updateMany({
         where: { id: params.account.id },
         data: {
