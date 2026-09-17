@@ -42,7 +42,7 @@ type InstagramAccount = {
 
 type PublishMode = "now" | "scheduled"
 
-const INTERVAL_OPTIONS = [5, 10, 15, 30, 60, 120, 360, 720, 1440]
+const INTERVAL_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 360, 720, 1440]
 
 function toLocalInputValue(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
@@ -57,6 +57,7 @@ function formatSchedule(value: Date) {
 }
 
 function intervalLabel(minutes: number) {
+  if (minutes === 0) return "Imediato (sem intervalo)"
   if (minutes < 60) return `${minutes} minutos`
   if (minutes === 60) return "1 hora"
   if (minutes < 1440) return `${minutes / 60} horas`
@@ -79,7 +80,7 @@ type AccountGroup = {
   id: string
   name: string
   color: string | null
-  members: { instagramAccount: { username: string } }[]
+  members: { instagramAccountId: string; instagramAccount: { username: string } }[]
 }
 
 function timeLeft(expiresAt: string) {
@@ -261,6 +262,7 @@ export default function StoriesPage() {
   const router = useRouter()
   const [media, setMedia] = useState<MediaItem[]>([])
   const [accounts, setAccounts] = useState<InstagramAccount[]>([])
+  const [groups, setGroups] = useState<AccountGroup[]>([])
   const [selectedMedia, setSelectedMedia] = useState<string[]>([])
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([])
   const [showAllMedia, setShowAllMedia] = useState(false)
@@ -302,6 +304,11 @@ export default function StoriesPage() {
         setMedia(library)
         setAccounts(accountList)
         setSelectedAccounts(accountList.map((account) => account.id))
+
+        fetch("/api/account-groups", { cache: "no-store" })
+          .then((response) => response.json())
+          .then((data) => setGroups(Array.isArray(data) ? data : []))
+          .catch(() => {})
 
         const params = new URLSearchParams(window.location.search)
         const requested = String(params.get("media") || "")
@@ -760,6 +767,40 @@ export default function StoriesPage() {
                 {selectedAccounts.length === accounts.length ? "Limpar" : "Todas"}
               </button>
             </div>
+
+            {groups.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {groups.map((group) => {
+                  const groupAccountIds = group.members
+                    .map((member) => member.instagramAccountId)
+                    .filter((id) => accounts.some((account) => account.id === id))
+                  if (groupAccountIds.length === 0) return null
+                  const isActive = groupAccountIds.every((id) => selectedAccounts.includes(id))
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedAccounts((current) =>
+                          isActive
+                            ? current.filter((id) => !groupAccountIds.includes(id))
+                            : Array.from(new Set([...current, ...groupAccountIds]))
+                        )
+                      }
+                      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        isActive
+                          ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                          : "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color || "#7C3AED" }} />
+                      {group.name}
+                      <span className="text-gray-600">({groupAccountIds.length})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {accounts.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">

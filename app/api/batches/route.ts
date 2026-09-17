@@ -159,9 +159,9 @@ export async function POST(request: Request) {
     if (publicationType === "post" && !CAPTION_MODES.has(captionMode)) {
       return NextResponse.json({ error: "Modo de legenda inválido." }, { status: 400 })
     }
-    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 1440) {
+    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 0 || intervalMinutes > 1440) {
       return NextResponse.json(
-        { error: "O intervalo precisa estar entre 5 minutos e 24 horas." },
+        { error: "O intervalo precisa estar entre 0 (imediato) e 24 horas." },
         { status: 400 }
       )
     }
