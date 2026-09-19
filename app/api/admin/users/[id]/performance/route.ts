@@ -63,6 +63,7 @@ export async function GET(
       performancePublishedAt: true,
       performanceUpdatedAt: true,
       performanceError: true,
+      username: true,
       post: { select: { caption: true } },
       instagramAccount: { select: { username: true, profilePicture: true } },
     },
@@ -71,8 +72,8 @@ export async function GET(
 
   const posts = logs.map((log) => ({
     id: log.id,
-    username: log.instagramAccount.username,
-    profilePicture: log.instagramAccount.profilePicture,
+    username: log.instagramAccount?.username || log.username || "conta removida",
+    profilePicture: log.instagramAccount?.profilePicture || null,
     caption: log.post.caption,
     permalink: log.performancePermalink,
     likeCount: log.performanceLikeCount,
