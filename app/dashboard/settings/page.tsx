@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { useSession, signOut } from "next-auth/react"
-import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing } from "lucide-react"
+import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing, KeyRound, Plus, Copy, Check, Trash2, Loader2 } from "lucide-react"
 import toast from "react-hot-toast"
 import {
   disablePush,
@@ -103,6 +103,163 @@ function NotificationsCard() {
               Enviar notificação de teste
             </button>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+type ApiToken = {
+  id: string
+  name: string
+  tokenPreview: string
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
+function formatTokenDate(value: string | null) {
+  if (!value) return "—"
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))
+}
+
+function ApiTokensCard() {
+  const [tokens, setTokens] = useState<ApiToken[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [freshToken, setFreshToken] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const load = async () => {
+    try {
+      const res = await fetch("/api/tokens", { cache: "no-store" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar os tokens.")
+      setTokens(Array.isArray(data.tokens) ? data.tokens : [])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível carregar os tokens.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  const createToken = async () => {
+    setCreating(true)
+    try {
+      const res = await fetch("/api/tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Token de automação" }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Não foi possível gerar o token.")
+      setFreshToken(data.token)
+      setCopied(false)
+      await load()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível gerar o token.")
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const revokeToken = async (token: ApiToken) => {
+    setRevokingId(token.id)
+    try {
+      const res = await fetch("/api/tokens", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: token.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Não foi possível revogar o token.")
+      toast.success("Token revogado.")
+      await load()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível revogar o token.")
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  return (
+    <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-2">
+        <KeyRound size={16} className="text-purple-400" />
+        <h2 className="font-semibold text-white text-sm">Tokens de API</h2>
+      </div>
+      <p className="text-sm text-gray-500 mb-5">
+        Use um token <code className="text-gray-400">ifk_...</code> para autenticar automações externas
+        via <code className="text-gray-400">Authorization: Bearer</code> nas rotas <code className="text-gray-400">/api/v1/*</code>,
+        sem precisar de login/senha.
+      </p>
+
+      {freshToken && (
+        <div className="mb-5 rounded-lg border border-purple-500/20 bg-purple-500/[0.06] p-4">
+          <p className="text-xs text-gray-400 mb-2">
+            Copie agora — esse valor não aparece de novo depois que você sair daqui.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 select-all font-mono text-xs sm:text-sm text-white break-all">{freshToken}</code>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(freshToken)
+                setCopied(true)
+                toast.success("Token copiado.")
+              }}
+              className="shrink-0 rounded-lg p-1.5 text-purple-300 hover:bg-purple-500/15"
+              aria-label="Copiar token"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={createToken}
+        disabled={creating}
+        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors mb-5"
+      >
+        {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+        Gerar novo token
+      </button>
+
+      {loading ? (
+        <p className="text-sm text-gray-600">Carregando...</p>
+      ) : tokens.length === 0 ? (
+        <p className="text-sm text-gray-600">Nenhum token gerado ainda.</p>
+      ) : (
+        <div className="space-y-2">
+          {tokens.map((token) => {
+            const revoked = Boolean(token.revokedAt)
+            return (
+              <div key={token.id} className="flex items-center gap-3 bg-white/[0.025] border border-white/5 rounded-lg p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-white font-mono truncate">{token.tokenPreview}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {revoked
+                      ? `Revogado em ${formatTokenDate(token.revokedAt)}`
+                      : `Criado em ${formatTokenDate(token.createdAt)} · Último uso: ${formatTokenDate(token.lastUsedAt)}`}
+                  </p>
+                </div>
+                {!revoked && (
+                  <button
+                    onClick={() => revokeToken(token)}
+                    disabled={revokingId === token.id}
+                    className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50"
+                    aria-label="Revogar token"
+                  >
+                    {revokingId === token.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -280,6 +437,8 @@ export default function SettingsPage() {
         </div>
 
         <NotificationsCard />
+
+        <ApiTokensCard />
 
         <div className="bg-[#111] border border-white/5 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-4">

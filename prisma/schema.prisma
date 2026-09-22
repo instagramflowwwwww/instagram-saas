@@ -24,6 +24,8 @@ model User {
   mediaFolders      MediaFolder[]
   accountGroups     AccountGroup[]
   postingBatches    PostingBatch[]
+  apiTokens         ApiToken[]
+  apiConnectionRequests ApiConnectionRequest[]
   accessStatus      String             @default("approved")
   planName          String?
   planDurationDays  Int?
@@ -91,8 +93,51 @@ model InstagramApp {
   updatedAt          DateTime           @updatedAt
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   accounts           InstagramAccount[]
+  apiConnectionRequests ApiConnectionRequest[]
 
   @@index([userId])
+}
+
+// Token de API próprio do InstaFlow (prefixo "ifk_") para automações externas
+// autenticarem via Authorization: Bearer, sem usar cookie/sessão do dashboard.
+// Só o hash SHA-256 fica salvo — o valor em texto puro só existe no momento
+// da criação, devolvido uma única vez pra quem gerou.
+model ApiToken {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String    @default("Token de automação")
+  tokenHash    String    @unique
+  tokenPreview String
+  lastUsedAt   DateTime?
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Registro de uma tentativa de conexão iniciada pela API (/api/v1/connections),
+// pra permitir consultar o status depois (pending/connected/failed/expired)
+// já que o fluxo OAuth por si só não guarda estado em lugar nenhum.
+model ApiConnectionRequest {
+  id                 String       @id @default(cuid())
+  userId             String
+  appConfigId        String
+  expectedUsername   String?
+  status             String       @default("pending")
+  instagramAccountId String?
+  connectedUsername  String?
+  errorCode          String?
+  errorMessage       String?
+  expiresAt          DateTime
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  app                InstagramApp @relation(fields: [appConfigId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
 
 model AccountGroup {

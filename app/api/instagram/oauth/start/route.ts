@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import {
+  buildInstagramAuthorizeUrl,
   getInstagramRedirectUri,
-  INSTAGRAM_SCOPES,
 } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
 import { sealPayload } from "@/lib/secure-store"
@@ -94,12 +94,11 @@ export async function GET(request: NextRequest) {
     expiresAt: Date.now() + 10 * 60 * 1000,
   })
 
-  const authorizeUrl = new URL("https://www.instagram.com/oauth/authorize")
-  authorizeUrl.searchParams.set("client_id", app.metaAppId)
-  authorizeUrl.searchParams.set("redirect_uri", redirectUri)
-  authorizeUrl.searchParams.set("response_type", "code")
-  authorizeUrl.searchParams.set("scope", INSTAGRAM_SCOPES.join(","))
-  authorizeUrl.searchParams.set("state", state)
+  const authorizeUrl = buildInstagramAuthorizeUrl({
+    metaAppId: app.metaAppId,
+    redirectUri,
+    state,
+  })
 
   return NextResponse.redirect(authorizeUrl)
 }

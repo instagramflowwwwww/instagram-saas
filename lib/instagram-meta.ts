@@ -60,6 +60,20 @@ export function getInstagramRedirectUri(request?: NextRequest | Request) {
   return `${getPublicBaseUrl(request)}/api/instagram/callback`
 }
 
+export function buildInstagramAuthorizeUrl(params: {
+  metaAppId: string
+  redirectUri: string
+  state: string
+}) {
+  const url = new URL("https://www.instagram.com/oauth/authorize")
+  url.searchParams.set("client_id", params.metaAppId)
+  url.searchParams.set("redirect_uri", params.redirectUri)
+  url.searchParams.set("response_type", "code")
+  url.searchParams.set("scope", INSTAGRAM_SCOPES.join(","))
+  url.searchParams.set("state", params.state)
+  return url.toString()
+}
+
 export function getMetaError(payload: unknown): MetaApiError | null {
   if (!payload || typeof payload !== "object") return null
 
