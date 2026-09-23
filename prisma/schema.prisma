@@ -154,6 +154,9 @@ model UnofficialAccount {
   proxyUrl            String?
   status              String    @default("pending") // pending | logging_in | logged_in | checkpoint_required | invite_accepted | failed
   lastError           String?
+  // JSON com url/título/texto/screenshot da página no momento da última
+  // falha, pra descobrir o que o Instagram realmente mostrou ao robô.
+  lastDiagnostic      String?
   lastAttemptAt       DateTime?
   sessionEncrypted    String?
   createdAt           DateTime  @default(now())

@@ -1,6 +1,6 @@
 import chromium from "@sparticuz/chromium"
 import { authenticator } from "otplib"
-import { chromium as playwrightChromium, type Cookie } from "playwright-core"
+import { chromium as playwrightChromium, type Cookie, type Page } from "playwright-core"
 
 // Automação de navegador para a "API não oficial": login direto com
 // usuário/senha do Instagram (sem OAuth) só pra aceitar convite de
@@ -12,12 +12,18 @@ import { chromium as playwrightChromium, type Cookie } from "playwright-core"
 // sistemas antifraude da Meta, especialmente sem um proxy residencial por
 // conta. Os seletores usados aqui refletem a interface do Instagram no
 // momento da escrita — a Meta muda essa interface com frequência, então é
-// esperado que precisem de ajuste depois do primeiro teste real.
+// esperado que precisem de ajuste depois do primeiro teste real. Por isso
+// toda falha guarda um "diagnóstico" (print + texto da página).
 
 export type UnofficialLoginResult =
   | { status: "logged_in"; cookies: Cookie[] }
-  | { status: "checkpoint_required"; message: string }
-  | { status: "failed"; message: string }
+  | { status: "checkpoint_required"; message: string; diagnostic?: string }
+  | { status: "failed"; message: string; diagnostic?: string }
+
+export type AcceptInviteResult =
+  | { status: "invite_accepted" }
+  | { status: "no_invite_found"; diagnostic?: string }
+  | { status: "failed"; message: string; diagnostic?: string }
 
 // pnpm guarda os pacotes num store com symlinks, e o output file tracing da
 // Vercel não consegue empacotar o binário do Chromium (~60MB) através
@@ -37,7 +43,51 @@ async function launchBrowser(proxyUrl?: string | null) {
   })
 }
 
-async function dismissPostLoginDialogs(page: import("playwright-core").Page) {
+// Guarda o que o Instagram realmente mostrou na hora da falha: URL, título,
+// texto visível e um screenshot leve. Nunca lança erro — diagnóstico é só
+// um extra, não pode derrubar o fluxo principal.
+async function captureDiagnostic(page: Page | undefined) {
+  if (!page) return undefined
+  try {
+    const [title, text, shot] = await Promise.all([
+      page.title().catch(() => ""),
+      page.evaluate(() => document.body?.innerText?.slice(0, 1500) || "").catch(() => ""),
+      page.screenshot({ type: "jpeg", quality: 45, timeout: 8000 }).catch(() => null),
+    ])
+    return JSON.stringify({
+      url: page.url(),
+      title,
+      text,
+      screenshot: shot ? shot.toString("base64") : null,
+      capturedAt: new Date().toISOString(),
+    })
+  } catch {
+    return undefined
+  }
+}
+
+async function dismissCookieBanner(page: Page) {
+  // Prefere recusar cookies opcionais; se só houver "permitir", aceita
+  // apenas pra liberar a tela de login.
+  for (const pattern of [
+    /recusar cookies opcionais/i,
+    /decline optional cookies/i,
+    /permitir todos os cookies/i,
+    /allow all cookies/i,
+  ]) {
+    try {
+      const button = page.getByRole("button", { name: pattern }).first()
+      await button.waitFor({ state: "visible", timeout: 1500 })
+      await button.click()
+      await page.waitForTimeout(500)
+      return
+    } catch {
+      // esse texto não apareceu — tenta o próximo
+    }
+  }
+}
+
+async function dismissPostLoginDialogs(page: Page) {
   // "Salvar informações de login?" e "Ativar notificações?" — ambos com
   // texto variável por idioma da conta, por isso o match é amplo.
   for (const pattern of [/agora não/i, /not now/i, /ahora no/i]) {
@@ -59,6 +109,7 @@ export async function loginToInstagram(params: {
   proxyUrl?: string | null
 }): Promise<UnofficialLoginResult> {
   const browser = await launchBrowser(params.proxyUrl)
+  let page: Page | undefined
 
   try {
     const context = await browser.newContext({
@@ -66,14 +117,28 @@ export async function loginToInstagram(params: {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
       viewport: { width: 1280, height: 800 },
     })
-    const page = await context.newPage()
+    page = await context.newPage()
 
     await page.goto("https://www.instagram.com/accounts/login/", {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     })
 
-    await page.locator('input[name="username"]').fill(params.username)
+    await dismissCookieBanner(page)
+
+    const usernameInput = page.locator('input[name="username"]')
+    try {
+      await usernameInput.waitFor({ state: "visible", timeout: 20000 })
+    } catch {
+      return {
+        status: "failed",
+        message:
+          "A tela de login do Instagram não mostrou o campo de usuário (possível bloqueio do IP ou mudança de layout). Veja o diagnóstico.",
+        diagnostic: await captureDiagnostic(page),
+      }
+    }
+
+    await usernameInput.fill(params.username)
     await page.locator('input[name="password"]').fill(params.password)
     await page.locator('button[type="submit"]').click()
 
@@ -101,6 +166,7 @@ export async function loginToInstagram(params: {
         return {
           status: "checkpoint_required",
           message: "A conta pediu código de autenticação de dois fatores, mas nenhum segredo TOTP foi cadastrado.",
+          diagnostic: await captureDiagnostic(page),
         }
       }
       const code = authenticator.generate(params.totpSecret)
@@ -116,17 +182,20 @@ export async function loginToInstagram(params: {
         return {
           status: "checkpoint_required",
           message: "Código de dois fatores enviado, mas o Instagram não liberou o acesso (possível checkpoint adicional).",
+          diagnostic: await captureDiagnostic(page),
         }
       }
     } else if (outcome === "checkpoint") {
       return {
         status: "checkpoint_required",
         message: "O Instagram pediu verificação manual (checkpoint) para este login — não dá pra continuar automaticamente.",
+        diagnostic: await captureDiagnostic(page),
       }
     } else if (outcome === null) {
       return {
         status: "failed",
         message: "O Instagram não respondeu como esperado ao login (usuário/senha incorretos ou página mudou).",
+        diagnostic: await captureDiagnostic(page),
       }
     }
 
@@ -138,27 +207,24 @@ export async function loginToInstagram(params: {
     return {
       status: "failed",
       message: error instanceof Error ? error.message : "Erro desconhecido no login.",
+      diagnostic: await captureDiagnostic(page),
     }
   } finally {
     await browser.close().catch(() => {})
   }
 }
 
-export type AcceptInviteResult =
-  | { status: "invite_accepted" }
-  | { status: "no_invite_found" }
-  | { status: "failed"; message: string }
-
 export async function acceptTesterInvite(params: {
   cookies: Cookie[]
   proxyUrl?: string | null
 }): Promise<AcceptInviteResult> {
   const browser = await launchBrowser(params.proxyUrl)
+  let page: Page | undefined
 
   try {
     const context = await browser.newContext()
     await context.addCookies(params.cookies)
-    const page = await context.newPage()
+    page = await context.newPage()
 
     // Caminho: Instagram > Configurações > Apps e sites > Convites de
     // testador. A URL e os textos abaixo são o melhor palpite com base na
@@ -178,7 +244,7 @@ export async function acceptTesterInvite(params: {
     const hasInvite = await acceptButton.isVisible({ timeout: 8000 }).catch(() => false)
 
     if (!hasInvite) {
-      return { status: "no_invite_found" }
+      return { status: "no_invite_found", diagnostic: await captureDiagnostic(page) }
     }
 
     await acceptButton.click()
@@ -189,6 +255,7 @@ export async function acceptTesterInvite(params: {
     return {
       status: "failed",
       message: error instanceof Error ? error.message : "Erro desconhecido ao aceitar o convite.",
+      diagnostic: await captureDiagnostic(page),
     }
   } finally {
     await browser.close().catch(() => {})

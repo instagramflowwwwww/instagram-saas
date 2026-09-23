@@ -6,10 +6,12 @@ import {
   Bot,
   Eye,
   EyeOff,
+  FileSearch,
   Loader2,
   Play,
   Plus,
   Trash2,
+  X,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast } from "@/lib/toast"
@@ -22,6 +24,18 @@ type UnofficialAccount = {
   lastAttemptAt: string | null
   proxyUrl: string | null
   createdAt: string
+}
+
+type Diagnostic = {
+  username: string
+  lastError: string | null
+  diagnostic: {
+    url: string
+    title: string
+    text: string
+    screenshot: string | null
+    capturedAt: string
+  }
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -58,6 +72,8 @@ export default function UnofficialApiPage() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [processing, setProcessing] = useState(false)
+  const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
+  const [loadingDiagnosticId, setLoadingDiagnosticId] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -112,6 +128,20 @@ export default function UnofficialApiPage() {
       toast.error(error instanceof Error ? error.message : "Não foi possível remover a conta.")
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const openDiagnostic = async (account: UnofficialAccount) => {
+    setLoadingDiagnosticId(account.id)
+    try {
+      const res = await fetch(`/api/unofficial/accounts/${account.id}/diagnostic`, { cache: "no-store" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar o diagnóstico.")
+      setDiagnostic(data)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível carregar o diagnóstico.")
+    } finally {
+      setLoadingDiagnosticId(null)
     }
   }
 
@@ -239,6 +269,16 @@ export default function UnofficialApiPage() {
                 <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] border ${STATUS_CLASSES[account.status] || STATUS_CLASSES.pending}`}>
                   {STATUS_LABELS[account.status] || account.status}
                 </span>
+                {(account.status === "failed" || account.status === "checkpoint_required" || account.lastError) && (
+                  <button
+                    onClick={() => openDiagnostic(account)}
+                    disabled={loadingDiagnosticId === account.id}
+                    title="Ver o que o Instagram mostrou na última falha"
+                    className="p-2 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg disabled:opacity-50"
+                  >
+                    {loadingDiagnosticId === account.id ? <Loader2 size={15} className="animate-spin" /> : <FileSearch size={15} />}
+                  </button>
+                )}
                 <button
                   onClick={() => removeAccount(account)}
                   disabled={deletingId === account.id}
@@ -251,6 +291,61 @@ export default function UnofficialApiPage() {
           </div>
         )}
       </div>
+      {diagnostic && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setDiagnostic(null)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-white font-semibold">Diagnóstico de @{diagnostic.username}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Capturado em {formatDate(diagnostic.diagnostic.capturedAt)}
+                </p>
+              </div>
+              <button onClick={() => setDiagnostic(null)} className="text-gray-500 hover:text-white shrink-0" aria-label="Fechar">
+                <X size={16} />
+              </button>
+            </div>
+
+            {diagnostic.lastError && (
+              <p className="text-xs text-red-300/90 mb-3">{diagnostic.lastError}</p>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <p className="text-gray-500 mb-1">URL</p>
+                <p className="text-gray-300 font-mono break-all">{diagnostic.diagnostic.url}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1">Título da página</p>
+                <p className="text-gray-300">{diagnostic.diagnostic.title || "—"}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1">Texto visível</p>
+                <pre className="whitespace-pre-wrap rounded-lg bg-white/[0.03] border border-white/5 p-3 text-gray-300 max-h-48 overflow-y-auto">
+                  {diagnostic.diagnostic.text || "(vazio)"}
+                </pre>
+              </div>
+              {diagnostic.diagnostic.screenshot && (
+                <div>
+                  <p className="text-gray-500 mb-1">Print da tela</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:image/jpeg;base64,${diagnostic.diagnostic.screenshot}`}
+                    alt="Screenshot da página no momento da falha"
+                    className="w-full rounded-lg border border-white/10"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

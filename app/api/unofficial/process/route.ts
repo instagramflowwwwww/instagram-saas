@@ -42,7 +42,7 @@ async function processAccount(account: {
       return {
         status: loginResult.status,
         lastError: loginResult.message,
-        sessionEncrypted: null as string | null,
+        diagnostic: loginResult.diagnostic ?? null,
       }
     }
 
@@ -61,16 +61,20 @@ async function processAccount(account: {
   const inviteResult = await acceptTesterInvite({ cookies, proxyUrl: account.proxyUrl })
 
   if (inviteResult.status === "invite_accepted") {
-    return { status: "invite_accepted", lastError: null, sessionEncrypted: null }
+    return { status: "invite_accepted", lastError: null, diagnostic: null }
   }
   if (inviteResult.status === "no_invite_found") {
     return {
       status: "logged_in",
       lastError: "Nenhum convite de testador pendente encontrado.",
-      sessionEncrypted: null,
+      diagnostic: inviteResult.diagnostic ?? null,
     }
   }
-  return { status: "failed", lastError: inviteResult.message, sessionEncrypted: null }
+  return {
+    status: "failed",
+    lastError: inviteResult.message,
+    diagnostic: inviteResult.diagnostic ?? null,
+  }
 }
 
 export async function POST() {
@@ -103,11 +107,17 @@ export async function POST() {
       data: {
         status: outcome.status,
         lastError: outcome.lastError,
+        lastDiagnostic: outcome.diagnostic,
         lastAttemptAt: new Date(),
       },
     })
 
-    results.push({ id: account.id, username: account.username, ...outcome })
+    results.push({
+      id: account.id,
+      username: account.username,
+      status: outcome.status,
+      lastError: outcome.lastError,
+    })
   }
 
   return NextResponse.json({ processed: results.length, results })
