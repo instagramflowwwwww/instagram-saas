@@ -8,7 +8,7 @@ import { isAdminEmail } from "@/lib/account-access"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, FolderOpen,
-  ListChecks, Star, TrendingUp, Shield, Boxes, Users, Menu, X, Activity, Banknote
+  ListChecks, Star, TrendingUp, Shield, Boxes, Users, Menu, X, Activity, Banknote, Bot
 } from "lucide-react"
 
 const navGroups = [
@@ -43,6 +43,7 @@ const navGroups = [
       { href: "/dashboard/payments", icon: Banknote, label: "Pagamentos" },
       { href: "/dashboard/meta-app", icon: Boxes, label: "App Meta" },
       { href: "/dashboard/queue", icon: ListChecks, label: "Status da Fila" },
+      { href: "/dashboard/unofficial-api", icon: Bot, label: "API não oficial" },
     ],
   },
   {
