@@ -33,6 +33,9 @@ export type AcceptInviteResult =
 const CHROMIUM_PACK_URL =
   "https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar"
 
+const CODE_INPUT =
+  'input[name="verificationCode"], input[name="approvals_code"], input[autocomplete="one-time-code"]'
+
 async function launchBrowser(proxyUrl?: string | null) {
   const executablePath = await chromium.executablePath(CHROMIUM_PACK_URL)
   return playwrightChromium.launch({
@@ -126,7 +129,9 @@ export async function loginToInstagram(params: {
 
     await dismissCookieBanner(page)
 
-    const usernameInput = page.locator('input[name="username"]')
+    // Em set/2026 o formulário usa name="email"/"pass" e um <input type="submit">;
+    // os nomes antigos ficam como alternativa caso a Meta volte atrás.
+    const usernameInput = page.locator('input[name="email"], input[name="username"]').first()
     try {
       await usernameInput.waitFor({ state: "visible", timeout: 20000 })
     } catch {
@@ -139,8 +144,8 @@ export async function loginToInstagram(params: {
     }
 
     await usernameInput.fill(params.username)
-    await page.locator('input[name="password"]').fill(params.password)
-    await page.locator('button[type="submit"]').click()
+    await page.locator('input[name="pass"], input[name="password"]').first().fill(params.password)
+    await page.locator('input[type="submit"], button[type="submit"]').first().click()
 
     // Espera qualquer um dos três destinos possíveis depois do submit.
     const outcome = await Promise.race([
@@ -149,7 +154,8 @@ export async function loginToInstagram(params: {
         .then(() => "navigated" as const)
         .catch(() => null),
       page
-        .locator('input[name="verificationCode"]')
+        .locator(CODE_INPUT)
+        .first()
         .waitFor({ timeout: 20000 })
         .then(() => "two_factor" as const)
         .catch(() => null),
@@ -170,7 +176,7 @@ export async function loginToInstagram(params: {
         }
       }
       const code = authenticator.generate(params.totpSecret)
-      await page.locator('input[name="verificationCode"]').fill(code)
+      await page.locator(CODE_INPUT).first().fill(code)
       await page.getByRole("button", { name: /confirmar|confirm/i }).click()
 
       const confirmed = await page
