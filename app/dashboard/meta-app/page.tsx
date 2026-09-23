@@ -139,8 +139,15 @@ export default function MetaAppPage() {
     [accounts, selectedAppId]
   )
   const normalizedUsername = username.trim().replace(/^@/, "").toLowerCase()
+  // Se o @usuario digitado já é uma conta conectada, o InstaFlow já sabe
+  // qual App Meta ela usa — não precisa nenhum app selecionado na tela.
+  const matchedExistingAccount = normalizedUsername
+    ? accounts.find((account) => account.username.toLowerCase() === normalizedUsername) || null
+    : null
   // Username é opcional — conecta sem precisar digitar o @
-  const canConnect = Boolean(selectedAppId) && (normalizedUsername === "" || /^[a-z0-9._]{1,30}$/.test(normalizedUsername))
+  const canConnect =
+    (Boolean(selectedAppId) || Boolean(matchedExistingAccount)) &&
+    (normalizedUsername === "" || /^[a-z0-9._]{1,30}$/.test(normalizedUsername))
 
   const loadData = async (preferredAppId?: string): Promise<InstagramAccount[]> => {
     try {
@@ -400,15 +407,14 @@ export default function MetaAppPage() {
 
   const connectAccount = () => {
     if (!configured) { toast.error("Adicione um App Meta antes de conectar uma conta."); return }
-    if (!selectedAppId) { toast.error("Escolha qual App Meta será usado nesta conta."); return }
     if (!canConnect) { toast.error("Informe um usuário do Instagram válido."); return }
 
     // Se o usuário digitado já é uma conta conectada (reconexão), usa o app
-    // que ela já está vinculada — não o de menos contas, que a moveria de app à toa.
-    const existingAccount = normalizedUsername
-      ? accounts.find((account) => account.username.toLowerCase() === normalizedUsername)
-      : null
-    const appConfigIdToUse = existingAccount?.appConfigId || selectedAppId
+    // que ela já está vinculada — não o de menos contas, nem exige selecionar
+    // nada na tela, já que o InstaFlow já sabe qual app essa conta usa.
+    const appConfigIdToUse = matchedExistingAccount?.appConfigId || selectedAppId
+
+    if (!appConfigIdToUse) { toast.error("Escolha qual App Meta será usado nesta conta."); return }
 
     // Username opcional
     const params = new URLSearchParams({ appConfigId: appConfigIdToUse })
