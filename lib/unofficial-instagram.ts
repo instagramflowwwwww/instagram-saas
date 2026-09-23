@@ -19,8 +19,16 @@ export type UnofficialLoginResult =
   | { status: "checkpoint_required"; message: string }
   | { status: "failed"; message: string }
 
+// pnpm guarda os pacotes num store com symlinks, e o output file tracing da
+// Vercel não consegue empacotar o binário do Chromium (~60MB) através
+// desses links — por isso apontamos para o pack oficial no GitHub Releases
+// em vez de tentar incluir o arquivo no bundle da função. No cold start ele
+// baixa uma vez pra /tmp e reaproveita nas próximas chamadas "quentes".
+const CHROMIUM_PACK_URL =
+  "https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar"
+
 async function launchBrowser(proxyUrl?: string | null) {
-  const executablePath = await chromium.executablePath()
+  const executablePath = await chromium.executablePath(CHROMIUM_PACK_URL)
   return playwrightChromium.launch({
     executablePath,
     args: chromium.args,
