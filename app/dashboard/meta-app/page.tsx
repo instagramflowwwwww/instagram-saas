@@ -592,8 +592,17 @@ export default function MetaAppPage() {
                 return (
                   <div
                     key={app.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { userPickedAppRef.current = true; setSelectedAppId(app.id) }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return
+                      event.preventDefault()
+                      userPickedAppRef.current = true
+                      setSelectedAppId(app.id)
+                    }}
                     title={`Última validação: ${formatDate(app.lastValidatedAt)}`}
-                    className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors ${selected ? "border-purple-500/40 bg-purple-500/[0.06]" : "border-white/[0.07] bg-white/[0.025]"}`}
+                    className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${selected ? "border-purple-500/40 bg-purple-500/[0.06]" : "border-white/[0.07] bg-white/[0.025] hover:bg-white/[0.045] hover:border-white/[0.12]"}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="w-6 h-6 rounded-md bg-purple-500/10 text-purple-400 text-[11px] font-semibold flex items-center justify-center shrink-0">
@@ -607,25 +616,30 @@ export default function MetaAppPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5 shrink-0">
-                      <button onClick={() => editApp(app)} className="p-1.5 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-md">
+                      <button
+                        onClick={(event) => { event.stopPropagation(); editApp(app) }}
+                        className="p-1.5 text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-md"
+                      >
                         <Pencil size={12} />
                       </button>
-                      <button onClick={() => deleteApp(app)} disabled={deletingId === app.id} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md disabled:opacity-50">
+                      <button
+                        onClick={(event) => { event.stopPropagation(); deleteApp(app) }}
+                        disabled={deletingId === app.id}
+                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md disabled:opacity-50"
+                      >
                         {deletingId === app.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => { userPickedAppRef.current = true; setSelectedAppId(app.id) }}
-                        title={selected ? "Selecionado" : "Usar para conectar"}
+                      <span
+                        title={selected ? "Selecionado" : "Toque no card para usar este app"}
                         className={`ml-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border whitespace-nowrap ${
                           selected
                             ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
-                            : "bg-white/[0.03] border-white/10 text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                            : "bg-white/[0.03] border-white/10 text-gray-500"
                         }`}
                       >
                         {selected ? <Check size={12} /> : <PlugZap size={12} />}
                         <span className="hidden sm:inline">{selected ? "Selecionado" : "Usar"}</span>
-                      </button>
+                      </span>
                     </div>
                   </div>
                 )
