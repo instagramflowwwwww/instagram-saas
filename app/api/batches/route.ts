@@ -21,7 +21,7 @@ type CoverEntry = {
 }
 
 const CAPTION_MODES = new Set(["single", "per_media", "rotate", "library"])
-const MAX_ASSIGNMENTS = 5000
+const MAX_ASSIGNMENTS = 3000
 
 type AssignmentEntry = {
   round?: unknown
