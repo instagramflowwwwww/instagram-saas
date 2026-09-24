@@ -14,6 +14,14 @@ export function normalizeStorritoBaseUrl(value: string) {
   return BASE_URL_PATTERN.test(cleaned) ? cleaned : null
 }
 
+const CONNECT_LINK_PATTERN =
+  /^https:\/\/[a-z0-9-]+\.storrito\.com\/ui\/[a-z0-9-]+\?connect-link=[a-z0-9-]+$/i
+
+export function normalizeStorritoConnectLink(value: string) {
+  const cleaned = value.trim()
+  return CONNECT_LINK_PATTERN.test(cleaned) ? cleaned : null
+}
+
 export class StorritoError extends Error {
   status: number
   constructor(message: string, status: number) {
