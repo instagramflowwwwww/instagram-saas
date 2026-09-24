@@ -69,6 +69,14 @@ async function rpc<T>(
       throw new StorritoError(message, response.status)
     }
 
+    if (payload === null || typeof payload !== "object") {
+      const preview = raw.replace(/\s+/g, " ").slice(0, 120)
+      throw new StorritoError(
+        `O Storrito respondeu, mas não no formato esperado. Confira se a URL base está certa (copie a que aparece na tela de credenciais da API). Resposta recebida: "${preview || "vazia"}"`,
+        502
+      )
+    }
+
     return payload as T
   }
 

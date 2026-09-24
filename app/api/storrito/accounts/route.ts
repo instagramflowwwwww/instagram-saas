@@ -20,7 +20,7 @@ export async function GET() {
   try {
     const result = await listInstagramUsers(connection)
     return NextResponse.json({
-      accounts: (result.instagramUsers || []).map((user) => ({
+      accounts: (result?.instagramUsers || []).map((user) => ({
         username: user.instagramUsername,
       })),
     })
