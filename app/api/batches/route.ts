@@ -6,7 +6,7 @@ import { isMediaDeliveryUrl } from "@/lib/media-storage"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
-export const maxDuration = 60
+export const maxDuration = 120
 export const dynamic = "force-dynamic"
 
 type CaptionEntry = {
@@ -21,7 +21,7 @@ type CoverEntry = {
 }
 
 const CAPTION_MODES = new Set(["single", "per_media", "rotate", "library"])
-const MAX_ASSIGNMENTS = 3000
+const MAX_ASSIGNMENTS = 5000
 
 type AssignmentEntry = {
   round?: unknown
