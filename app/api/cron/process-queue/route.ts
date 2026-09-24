@@ -5,8 +5,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-const DEFAULT_PARALLEL_USERS = 3
-const MAX_PARALLEL_USERS = 4
+const DEFAULT_PARALLEL_USERS = 9
+const MAX_PARALLEL_USERS = 12
 
 function authorized(request: Request) {
   const secrets = [

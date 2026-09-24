@@ -9,7 +9,11 @@ import { prisma } from "@/lib/prisma"
 
 const MAX_ITEM_ATTEMPTS = 3
 const STUCK_AFTER_MS = 3 * 60 * 1000
-const ACCOUNT_CHUNK_SIZE = 4
+// Quantas contas uma automação avança por execução da fila (a cada minuto).
+const ACCOUNT_CHUNK_SIZE = 12
+// Quantas automações do MESMO usuário podem rodar por execução, em vez de
+// uma travar as outras em 0% até terminar.
+const MAX_BATCHES_PER_USER = 3
 const OLD_CANDIDATE_WINDOW = 48
 const RECENT_CANDIDATE_WINDOW = 120
 const NEAR_DUE_CANDIDATE_WINDOW = 200
@@ -264,9 +268,9 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
       return { itemId: item.id, status }
     }
 
-    // Cada trabalho executa no máximo quatro contas por ciclo. Isso mantém a
-    // Function curta e permite que outros usuários recebam tempo de fila no
-    // mesmo cron sem um lote grande monopolizar o executor.
+    // Cada trabalho executa no máximo ACCOUNT_CHUNK_SIZE contas por ciclo.
+    // Isso mantém a Function curta e permite que outros usuários recebam
+    // tempo de fila no mesmo cron sem um lote grande monopolizar o executor.
     const chunkIds = before.remainingIds.slice(0, ACCOUNT_CHUNK_SIZE)
     const result = await publishExistingPost({
       postId: item.post.id,
@@ -408,7 +412,7 @@ export async function processDueQueue(options: {
   await maintainInstagramAccounts(options.userId)
   await recoverStuckItems(options.userId)
 
-  const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 4)
+  const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 12)
   const now = new Date()
   const nearScheduleCutoff = new Date(now.getTime() - NEAR_SCHEDULE_WINDOW_MS)
   const recentBatchCutoff = new Date(now.getTime() - RECENT_BATCH_WINDOW_MS)
@@ -451,6 +455,7 @@ export async function processDueQueue(options: {
         userId: true,
         createdAt: true,
         updatedAt: true,
+        intervalMinutes: true,
         _count: { select: { accounts: true } },
       },
     },
@@ -518,7 +523,20 @@ export async function processDueQueue(options: {
     new Set(dueCandidates.map((candidate) => candidate.batch.userId))
   )
 
-  const [progressLogs, userActivityRows] = await Promise.all([
+  // Itens de "vídeo por conta" (modo sorteio) miram uma única conta cada.
+  // Se a fila atrasar, várias rodadas da MESMA conta podem ficar vencidas ao
+  // mesmo tempo — sem essa checagem, elas sairiam coladas assim que a fila
+  // desatrasasse, em vez de respeitar o intervalo pedido. É a trava que
+  // impede a conta de tomar posts em rajada mesmo com backlog.
+  const candidateAccountIds = Array.from(
+    new Set(
+      dueCandidates
+        .map((candidate) => candidate.instagramAccountId)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  const [progressLogs, userActivityRows, lastPublishByAccountRows] = await Promise.all([
     candidatePostIds.length > 0
       ? prisma.postLog.findMany({
           where: {
@@ -538,7 +556,24 @@ export async function processDueQueue(options: {
           _max: { updatedAt: true },
         })
       : Promise.resolve([]),
+    candidateAccountIds.length > 0
+      ? prisma.postLog.groupBy({
+          by: ["instagramAccountId"],
+          where: {
+            instagramAccountId: { in: candidateAccountIds },
+            status: "success",
+          },
+          _max: { createdAt: true },
+        })
+      : Promise.resolve([]),
   ])
+
+  const lastPublishByAccount = new Map<string, Date>()
+  for (const row of lastPublishByAccountRows) {
+    if (row.instagramAccountId && row._max.createdAt) {
+      lastPublishByAccount.set(row.instagramAccountId, row._max.createdAt)
+    }
+  }
 
   const processedByPost = new Map<string, Set<string>>()
   for (const log of progressLogs) {
@@ -572,11 +607,24 @@ export async function processDueQueue(options: {
     }
   })
 
+  // Trava de verdade por conta: mesmo que o item já esteja vencido (a fila
+  // atrasou), essa conta específica só entra de novo depois de já ter
+  // esperado o intervalo pedido desde a última publicação dela. Sem isso,
+  // um backlog grande faria a mesma conta receber várias rodadas coladas
+  // assim que a fila desatrasasse — foi o que zerou views de uma conta.
+  const readyCandidates = enrichedCandidates.filter((candidate) => {
+    if (!candidate.instagramAccountId) return true
+    const lastPublishedAt = lastPublishByAccount.get(candidate.instagramAccountId)
+    if (!lastPublishedAt) return true
+    const minGapMs = Math.max(candidate.batch.intervalMinutes, 1) * 60 * 1000
+    return now.getTime() - lastPublishedAt.getTime() >= minGapMs
+  })
+
   // Dentro da mesma sequência, sempre considera primeiro o item mais antigo
   // ainda vencido. Isso impede uma mídia das 00:01 de passar na frente da
   // mídia das 23:41 da mesma sequência.
   const bestPerBatch = new Map<string, (typeof enrichedCandidates)[number]>()
-  for (const candidate of enrichedCandidates) {
+  for (const candidate of readyCandidates) {
     const current = bestPerBatch.get(candidate.batchId)
     if (
       !current ||
@@ -630,7 +678,7 @@ export async function processDueQueue(options: {
       continue
     }
 
-    const siblings = enrichedCandidates.filter(
+    const siblings = readyCandidates.filter(
       (candidate) =>
         candidate.id !== representative.id &&
         candidate.batchId === batchId &&
@@ -645,19 +693,26 @@ export async function processDueQueue(options: {
     )
   }
 
-  // Um usuário só ocupa um slot por execução. Assim três usuários podem ser
-  // processados em paralelo sem um único cliente monopolizar a fila global.
-  const bestGroupPerUser = new Map<string, (typeof enrichedCandidates)[number][]>()
+  // Cada usuário pode ocupar até MAX_BATCHES_PER_USER slots por execução —
+  // suas próprias automações se revezam entre si em vez de uma travar as
+  // outras em 0% até terminar. O limite evita só que um único cliente
+  // monopolize a fila global inteira; entre usuários diferentes continua
+  // valendo a ordem por prioridade de sempre.
+  const groupsByUser = new Map<string, (typeof enrichedCandidates)[number][][]>()
   for (const group of Array.from(bestGroupPerBatch.values())) {
-    const representative = group[0]
-    const userId = representative.batch.userId
-    const currentGroup = bestGroupPerUser.get(userId)
-    if (!currentGroup || compareUserCandidate(representative, currentGroup[0]) < 0) {
-      bestGroupPerUser.set(userId, group)
-    }
+    const userId = group[0].batch.userId
+    const current = groupsByUser.get(userId) || []
+    current.push(group)
+    groupsByUser.set(userId, current)
   }
 
-  const prioritizedGroups = Array.from(bestGroupPerUser.values()).sort((groupA, groupB) => {
+  const bestGroupsPerUser: (typeof enrichedCandidates)[number][][] = []
+  for (const groups of Array.from(groupsByUser.values())) {
+    groups.sort((groupA, groupB) => compareUserCandidate(groupA[0], groupB[0]))
+    bestGroupsPerUser.push(...groups.slice(0, MAX_BATCHES_PER_USER))
+  }
+
+  const prioritizedGroups = bestGroupsPerUser.sort((groupA, groupB) => {
     const a = groupA[0]
     const b = groupB[0]
 
@@ -689,7 +744,7 @@ export async function processDueQueue(options: {
     nearCandidates: nearDue.length,
     busyUsers: busyUserIds.size,
     candidates: dueCandidates.length,
-    candidateUsers: bestGroupPerUser.size,
+    candidateUsers: groupsByUser.size,
     count: dueItems.length,
     selected: dueItems.map((item) => ({
       itemId: item.id,
