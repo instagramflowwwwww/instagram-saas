@@ -26,6 +26,8 @@ model User {
   postingBatches    PostingBatch[]
   apiTokens         ApiToken[]
   apiConnectionRequests ApiConnectionRequest[]
+  storritoConnection StorritoConnection?
+  storritoStories   StorritoStory[]
   accessStatus      String             @default("approved")
   planName          String?
   planDurationDays  Int?
@@ -138,6 +140,38 @@ model ApiConnectionRequest {
 
   @@index([userId])
   @@index([status])
+}
+
+// Integração com o Storrito (serviço de terceiros que posta story com
+// adesivo de link, coisa que a API oficial da Meta não permite). A conta do
+// Instagram é conectada dentro do próprio Storrito — o InstaFlow só guarda a
+// URL base e o token da API dele (cifrado), nunca senha do Instagram.
+model StorritoConnection {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  baseUrl        String
+  tokenEncrypted String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StorritoStory {
+  id                String    @id @default(cuid())
+  userId            String
+  storyPostUuid     String    @unique
+  instagramUsername String
+  mediaUrl          String
+  linkUrl           String
+  linkText          String
+  scheduledAt       DateTime?
+  status            String    @default("scheduled")
+  warnings          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model AccountGroup {
