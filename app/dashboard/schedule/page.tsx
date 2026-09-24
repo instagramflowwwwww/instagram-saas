@@ -782,7 +782,14 @@ export default function SchedulePage() {
               ))}
             </select>
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-xs text-gray-400">Contas</label>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400">Contas</label>
+                {selectedAccounts.length > 0 && (
+                  <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-medium text-purple-300">
+                    {selectedAccounts.length} de {accounts.length} selecionada{selectedAccounts.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
               <button onClick={() => setSelectedAccounts(selectedAccounts.length === accounts.length ? [] : accounts.map((a) => a.id))} className="text-xs text-purple-400 hover:text-purple-300">
                 {selectedAccounts.length === accounts.length ? "Limpar" : "Todas"}
               </button>
