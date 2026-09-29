@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client"
 import {
+  INSTAGRAM_DISCONNECTED_CONNECTION,
   isInstagramDisconnectError,
   isInstagramPermanentPublishError,
   maintainInstagramAccounts,
@@ -189,5 +190,65 @@ export async function syncInstagramAccountProfiles(
     failed: results.filter((item) => !item.success).length,
     disconnected: results.filter((item) => item.disconnected).length,
     results,
+  }
+}
+
+export type InstagramAccountRecoverySummary = {
+  checked: number
+  recovered: number
+  stillDisconnected: number
+}
+
+// Recupera contas marcadas como desconectadas cujo token salvo ainda pode
+// estar válido — caso real que motivou isso: uma falha da nossa própria
+// infraestrutura (ex.: bucket de mídia fora do ar) derrubou publicações e a
+// conta foi marcada como desconectada sem o token em si ter problema. Em vez
+// de exigir reconexão manual de cada uma, testamos o token que já está salvo
+// direto contra a Meta e restauramos as que ainda respondem normalmente.
+export async function recoverDisconnectedAccounts(
+  userId: string
+): Promise<InstagramAccountRecoverySummary> {
+  const now = new Date()
+
+  const accounts = await prisma.instagramAccount.findMany({
+    where: {
+      userId,
+      connectionType: INSTAGRAM_DISCONNECTED_CONNECTION,
+      accessToken: { not: null },
+      appConfigId: { not: null },
+      tokenExpiresAt: { gt: now },
+    },
+    select: { id: true, username: true, name: true, accessToken: true },
+  })
+
+  const results = await mapWithConcurrency(accounts, 4, async (account) => {
+    try {
+      const accessToken = decryptValue(account.accessToken!)
+      const profile = await fetchInstagramProfile(accessToken)
+
+      await prisma.instagramAccount.update({
+        where: { id: account.id },
+        data: {
+          connectionType: "official",
+          isActive: true,
+          username: String(profile.username || account.username).toLowerCase(),
+          name: profile.name ? String(profile.name) : account.name,
+          lastActiveAt: now,
+          profileSyncedAt: now,
+        },
+      })
+      return true
+    } catch {
+      // Token realmente não funciona mais — continua precisando de reconexão manual.
+      return false
+    }
+  })
+
+  const recovered = results.filter(Boolean).length
+
+  return {
+    checked: accounts.length,
+    recovered,
+    stillDisconnected: accounts.length - recovered,
   }
 }

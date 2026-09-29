@@ -103,6 +103,7 @@ export default function AccountsPage() {
   const [groups, setGroups] = useState<AccountGroup[]>([])
   const [folderMenuFor, setFolderMenuFor] = useState<string | null>(null)
   const [savingFolder, setSavingFolder] = useState<string | null>(null)
+  const [recovering, setRecovering] = useState(false)
 
   const fetchAccounts = async (manual = false) => {
     if (manual) setRefreshing(true)
@@ -127,6 +128,35 @@ export default function AccountsPage() {
     } finally {
       setLoading(false)
       setRefreshing(false)
+    }
+  }
+
+  const recoverAccounts = async () => {
+    setRecovering(true)
+    try {
+      const response = await fetch("/api/instagram/accounts/recover", { method: "POST" })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Não foi possível recuperar as contas.")
+
+      if (data.recovered > 0) {
+        toast.success(
+          `${data.recovered} de ${data.checked} conta(s) recuperada(s) sem precisar reconectar.`
+        )
+      } else {
+        toast(
+          data.checked > 0
+            ? "Nenhuma das contas verificadas pôde ser recuperada — o token delas realmente não funciona mais."
+            : "Nenhuma conta com token ainda válido pra tentar recuperar.",
+          { icon: "ℹ️" }
+        )
+      }
+      await fetchAccounts(false)
+    } catch (recoverError) {
+      toast.error(
+        recoverError instanceof Error ? recoverError.message : "Não foi possível recuperar as contas."
+      )
+    } finally {
+      setRecovering(false)
     }
   }
 
@@ -321,6 +351,18 @@ export default function AccountsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {reconnectCount > 0 && (
+            <button
+              type="button"
+              onClick={recoverAccounts}
+              disabled={recovering}
+              title="Testa o token já salvo de cada conta desconectada e recupera na hora as que ainda funcionam, sem precisar reconectar uma por uma"
+              className="inline-flex items-center justify-center gap-2 border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/15 disabled:opacity-50 text-purple-300 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+            >
+              <RefreshCw size={15} className={recovering ? "animate-spin" : ""} />
+              {recovering ? "Recuperando..." : "Recuperar contas"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => fetchAccounts(true)}

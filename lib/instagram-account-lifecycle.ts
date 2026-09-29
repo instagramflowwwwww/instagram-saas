@@ -111,13 +111,31 @@ export async function markInstagramAccountDisconnected(accountId: string) {
 }
 
 const CHRONIC_FAILURE_STREAK = 3
+const CHRONIC_FAILURE_LOOKBACK = 15
+
+// Só conta pra essa regra erro que parece ser da própria conta/token
+// (as mesmas checagens usadas pra decidir se um erro é permanente ou de
+// desconexão). Um problema do nosso lado — o exemplo real que motivou isso:
+// o bucket R2 ficou sem pagamento, a Meta não conseguiu buscar o vídeo pra
+// publicar, e isso por si só não diz nada sobre a saúde da conta — nunca
+// deveria contar como sinal de conta desconectada.
+function isAccountLevelErrorMessage(message: string | null) {
+  if (!message) return false
+  const fakeError = new Error(message)
+  return (
+    isInstagramPermanentPublishError(fakeError) || isInstagramDisconnectError(fakeError)
+  )
+}
 
 // Cobre publicações que falham com um erro que a Meta devolve num formato
 // que os classificadores de cima não reconhecem (mensagem/código novo,
 // diferente do que já vimos). Em vez de depender de prever cada texto de
 // erro possível, se as últimas N tentativas de publicação de uma conta
-// falharam todas seguidas, sem nenhum sucesso no meio, tratamos como
-// desconectada — não tem outra explicação plausível pra isso acontecer.
+// falharam todas seguidas com erro do tipo conta/token, sem nenhum sucesso
+// no meio, tratamos como desconectada — não tem outra explicação plausível
+// pra isso acontecer. Falhas de outra natureza (ex.: mídia inacessível por
+// um problema nosso) são ignoradas: não contam a favor nem resetam a
+// contagem, só não dizem nada sobre a conta em si.
 async function flagChronicallyFailingAccounts(userWhere: { userId?: string }) {
   const accounts = await prisma.instagramAccount.findMany({
     where: {
@@ -129,17 +147,23 @@ async function flagChronicallyFailingAccounts(userWhere: { userId?: string }) {
       id: true,
       postLogs: {
         orderBy: { createdAt: "desc" },
-        take: CHRONIC_FAILURE_STREAK,
-        select: { status: true },
+        take: CHRONIC_FAILURE_LOOKBACK,
+        select: { status: true, errorMessage: true },
       },
     },
   })
 
-  const chronicallyFailing = accounts.filter(
-    (account) =>
-      account.postLogs.length === CHRONIC_FAILURE_STREAK &&
-      account.postLogs.every((log) => log.status === "error")
-  )
+  const chronicallyFailing = accounts.filter((account) => {
+    let streak = 0
+    for (const log of account.postLogs) {
+      if (log.status === "success") break
+      if (log.status !== "error") continue
+      if (!isAccountLevelErrorMessage(log.errorMessage)) continue
+      streak += 1
+      if (streak >= CHRONIC_FAILURE_STREAK) return true
+    }
+    return false
+  })
 
   await Promise.all(
     chronicallyFailing.map((account) => markInstagramAccountDisconnected(account.id))
