@@ -283,7 +283,7 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
       .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
       .join(" | ")
 
-    // Limite diário de publicação da própria Meta (25 posts/24h por conta):
+    // Limite diário de publicação da própria Meta (100 posts/24h por conta):
     // não é falha da conta, é questão de esperar a cota liberar. Sem este
     // tratamento, o log de erro já gravado marca a conta como "processada"
     // e o item finaliza como falho de vez — toda rodada seguinte do mesmo

@@ -5,3 +5,8 @@ prisma/dev.db
 .env.local
 
 tsconfig.tsbuildinfo
+
+automation/node_modules
+automation/.env
+.vercel
+.env*
