@@ -18,6 +18,12 @@ const OLD_CANDIDATE_WINDOW = 48
 const RECENT_CANDIDATE_WINDOW = 120
 const NEAR_DUE_CANDIDATE_WINDOW = 200
 const NEAR_SCHEDULE_WINDOW_MS = 90 * 60 * 1000
+// Um item que acabou de vencer (dentro desses minutos) tem prioridade sobre
+// QUALQUER backlog mais antigo, mesmo dentro da janela "near". Sem isso, um
+// post programado pra agora podia ficar esperando atrás de um monte de post
+// que já estava atrasado há mais tempo, perdendo o horário combinado mesmo
+// a fila tendo espaço pra ele.
+const FRESH_DUE_WINDOW_MS = 3 * 60 * 1000
 const RECENT_BATCH_WINDOW_MS = 6 * 60 * 60 * 1000
 
 type ProcessedQueueItem = {
@@ -415,6 +421,7 @@ export async function processDueQueue(options: {
   const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 12)
   const now = new Date()
   const nearScheduleCutoff = new Date(now.getTime() - NEAR_SCHEDULE_WINDOW_MS)
+  const freshDueCutoff = new Date(now.getTime() - FRESH_DUE_WINDOW_MS)
   const recentBatchCutoff = new Date(now.getTime() - RECENT_BATCH_WINDOW_MS)
 
   const baseWhere: Prisma.PostingBatchItemWhereInput = {
@@ -601,6 +608,7 @@ export async function processDueQueue(options: {
       remainingAccounts,
       quick: remainingAccounts <= ACCOUNT_CHUNK_SIZE,
       nearSchedule: intendedScheduledAt >= nearScheduleCutoff,
+      freshlyDue: intendedScheduledAt >= freshDueCutoff,
       recentBatch: candidate.batch.createdAt >= recentBatchCutoff,
       userLastServedAt:
         lastServedByUser.get(candidate.batch.userId) || new Date(0),
@@ -642,6 +650,12 @@ export async function processDueQueue(options: {
   ) {
     // Horários dos últimos 90 minutos têm prioridade sobre backlog histórico.
     if (a.nearSchedule !== b.nearSchedule) return a.nearSchedule ? -1 : 1
+
+    // Dentro da janela "near", quem venceu agora mesmo (últimos 3 min) nunca
+    // espera atrás de backlog mais velho — garante o horário combinado.
+    if (a.nearSchedule && b.nearSchedule && a.freshlyDue !== b.freshlyDue) {
+      return a.freshlyDue ? -1 : 1
+    }
 
     if (a.nearSchedule && b.nearSchedule) {
       const bySchedule =
@@ -717,6 +731,10 @@ export async function processDueQueue(options: {
     const b = groupB[0]
 
     if (a.nearSchedule !== b.nearSchedule) return a.nearSchedule ? -1 : 1
+
+    if (a.nearSchedule && b.nearSchedule && a.freshlyDue !== b.freshlyDue) {
+      return a.freshlyDue ? -1 : 1
+    }
 
     if (a.nearSchedule && b.nearSchedule) {
       const bySchedule =
