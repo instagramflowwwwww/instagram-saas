@@ -2,8 +2,29 @@
 import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
-import { Instagram } from "lucide-react"
+import {
+  BarChart3,
+  Calendar,
+  Check,
+  Eye,
+  EyeOff,
+  FolderOpen,
+  Instagram,
+  LayoutDashboard,
+  ListChecks,
+  Users,
+} from "lucide-react"
 import toast from "react-hot-toast"
+
+const FEATURES = ["Instagram", "Automação", "Biblioteca", "Fila", "Performance"]
+
+const MOCK_TABS = [
+  { icon: LayoutDashboard, label: "Dashboard" },
+  { icon: Calendar, label: "Automação" },
+  { icon: FolderOpen, label: "Biblioteca" },
+  { icon: Users, label: "Contas" },
+  { icon: BarChart3, label: "Performance" },
+]
 
 export default function LoginPage() {
   const router = useRouter()
@@ -11,6 +32,8 @@ export default function LoginPage() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -75,33 +98,105 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-      <div className="w-full max-w-md p-8">
-        {/* Logo */}
-        <div className="flex items-center gap-3 mb-12 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-            <Instagram size={20} className="text-white" />
+    <div className="min-h-screen bg-[#0a0a0a] flex">
+      {/* Painel esquerdo — só aparece em telas grandes */}
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between border-r border-white/5 px-16 py-12 relative overflow-hidden">
+        <div
+          className="pointer-events-none absolute -top-40 -left-40 h-96 w-96 rounded-full bg-purple-600/10 blur-3xl"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute bottom-0 right-0 h-80 w-80 rounded-full bg-pink-600/10 blur-3xl"
+          aria-hidden
+        />
+
+        <div className="relative flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
+            <Instagram size={18} className="text-white" />
           </div>
-          <span className="text-2xl font-bold text-white">InstaFlow</span>
+          <span className="text-xl font-bold text-white">InstaFlow</span>
         </div>
 
-        {/* Card */}
-        <div className="bg-[#111] border border-white/10 rounded-2xl p-8">
-          <h1 className="text-2xl font-bold text-white mb-2">
-            {isRegister ? "Criar conta" : "Bem-vindo"}
+        <div className="relative max-w-md">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="h-px w-6 bg-purple-500" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-400">
+              Gestão de contas com método
+            </span>
+          </div>
+          <h1 className="text-4xl font-bold text-white leading-tight mb-4">
+            Publique no Instagram sem perder o ritmo.
           </h1>
-          <p className="text-gray-400 mb-8 text-sm">
+          <p className="text-gray-500 mb-8">
+            Conecte contas, organize a biblioteca e deixe a fila publicar no horário certo —
+            tudo num painel só.
+          </p>
+
+          <div className="rounded-2xl border border-white/10 bg-[#0d0d0d] overflow-hidden shadow-2xl">
+            <div className="flex items-center gap-1.5 border-b border-white/5 px-4 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
+              <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
+              <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
+              <div className="ml-3 flex gap-4">
+                {MOCK_TABS.map((tab, index) => (
+                  <span
+                    key={tab.label}
+                    className={`flex items-center gap-1.5 text-[11px] ${
+                      index === 1 ? "text-purple-300" : "text-gray-600"
+                    }`}
+                  >
+                    <tab.icon size={11} />
+                    {tab.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="h-40 bg-gradient-to-br from-purple-500/[0.04] to-pink-500/[0.04] flex items-center justify-center">
+              <ListChecks size={28} className="text-white/10" />
+            </div>
+          </div>
+        </div>
+
+        <div className="relative flex flex-wrap gap-x-6 gap-y-2">
+          {FEATURES.map((feature) => (
+            <span key={feature} className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Check size={12} className="text-purple-400" />
+              {feature}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Formulário */}
+      <div className="flex w-full lg:w-1/2 items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <div className="lg:hidden flex items-center gap-3 mb-10 justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+              <Instagram size={20} className="text-white" />
+            </div>
+            <span className="text-2xl font-bold text-white">InstaFlow</span>
+          </div>
+
+          <div className="flex items-center gap-2 mb-3">
+            <span className="h-px w-6 bg-purple-500" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-400">
+              Painel operacional
+            </span>
+          </div>
+
+          <h2 className="text-2xl font-bold text-white mb-2">
+            {isRegister ? "Criar conta" : "Bem-vindo de volta"}
+          </h2>
+          <p className="text-gray-500 mb-8 text-sm">
             {isRegister
-              ? "Preencha os dados abaixo para se cadastrar"
-              : "Faça login para gerenciar suas contas do Instagram"}
+              ? "Preencha os dados abaixo para se cadastrar."
+              : "Entre para continuar operando suas contas."}
           </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {isRegister && (
               <div>
-                <label className="text-sm text-gray-400 mb-1 block">
-                  Nome (opcional)
-                </label>
+                <label className="text-sm text-gray-400 mb-1.5 block">Nome (opcional)</label>
                 <input
                   type="text"
                   value={name}
@@ -113,7 +208,7 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">Email</label>
+              <label className="text-sm text-gray-400 mb-1.5 block">E-mail</label>
               <input
                 type="email"
                 value={email}
@@ -125,46 +220,65 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="text-sm text-gray-400 mb-1 block">Senha</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={isRegister ? "Mínimo 6 caracteres" : "••••••••"}
-                required
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition-colors"
-              />
+              <label className="text-sm text-gray-400 mb-1.5 block">Senha</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={isRegister ? "Mínimo 6 caracteres" : "••••••••"}
+                  required
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-11 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-purple-500 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  aria-label={showPassword ? "Esconder senha" : "Mostrar senha"}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
+
+            {!isRegister && (
+              <div className="flex items-center justify-between text-xs">
+                <label className="flex items-center gap-2 text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-white/20 bg-white/5 accent-purple-500"
+                  />
+                  Lembrar de mim
+                </label>
+                <span className="text-gray-600">Esqueceu a senha? (em breve)</span>
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium py-3 px-4 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed mt-2"
             >
-              {loading
-                ? "Aguarde..."
-                : isRegister
-                ? "Criar conta"
-                : "Entrar"}
+              {loading ? "Aguarde..." : isRegister ? "Criar conta" : "Entrar"}
             </button>
           </form>
 
           <p className="text-center text-gray-500 text-sm mt-6">
             {isRegister ? "Já tem uma conta?" : "Não tem uma conta?"}{" "}
             <button
-              onClick={() => {
-                setIsRegister(!isRegister)
-              }}
+              onClick={() => setIsRegister(!isRegister)}
               className="text-purple-400 hover:text-purple-300 transition-colors font-medium"
             >
               {isRegister ? "Fazer login" : "Criar conta"}
             </button>
           </p>
-        </div>
 
-        <p className="text-center text-gray-600 text-xs mt-6">
-          Ao entrar, você concorda com nossos termos de uso
-        </p>
+          <p className="text-center text-gray-600 text-xs mt-6">
+            Ao entrar, você concorda com nossos termos de uso
+          </p>
+        </div>
       </div>
     </div>
   )
