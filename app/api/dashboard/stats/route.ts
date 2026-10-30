@@ -3,9 +3,16 @@ import { getServerSession } from "next-auth"
 import { Prisma } from "@prisma/client"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isCacheFresh, refreshPerformanceLogs, type PerformanceLog } from "@/lib/instagram-performance"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
+
+// Quantos PostLogs de hoje, no máximo, atualizamos na Meta antes de
+// responder o dashboard — pra "views hoje" já chegar certa ao logar, sem
+// deixar o carregamento lento demais quando o dia tem muita publicação.
+const MAX_TODAY_LOGS_TO_REFRESH = 24
 
 type Period = {
   start: Date
@@ -121,7 +128,7 @@ export async function GET(request: Request) {
   try {
     // O dashboard agora faz três round-trips principais ao banco: contas,
     // resumo agregado e posts recentes. Antes eram cerca de dez consultas.
-    const [accounts, summaryRows, recentPosts, upcomingPosts] = await Promise.all([
+    const [accounts, todayLogsForRefresh, recentPosts, upcomingPosts] = await Promise.all([
       prisma.instagramAccount.findMany({
         where: {
           userId,
@@ -150,140 +157,51 @@ export async function GET(request: Request) {
           { createdAt: "desc" },
         ],
       }),
-      prisma.$queryRaw<SummaryCountsRow[]>(Prisma.sql`
-        SELECT
-          (
-            SELECT COUNT(*)
-            FROM "Post" p
-            WHERE p."userId" = ${userId}
-              AND p."status" IN ('published', 'partial')
-              AND p."publishedAt" >= ${period.start}
-              AND p."publishedAt" <= ${period.end}
-          ) AS "publishedCurrent",
-          (
-            SELECT COUNT(*)
-            FROM "Post" p
-            WHERE p."userId" = ${userId}
-              AND p."status" IN ('published', 'partial')
-              AND p."publishedAt" >= ${period.previousStart}
-              AND p."publishedAt" <= ${period.previousEnd}
-          ) AS "publishedPrevious",
-          (
-            SELECT COUNT(*)
-            FROM "Post" p
-            WHERE p."userId" = ${userId}
-              AND p."status" = 'scheduled'
-              AND p."scheduledAt" >= ${period.start}
-              AND p."scheduledAt" <= ${period.end}
-          ) AS "scheduledCurrent",
-          (
-            SELECT COUNT(*)
-            FROM "Post" p
-            WHERE p."userId" = ${userId}
-              AND p."status" = 'scheduled'
-              AND p."scheduledAt" >= ${period.previousStart}
-              AND p."scheduledAt" <= ${period.previousEnd}
-          ) AS "scheduledPrevious",
-          (
-            SELECT COUNT(*)
-            FROM "PostLog" pl
-            INNER JOIN "Post" p ON p."id" = pl."postId"
-            INNER JOIN "InstagramAccount" ia ON ia."id" = pl."instagramAccountId"
-            WHERE p."userId" = ${userId}
-              AND pl."status" = 'error'
-              AND pl."createdAt" >= ${period.start}
-              AND pl."createdAt" <= ${period.end}
-              AND ia."connectionType" = 'official'
-              AND ia."isActive" = true
-              AND ia."accessToken" IS NOT NULL
-              AND ia."appConfigId" IS NOT NULL
-              AND ia."tokenExpiresAt" > ${now}
-          ) AS "failuresCurrent",
-          (
-            SELECT COUNT(*)
-            FROM "PostLog" pl
-            INNER JOIN "Post" p ON p."id" = pl."postId"
-            INNER JOIN "InstagramAccount" ia ON ia."id" = pl."instagramAccountId"
-            WHERE p."userId" = ${userId}
-              AND pl."status" = 'error'
-              AND pl."createdAt" >= ${period.previousStart}
-              AND pl."createdAt" <= ${period.previousEnd}
-              AND ia."connectionType" = 'official'
-              AND ia."isActive" = true
-              AND ia."accessToken" IS NOT NULL
-              AND ia."appConfigId" IS NOT NULL
-              AND ia."tokenExpiresAt" > ${now}
-          ) AS "failuresPrevious",
-          (
-            SELECT COUNT(*)
-            FROM "InstagramAccount" ia
-            WHERE ia."userId" = ${userId}
-              AND ia."connectionType" = 'official'
-              AND ia."isActive" = true
-              AND ia."accessToken" IS NOT NULL
-              AND ia."appConfigId" IS NOT NULL
-              AND ia."tokenExpiresAt" > ${now}
-              AND ia."createdAt" >= ${period.start}
-              AND ia."createdAt" <= ${period.end}
-          ) AS "newAccountsCurrent",
-          (
-            SELECT COUNT(*)
-            FROM "InstagramAccount" ia
-            WHERE ia."userId" = ${userId}
-              AND ia."connectionType" = 'official'
-              AND ia."isActive" = true
-              AND ia."accessToken" IS NOT NULL
-              AND ia."appConfigId" IS NOT NULL
-              AND ia."tokenExpiresAt" > ${now}
-              AND ia."createdAt" >= ${period.previousStart}
-              AND ia."createdAt" <= ${period.previousEnd}
-          ) AS "newAccountsPrevious",
-          (
-            SELECT COUNT(*)
-            FROM "PostingBatchItem" pbi
-            INNER JOIN "PostingBatch" pb ON pb."id" = pbi."batchId"
-            WHERE pb."userId" = ${userId}
-              AND pbi."status" IN ('pending', 'processing')
-          ) AS "queueCount",
-          (
-            SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
-            FROM "PostLog" pl
-            INNER JOIN "Post" p ON p."id" = pl."postId"
-            WHERE p."userId" = ${userId}
-              AND pl."performancePublishedAt" >= ${todayStart}
-              AND pl."performancePublishedAt" <= ${todayEnd}
-          ) AS "viewsToday",
-          (
-            SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
-            FROM "PostLog" pl
-            INNER JOIN "Post" p ON p."id" = pl."postId"
-            WHERE p."userId" = ${userId}
-              AND pl."performancePublishedAt" >= ${yesterdayStart}
-              AND pl."performancePublishedAt" <= ${yesterdayEnd}
-          ) AS "viewsYesterday",
-          (
-            SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
-            FROM "PostLog" pl
-            INNER JOIN "Post" p ON p."id" = pl."postId"
-            WHERE p."userId" = ${userId}
-          ) AS "viewsTotal",
-          (
-            SELECT COUNT(*)
-            FROM "Post" p
-            WHERE p."userId" = ${userId}
-              AND p."status" IN ('published', 'partial')
-              AND p."publishedAt" >= ${todayStart}
-              AND p."publishedAt" <= ${todayEnd}
-          ) AS "publishedToday",
-          (
-            SELECT COUNT(*)
-            FROM "Post" p
-            WHERE p."userId" = ${userId}
-              AND p."status" IN ('published', 'partial')
-              AND p."publishedAt" >= ${yesterdayStart}
-              AND p."publishedAt" <= ${yesterdayEnd}
-          ) AS "publishedYesterday"
-      `),
+      // Posts de hoje cujo contador de views pode estar desatualizado ou
+      // nunca foi buscado — atualizados na Meta logo abaixo, antes de somar
+      // "views hoje", pra chegar certo já no primeiro carregamento do
+      // dashboard em vez de só depois de clicar em "Atualizar dados".
+      prisma.postLog.findMany({
+        where: {
+          status: "success",
+          mediaId: { not: null },
+          post: { userId, publishedAt: { gte: todayStart, lte: todayEnd } },
+          instagramAccount: {
+            connectionType: "official",
+            isActive: true,
+            accessToken: { not: null },
+            appConfigId: { not: null },
+            tokenExpiresAt: { gt: now },
+          },
+        },
+        select: {
+          id: true,
+          mediaId: true,
+          instagramAccountId: true,
+          createdAt: true,
+          performancePermalink: true,
+          performanceLikeCount: true,
+          performanceCommentsCount: true,
+          performanceViewsCount: true,
+          performanceViewsMetric: true,
+          performanceMediaType: true,
+          performanceMediaProductType: true,
+          performancePublishedAt: true,
+          performanceUpdatedAt: true,
+          performanceError: true,
+          post: { select: { caption: true } },
+          instagramAccount: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+              accessToken: true,
+              tokenExpiresAt: true,
+            },
+          },
+        },
+        take: MAX_TODAY_LOGS_TO_REFRESH,
+      }),
       prisma.post.findMany({
         where: {
           userId,
@@ -344,6 +262,151 @@ export async function GET(request: Request) {
         },
       }),
     ])
+
+    // O `where` já garante instagramAccount válida nessas linhas; o Prisma
+    // só não reflete isso no tipo porque a FK em si é opcional no schema.
+    const todayLogs = todayLogsForRefresh as unknown as PerformanceLog[]
+    const staleTodayLogs = todayLogs.filter((log) => !isCacheFresh(log, Date.now()))
+    if (staleTodayLogs.length > 0) {
+      await refreshPerformanceLogs(staleTodayLogs).catch((error) => {
+        console.error("[dashboard-stats] Falha ao atualizar performance de hoje", error)
+      })
+    }
+
+    const summaryRows = await prisma.$queryRaw<SummaryCountsRow[]>(Prisma.sql`
+      SELECT
+        (
+          SELECT COUNT(*)
+          FROM "Post" p
+          WHERE p."userId" = ${userId}
+            AND p."status" IN ('published', 'partial')
+            AND p."publishedAt" >= ${period.start}
+            AND p."publishedAt" <= ${period.end}
+        ) AS "publishedCurrent",
+        (
+          SELECT COUNT(*)
+          FROM "Post" p
+          WHERE p."userId" = ${userId}
+            AND p."status" IN ('published', 'partial')
+            AND p."publishedAt" >= ${period.previousStart}
+            AND p."publishedAt" <= ${period.previousEnd}
+        ) AS "publishedPrevious",
+        (
+          SELECT COUNT(*)
+          FROM "Post" p
+          WHERE p."userId" = ${userId}
+            AND p."status" = 'scheduled'
+            AND p."scheduledAt" >= ${period.start}
+            AND p."scheduledAt" <= ${period.end}
+        ) AS "scheduledCurrent",
+        (
+          SELECT COUNT(*)
+          FROM "Post" p
+          WHERE p."userId" = ${userId}
+            AND p."status" = 'scheduled'
+            AND p."scheduledAt" >= ${period.previousStart}
+            AND p."scheduledAt" <= ${period.previousEnd}
+        ) AS "scheduledPrevious",
+        (
+          SELECT COUNT(*)
+          FROM "PostLog" pl
+          INNER JOIN "Post" p ON p."id" = pl."postId"
+          INNER JOIN "InstagramAccount" ia ON ia."id" = pl."instagramAccountId"
+          WHERE p."userId" = ${userId}
+            AND pl."status" = 'error'
+            AND pl."createdAt" >= ${period.start}
+            AND pl."createdAt" <= ${period.end}
+            AND ia."connectionType" = 'official'
+            AND ia."isActive" = true
+            AND ia."accessToken" IS NOT NULL
+            AND ia."appConfigId" IS NOT NULL
+            AND ia."tokenExpiresAt" > ${now}
+        ) AS "failuresCurrent",
+        (
+          SELECT COUNT(*)
+          FROM "PostLog" pl
+          INNER JOIN "Post" p ON p."id" = pl."postId"
+          INNER JOIN "InstagramAccount" ia ON ia."id" = pl."instagramAccountId"
+          WHERE p."userId" = ${userId}
+            AND pl."status" = 'error'
+            AND pl."createdAt" >= ${period.previousStart}
+            AND pl."createdAt" <= ${period.previousEnd}
+            AND ia."connectionType" = 'official'
+            AND ia."isActive" = true
+            AND ia."accessToken" IS NOT NULL
+            AND ia."appConfigId" IS NOT NULL
+            AND ia."tokenExpiresAt" > ${now}
+        ) AS "failuresPrevious",
+        (
+          SELECT COUNT(*)
+          FROM "InstagramAccount" ia
+          WHERE ia."userId" = ${userId}
+            AND ia."connectionType" = 'official'
+            AND ia."isActive" = true
+            AND ia."accessToken" IS NOT NULL
+            AND ia."appConfigId" IS NOT NULL
+            AND ia."tokenExpiresAt" > ${now}
+            AND ia."createdAt" >= ${period.start}
+            AND ia."createdAt" <= ${period.end}
+        ) AS "newAccountsCurrent",
+        (
+          SELECT COUNT(*)
+          FROM "InstagramAccount" ia
+          WHERE ia."userId" = ${userId}
+            AND ia."connectionType" = 'official'
+            AND ia."isActive" = true
+            AND ia."accessToken" IS NOT NULL
+            AND ia."appConfigId" IS NOT NULL
+            AND ia."tokenExpiresAt" > ${now}
+            AND ia."createdAt" >= ${period.previousStart}
+            AND ia."createdAt" <= ${period.previousEnd}
+        ) AS "newAccountsPrevious",
+        (
+          SELECT COUNT(*)
+          FROM "PostingBatchItem" pbi
+          INNER JOIN "PostingBatch" pb ON pb."id" = pbi."batchId"
+          WHERE pb."userId" = ${userId}
+            AND pbi."status" IN ('pending', 'processing')
+        ) AS "queueCount",
+        (
+          SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
+          FROM "PostLog" pl
+          INNER JOIN "Post" p ON p."id" = pl."postId"
+          WHERE p."userId" = ${userId}
+            AND pl."performancePublishedAt" >= ${todayStart}
+            AND pl."performancePublishedAt" <= ${todayEnd}
+        ) AS "viewsToday",
+        (
+          SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
+          FROM "PostLog" pl
+          INNER JOIN "Post" p ON p."id" = pl."postId"
+          WHERE p."userId" = ${userId}
+            AND pl."performancePublishedAt" >= ${yesterdayStart}
+            AND pl."performancePublishedAt" <= ${yesterdayEnd}
+        ) AS "viewsYesterday",
+        (
+          SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
+          FROM "PostLog" pl
+          INNER JOIN "Post" p ON p."id" = pl."postId"
+          WHERE p."userId" = ${userId}
+        ) AS "viewsTotal",
+        (
+          SELECT COUNT(*)
+          FROM "Post" p
+          WHERE p."userId" = ${userId}
+            AND p."status" IN ('published', 'partial')
+            AND p."publishedAt" >= ${todayStart}
+            AND p."publishedAt" <= ${todayEnd}
+        ) AS "publishedToday",
+        (
+          SELECT COUNT(*)
+          FROM "Post" p
+          WHERE p."userId" = ${userId}
+            AND p."status" IN ('published', 'partial')
+            AND p."publishedAt" >= ${yesterdayStart}
+            AND p."publishedAt" <= ${yesterdayEnd}
+        ) AS "publishedYesterday"
+    `)
 
     const upcomingAccountIds = Array.from(
       new Set(
