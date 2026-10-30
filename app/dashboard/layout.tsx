@@ -226,7 +226,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="w-8" />
         </div>
 
-        <div className="flex-1 p-4 md:p-8 md:ml-16">
+        <div
+          className={`flex-1 p-4 transition-all duration-200 md:p-8 ${
+            desktopExpanded ? "md:ml-60" : "md:ml-16"
+          }`}
+        >
           {children}
         </div>
       </main>
