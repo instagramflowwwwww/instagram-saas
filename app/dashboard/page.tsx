@@ -10,8 +10,10 @@ import {
   Calendar,
   CalendarClock,
   CheckCircle2,
+  Eye,
   ImageIcon,
   Instagram,
+  ListChecks,
   Loader2,
   Minus,
   Play,
@@ -68,6 +70,15 @@ type RecentPost = {
   }>
 }
 
+type UpcomingPost = {
+  id: string
+  caption: string
+  kind: "Reel" | "Imagem"
+  publicationType: string
+  scheduledAt: string | null
+  account: { id: string; username: string; profilePicture: string | null } | null
+}
+
 type DashboardData = {
   summary: {
     accounts: Metric & {
@@ -77,6 +88,14 @@ type DashboardData = {
     published: Metric
     scheduled: Metric
     failures: Metric
+    queue: { value: number }
+  }
+  today: {
+    views: number
+    viewsTrend: number | null
+    viewsTotal: number
+    published: number
+    publishedYesterday: number
   }
   audience: {
     totalFollowers: number
@@ -85,6 +104,7 @@ type DashboardData = {
   }
   accounts: DashboardAccount[]
   recentPosts: RecentPost[]
+  upcomingPosts: UpcomingPost[]
   generatedAt: string
 }
 
@@ -92,7 +112,9 @@ type StatCardProps = {
   label: string
   value: number
   description: string
-  trend: number | null
+  // null = "novo no período" (sem dado anterior pra comparar); undefined =
+  // esse cartão não tem conceito de tendência (ex.: contagem instantânea da fila).
+  trend?: number | null
   icon: ElementType
   iconClassName: string
   iconBackground: string
@@ -276,7 +298,7 @@ function StatCard({
         </div>
       </div>
       <div className="flex min-h-8 flex-col gap-1">
-        <TrendBadge value={trend} inverse={inverseTrend} />
+        {trend !== undefined && <TrendBadge value={trend} inverse={inverseTrend} />}
         <p className="text-[11px] text-gray-600">{description}</p>
       </div>
     </div>
@@ -429,7 +451,16 @@ export default function DashboardPage() {
         </div>
       ) : data ? (
         <>
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+            <StatCard
+              label="Visualizações hoje"
+              value={data.today.views}
+              description={`${formatCompactNumber(data.today.viewsTotal)} no total`}
+              trend={data.today.viewsTrend}
+              icon={Eye}
+              iconClassName="text-pink-400"
+              iconBackground="bg-pink-500/10"
+            />
             <StatCard
               label="Contas conectadas"
               value={data.summary.accounts.value}
@@ -442,11 +473,19 @@ export default function DashboardPage() {
             <StatCard
               label="Posts publicados"
               value={data.summary.published.value}
-              description="Publicações com pelo menos um envio aprovado"
+              description={`${data.today.published} hoje · ${data.today.publishedYesterday} ontem`}
               trend={data.summary.published.trend}
               icon={CheckCircle2}
               iconClassName="text-green-400"
               iconBackground="bg-green-500/10"
+            />
+            <StatCard
+              label="Posts na fila"
+              value={data.summary.queue.value}
+              description="Aguardando a vez de publicar"
+              icon={ListChecks}
+              iconClassName="text-amber-400"
+              iconBackground="bg-amber-500/10"
             />
             <StatCard
               label="Agendamentos"
@@ -487,6 +526,7 @@ export default function DashboardPage() {
               </Link>
             </section>
           ) : (
+            <>
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
               <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center justify-between gap-4">
@@ -671,6 +711,60 @@ export default function DashboardPage() {
                 )}
               </div>
             </section>
+
+            <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-white">Próximas publicações</h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    O que está na fila pra sair, na ordem do horário.
+                  </p>
+                </div>
+                <Link
+                  href="/dashboard/queue"
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-purple-400 hover:text-purple-300"
+                >
+                  Ver fila
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
+
+              {data.upcomingPosts.length === 0 ? (
+                <div className="flex min-h-32 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] px-5 text-center">
+                  <CalendarClock size={19} className="text-gray-700" />
+                  <p className="mt-3 text-sm font-medium text-gray-300">
+                    Nada agendado
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-gray-600">
+                    Crie uma automação pra ver as próximas publicações aqui.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/[0.05]">
+                  {data.upcomingPosts.map((post) => (
+                    <div key={post.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                      <AccountAvatar
+                        src={post.account?.profilePicture || null}
+                        username={post.account?.username || "conta"}
+                        size="sm"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-white">
+                          {post.account ? `@${post.account.username}` : post.caption}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-gray-600">
+                          {formatDate(post.scheduledAt)} · {post.kind}
+                        </p>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] font-medium text-amber-300">
+                        Na fila
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+            </>
           )}
 
         </>

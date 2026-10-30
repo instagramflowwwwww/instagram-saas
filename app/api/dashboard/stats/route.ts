@@ -23,6 +23,12 @@ type SummaryCountsRow = {
   failuresPrevious: bigint
   newAccountsCurrent: bigint
   newAccountsPrevious: bigint
+  queueCount: bigint
+  viewsToday: bigint | null
+  viewsYesterday: bigint | null
+  viewsTotal: bigint | null
+  publishedToday: bigint
+  publishedYesterday: bigint
 }
 
 const BRAZIL_OFFSET = "-03:00"
@@ -104,10 +110,18 @@ export async function GET(request: Request) {
   const now = new Date()
   const currentRange = { gte: period.start, lte: period.end }
 
+  // Limites do dia de hoje e de ontem, no fuso de Brasília — independentes
+  // do filtro de período da tela, pra alimentar os cartões "hoje".
+  const todayKey = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+  const todayStart = new Date(`${todayKey}T00:00:00.000${BRAZIL_OFFSET}`)
+  const todayEnd = new Date(`${todayKey}T23:59:59.999${BRAZIL_OFFSET}`)
+  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
+  const yesterdayEnd = new Date(todayStart.getTime() - 1)
+
   try {
     // O dashboard agora faz três round-trips principais ao banco: contas,
     // resumo agregado e posts recentes. Antes eram cerca de dez consultas.
-    const [accounts, summaryRows, recentPosts] = await Promise.all([
+    const [accounts, summaryRows, recentPosts, upcomingPosts] = await Promise.all([
       prisma.instagramAccount.findMany({
         where: {
           userId,
@@ -223,7 +237,52 @@ export async function GET(request: Request) {
               AND ia."tokenExpiresAt" > ${now}
               AND ia."createdAt" >= ${period.previousStart}
               AND ia."createdAt" <= ${period.previousEnd}
-          ) AS "newAccountsPrevious"
+          ) AS "newAccountsPrevious",
+          (
+            SELECT COUNT(*)
+            FROM "PostingBatchItem" pbi
+            INNER JOIN "PostingBatch" pb ON pb."id" = pbi."batchId"
+            WHERE pb."userId" = ${userId}
+              AND pbi."status" IN ('pending', 'processing')
+          ) AS "queueCount",
+          (
+            SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
+            FROM "PostLog" pl
+            INNER JOIN "Post" p ON p."id" = pl."postId"
+            WHERE p."userId" = ${userId}
+              AND pl."performancePublishedAt" >= ${todayStart}
+              AND pl."performancePublishedAt" <= ${todayEnd}
+          ) AS "viewsToday",
+          (
+            SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
+            FROM "PostLog" pl
+            INNER JOIN "Post" p ON p."id" = pl."postId"
+            WHERE p."userId" = ${userId}
+              AND pl."performancePublishedAt" >= ${yesterdayStart}
+              AND pl."performancePublishedAt" <= ${yesterdayEnd}
+          ) AS "viewsYesterday",
+          (
+            SELECT COALESCE(SUM(pl."performanceViewsCount"), 0)
+            FROM "PostLog" pl
+            INNER JOIN "Post" p ON p."id" = pl."postId"
+            WHERE p."userId" = ${userId}
+          ) AS "viewsTotal",
+          (
+            SELECT COUNT(*)
+            FROM "Post" p
+            WHERE p."userId" = ${userId}
+              AND p."status" IN ('published', 'partial')
+              AND p."publishedAt" >= ${todayStart}
+              AND p."publishedAt" <= ${todayEnd}
+          ) AS "publishedToday",
+          (
+            SELECT COUNT(*)
+            FROM "Post" p
+            WHERE p."userId" = ${userId}
+              AND p."status" IN ('published', 'partial')
+              AND p."publishedAt" >= ${yesterdayStart}
+              AND p."publishedAt" <= ${yesterdayEnd}
+          ) AS "publishedYesterday"
       `),
       prisma.post.findMany({
         where: {
@@ -271,7 +330,37 @@ export async function GET(request: Request) {
         orderBy: { createdAt: "desc" },
         take: 8,
       }),
+      prisma.post.findMany({
+        where: { userId, status: "scheduled", scheduledAt: { gte: now } },
+        orderBy: { scheduledAt: "asc" },
+        take: 5,
+        select: {
+          id: true,
+          caption: true,
+          videoUrl: true,
+          publicationType: true,
+          scheduledAt: true,
+          batchItem: { select: { instagramAccountId: true } },
+        },
+      }),
     ])
+
+    const upcomingAccountIds = Array.from(
+      new Set(
+        upcomingPosts
+          .map((post) => post.batchItem?.instagramAccountId)
+          .filter((id): id is string => Boolean(id))
+      )
+    )
+    const upcomingAccounts = upcomingAccountIds.length
+      ? await prisma.instagramAccount.findMany({
+          where: { id: { in: upcomingAccountIds } },
+          select: { id: true, username: true, profilePicture: true },
+        })
+      : []
+    const upcomingAccountMap = new Map(
+      upcomingAccounts.map((account) => [account.id, account])
+    )
 
     const counts = summaryRows[0]
     const published = Number(counts?.publishedCurrent || 0)
@@ -282,6 +371,12 @@ export async function GET(request: Request) {
     const previousFailures = Number(counts?.failuresPrevious || 0)
     const newAccounts = Number(counts?.newAccountsCurrent || 0)
     const previousNewAccounts = Number(counts?.newAccountsPrevious || 0)
+    const queueCount = Number(counts?.queueCount || 0)
+    const viewsToday = Number(counts?.viewsToday || 0)
+    const viewsYesterday = Number(counts?.viewsYesterday || 0)
+    const viewsTotal = Number(counts?.viewsTotal || 0)
+    const publishedToday = Number(counts?.publishedToday || 0)
+    const publishedYesterday = Number(counts?.publishedYesterday || 0)
 
     const totalFollowers = accounts.reduce(
       (sum, account) => sum + (account.followerCount || 0),
@@ -316,6 +411,16 @@ export async function GET(request: Request) {
           value: failures,
           trend: trend(failures, previousFailures),
         },
+        queue: {
+          value: queueCount,
+        },
+      },
+      today: {
+        views: viewsToday,
+        viewsTrend: trend(viewsToday, viewsYesterday),
+        viewsTotal,
+        published: publishedToday,
+        publishedYesterday,
       },
       audience: {
         totalFollowers,
@@ -346,6 +451,20 @@ export async function GET(request: Request) {
           errorCount: errorLogs.length,
           errorMessage: errorLogs[0]?.errorMessage || null,
           accounts: uniqueAccounts(post.logs),
+        }
+      }),
+      upcomingPosts: upcomingPosts.map((post) => {
+        const account = post.batchItem?.instagramAccountId
+          ? upcomingAccountMap.get(post.batchItem.instagramAccountId) || null
+          : null
+
+        return {
+          id: post.id,
+          caption: post.caption || "Publicação sem legenda",
+          kind: post.videoUrl ? "Reel" : "Imagem",
+          publicationType: post.publicationType,
+          scheduledAt: post.scheduledAt,
+          account,
         }
       }),
       generatedAt: new Date().toISOString(),
