@@ -78,7 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-theme-base flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
@@ -99,18 +99,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     : navGroups
 
   const Sidebar = ({ collapsed = false, onClose }: { collapsed?: boolean; onClose?: () => void }) => (
-    <aside className="flex h-full flex-col overflow-hidden bg-[#0d0d0d] border-r border-white/5">
-      <div className={`flex items-center border-b border-white/5 ${collapsed ? "justify-center p-4" : "justify-between p-6"}`}>
+    <aside className="flex h-full flex-col overflow-hidden bg-theme-surface border-r border-theme-border">
+      <div className={`flex items-center border-b border-theme-border ${collapsed ? "justify-center p-4" : "justify-between p-6"}`}>
         <div className="flex items-center gap-3">
           <img
             src="/logo/logosfundo.png"
             alt="Logo InstaFlow"
             className="h-8 w-8 shrink-0 rounded-lg object-contain"
           />
-          {!collapsed && <span className="whitespace-nowrap font-bold text-white">InstaFlow</span>}
+          {!collapsed && <span className="whitespace-nowrap font-bold text-theme-text">InstaFlow</span>}
         </div>
         {!collapsed && onClose && (
-          <button onClick={onClose} className="text-gray-500 hover:text-white">
+          <button onClick={onClose} className="text-theme-text-muted hover:text-theme-text">
             <X size={20} />
           </button>
         )}
@@ -120,7 +120,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {groups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
-              <p className="mb-2 whitespace-nowrap px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+              <p className="mb-2 whitespace-nowrap px-3 text-[10px] font-semibold uppercase tracking-wider text-theme-text-muted">
                 {group.label}
               </p>
             )}
@@ -137,7 +137,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     } ${
                       active
                         ? "bg-purple-500/15 text-purple-400"
-                        : "text-gray-500 hover:bg-white/5 hover:text-gray-200"
+                        : "text-theme-text-muted hover:bg-theme-surface-2 hover:text-theme-text-secondary"
                     }`}
                   >
                     <item.icon size={16} className="shrink-0" />
@@ -150,15 +150,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ))}
       </nav>
 
-      <div className={`border-t border-white/5 ${collapsed ? "p-3" : "p-4"}`}>
+      <div className={`border-t border-theme-border ${collapsed ? "p-3" : "p-4"}`}>
         <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : "mb-3"}`}>
           {session?.user?.image && (
             <img src={session.user.image} alt="" className="h-8 w-8 shrink-0 rounded-full" />
           )}
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">{session?.user?.name}</p>
-              <p className="truncate text-xs text-gray-500">{session?.user?.email}</p>
+              <p className="truncate text-sm font-medium text-theme-text">{session?.user?.name}</p>
+              <p className="truncate text-xs text-theme-text-muted">{session?.user?.email}</p>
             </div>
           )}
         </div>
@@ -168,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             void signOut({ callbackUrl: "/login" })
           }}
           title={collapsed ? "Sair" : undefined}
-          className={`flex items-center gap-2 text-xs text-gray-500 transition-colors hover:text-gray-300 ${
+          className={`flex items-center gap-2 text-xs text-theme-text-muted transition-colors hover:text-theme-text-secondary ${
             collapsed ? "mt-3 w-full justify-center" : ""
           }`}
         >
@@ -180,7 +180,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   )
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex">
+    <div className="min-h-screen bg-theme-base flex">
       {/* Overlay mobile */}
       {mobileOpen && (
         <div
@@ -208,10 +208,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Conteúdo principal */}
       <main className="flex-1 flex flex-col min-h-screen">
         {/* Header mobile com o hambúrguer */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#0d0d0d] border-b border-white/5 sticky top-0 z-30 md:hidden">
+        <div className="flex items-center justify-between px-4 py-3 bg-theme-surface border-b border-theme-border sticky top-0 z-30 md:hidden">
           <button
             onClick={() => setMobileOpen(true)}
-            className="text-gray-400 hover:text-white p-1"
+            className="text-theme-text-secondary hover:text-theme-text p-1"
           >
             <Menu size={22} />
           </button>
@@ -221,7 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               alt="Logo InstaFlow"
               className="h-7 w-7 rounded-lg object-contain"
             />
-            <span className="font-bold text-white text-sm">InstaFlow</span>
+            <span className="font-bold text-theme-text text-sm">InstaFlow</span>
           </div>
           <div className="w-8" />
         </div>

@@ -18,18 +18,41 @@
   --destructive: 0 70% 50%;
   --ring: 263 70% 60%;
   --radius: 0.75rem;
+
+  /* Tokens do seletor de tema (claro, escuro, sistema), usados nas classes
+     bg-theme e text-theme do Tailwind. Padrão claro aqui; .dark sobrescreve
+     embaixo. Vão sendo adotados tela por tela, sem quebrar o que ainda usa
+     cores fixas (bg-[#0a0a0a], text-white etc). */
+  --theme-base: #f5f5f7;
+  --theme-surface: #ffffff;
+  --theme-surface-2: #f0f0f2;
+  --theme-border: rgba(0, 0, 0, 0.1);
+  --theme-text: #0a0a0a;
+  --theme-text-secondary: #4b4b52;
+  --theme-text-muted: #80808a;
+}
+
+.dark {
+  --theme-base: #0a0a0a;
+  --theme-surface: #0d0d0d;
+  --theme-surface-2: #161616;
+  --theme-border: rgba(255, 255, 255, 0.05);
+  --theme-text: #f0f0f0;
+  --theme-text-secondary: #9ca3af;
+  --theme-text-muted: #6b7280;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: #0a0a0a;
-  color: #f0f0f0;
+  background: var(--theme-base);
+  color: var(--theme-text);
   font-family: 'Inter', sans-serif;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-track { background: var(--theme-base); }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
 /* Abaixo de 16px o Safari/iOS dá zoom na página inteira ao focar um campo —

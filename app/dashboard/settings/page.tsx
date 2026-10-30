@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { useSession, signOut } from "next-auth/react"
-import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing, KeyRound, Plus, Copy, Check, Trash2, Loader2 } from "lucide-react"
+import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing, KeyRound, Plus, Copy, Check, Trash2, Loader2, Sun, Moon, Monitor, Palette } from "lucide-react"
 import toast from "react-hot-toast"
 import {
   disablePush,
@@ -9,8 +9,52 @@ import {
   getCurrentPushSubscription,
   isPushSupported,
 } from "@/lib/push-client"
+import { useTheme, type ThemePreference } from "@/lib/theme"
 
 type PushStatus = "loading" | "unsupported" | "off" | "on"
+
+const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { value: "light", label: "Claro", icon: Sun },
+  { value: "dark", label: "Escuro", icon: Moon },
+  { value: "system", label: "Sistema", icon: Monitor },
+]
+
+function AppearanceCard() {
+  const { preference, setPreference } = useTheme()
+
+  return (
+    <div className="bg-theme-surface border border-theme-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-2">
+        <Palette size={16} className="text-purple-400" />
+        <h2 className="font-semibold text-theme-text text-sm">Aparência</h2>
+      </div>
+      <p className="text-sm text-theme-text-muted mb-5">
+        Escolha como o InstaFlow aparece neste aparelho. "Sistema" segue a configuração do seu
+        celular ou computador automaticamente.
+      </p>
+
+      <div className="grid grid-cols-3 gap-3">
+        {THEME_OPTIONS.map((option) => {
+          const active = preference === option.value
+          return (
+            <button
+              key={option.value}
+              onClick={() => setPreference(option.value)}
+              className={`flex flex-col items-center gap-2 rounded-lg border px-3 py-4 text-sm font-medium transition-colors ${
+                active
+                  ? "border-purple-500 bg-purple-500/10 text-purple-400"
+                  : "border-theme-border text-theme-text-secondary hover:bg-theme-surface-2"
+              }`}
+            >
+              <option.icon size={18} />
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 function NotificationsCard() {
   const [status, setStatus] = useState<PushStatus>("loading")
@@ -435,6 +479,8 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        <AppearanceCard />
 
         <NotificationsCard />
 
