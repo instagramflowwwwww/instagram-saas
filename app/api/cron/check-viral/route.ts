@@ -8,12 +8,12 @@ import {
   refreshPerformanceLogs,
 } from "@/lib/instagram-performance"
 import { isPushConfigured, sendPushToUser } from "@/lib/web-push"
+import { getNotificationPreferencesMap } from "@/lib/notification-preferences"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 280
 
-const VIRAL_VIEWS_THRESHOLD = 100_000
 // Vídeo com mais de 14 dias não vale mais a pena checar toda hora: se ainda
 // não bombou até aqui, é bem improvável que bombe de repente amanhã.
 const LOOKBACK_DAYS = 14
@@ -126,19 +126,30 @@ export async function POST(request: Request) {
       results.push(...(await refreshPerformanceLogs(staleLogs, now)))
     }
 
-    const viral = results.filter(
-      (result) => result.viewsCount !== null && result.viewsCount >= VIRAL_VIEWS_THRESHOLD
+    const prefs = await getNotificationPreferencesMap(
+      Array.from(new Set(Array.from(userIdByLogId.values())))
     )
+
+    const viral = results.filter((result) => {
+      if (result.viewsCount === null) return false
+      const userId = userIdByLogId.get(result.id)
+      if (!userId) return false
+      const pref = prefs.get(userId)
+      if (!pref || !pref.viralEnabled) return false
+      return result.viewsCount >= pref.viralViewsThreshold
+    })
 
     let notified = 0
     for (const result of viral) {
       const userId = userIdByLogId.get(result.id)
       if (!userId) continue
+      const pref = prefs.get(userId)
+      if (!pref) continue
 
       try {
         await sendPushToUser(userId, {
           title: "🔥 Vídeo bombando!",
-          body: `@${result.username} passou de ${formatViews(VIRAL_VIEWS_THRESHOLD)} visualizações (${formatViews(result.viewsCount as number)}).`,
+          body: `@${result.username} passou de ${formatViews(pref.viralViewsThreshold)} visualizações (${formatViews(result.viewsCount as number)}).`,
           url: result.permalink || "/dashboard/performance",
           tag: `viral-${result.id}`,
         })

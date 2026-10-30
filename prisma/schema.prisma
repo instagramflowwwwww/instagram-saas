@@ -20,6 +20,7 @@ model User {
   igAccounts        InstagramAccount[]
   posts             Post[]
   pushSubscriptions PushSubscription[]
+  notificationPreference NotificationPreference?
   media             MediaLibrary[]
   mediaFolders      MediaFolder[]
   accountGroups     AccountGroup[]
@@ -72,6 +73,22 @@ model PushSubscription {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model NotificationPreference {
+  id                         String    @id @default(cuid())
+  userId                     String    @unique
+  user                       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  massDisconnectEnabled      Boolean   @default(true)
+  massDisconnectThreshold    Int       @default(3)
+  lastMassDisconnectAlertAt  DateTime?
+  viralEnabled               Boolean   @default(true)
+  viralViewsThreshold        Int       @default(100000)
+  viewsGoalEnabled           Boolean   @default(false)
+  dailyViewsGoal             Int?
+  dailyViewsGoalReachedDate  String?
+  digestEnabled              Boolean   @default(true)
+  updatedAt                  DateTime  @updatedAt
 }
 
 model VerificationToken {

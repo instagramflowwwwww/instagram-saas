@@ -17,6 +17,10 @@
     {
       "path": "/api/cron/refresh-stories",
       "schedule": "*/20 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-accounts",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

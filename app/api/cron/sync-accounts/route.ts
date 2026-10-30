@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { syncInstagramAccountProfiles } from "@/lib/instagram-account-sync"
+import { checkMassDisconnections } from "@/lib/notification-alerts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -30,11 +31,17 @@ export async function POST(request: Request) {
       concurrency: 4,
     })
 
+    const massDisconnectAlert = await checkMassDisconnections().catch((error) => {
+      console.error("[account-sync-cron] Falha ao checar queda em massa", error)
+      return { checked: 0, notified: 0 }
+    })
+
     const response = {
       selected: result.selected,
       synced: result.synced,
       failed: result.failed,
       disconnected: result.disconnected,
+      massDisconnectAlertsSent: massDisconnectAlert.notified,
       durationMs: Date.now() - startedAt,
     }
 

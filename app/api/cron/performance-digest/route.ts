@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { isPushConfigured, sendPushToUser } from "@/lib/web-push"
+import { getNotificationPreferencesMap } from "@/lib/notification-preferences"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -74,10 +75,43 @@ export async function POST(request: Request) {
       GROUP BY p."userId"
     `
 
+    const todayDateString = `${brtNow.getUTCFullYear()}-${String(brtNow.getUTCMonth() + 1).padStart(2, "0")}-${String(brtNow.getUTCDate()).padStart(2, "0")}`
+
+    const prefs = await getNotificationPreferencesMap(totals.map((row) => row.userId))
+
     let notified = 0
+    let goalsReached = 0
     for (const row of totals) {
       const totalViews = Number(row.totalViews || 0)
       if (totalViews <= 0) continue
+      const pref = prefs.get(row.userId)
+
+      if (
+        pref?.viewsGoalEnabled &&
+        pref.dailyViewsGoal &&
+        totalViews >= pref.dailyViewsGoal &&
+        pref.dailyViewsGoalReachedDate !== todayDateString
+      ) {
+        try {
+          await sendPushToUser(row.userId, {
+            title: "🎯 Meta de views batida!",
+            body: `Você passou de ${formatCompactViews(pref.dailyViewsGoal)} visualizações hoje (${formatCompactViews(totalViews)}).`,
+            url: "/dashboard/performance",
+            tag: "views-goal",
+          })
+          goalsReached += 1
+        } catch (error) {
+          console.error("[performance-digest] Falha ao enviar push de meta", { userId: row.userId, error })
+        }
+
+        await prisma.notificationPreference.upsert({
+          where: { userId: row.userId },
+          update: { dailyViewsGoalReachedDate: todayDateString },
+          create: { userId: row.userId, dailyViewsGoalReachedDate: todayDateString },
+        })
+      }
+
+      if (pref && !pref.digestEnabled) continue
 
       try {
         const result = await sendPushToUser(row.userId, {
@@ -95,6 +129,7 @@ export async function POST(request: Request) {
     const response = {
       users: totals.length,
       notified,
+      goalsReached,
       durationMs: Date.now() - startedAt,
     }
 

@@ -112,9 +112,9 @@ function NotificationsCard() {
         <h2 className="font-semibold text-white text-sm">Notificações</h2>
       </div>
       <p className="text-sm text-gray-500 mb-5">
-        Receba um aviso neste aparelho quando um vídeo passar de 100 mil visualizações, e um
-        resumo das visualizações de hoje, somando todas as contas, às 08h, 12h, 14h, 18h e 22h.
-        No iPhone, funciona depois de adicionar o InstaFlow à Tela de Início pelo Safari.
+        Ativa os avisos neste aparelho — vídeo bombando, queda de contas, meta de views e o resumo
+        diário, todos ajustáveis no card "Alertas personalizados" abaixo. No iPhone, funciona
+        depois de adicionar o InstaFlow à Tela de Início pelo Safari.
       </p>
 
       {status === "unsupported" ? (
@@ -149,6 +149,188 @@ function NotificationsCard() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+type AlertPreferences = {
+  massDisconnectEnabled: boolean
+  massDisconnectThreshold: number
+  viralEnabled: boolean
+  viralViewsThreshold: number
+  viewsGoalEnabled: boolean
+  dailyViewsGoal: number | null
+  digestEnabled: boolean
+}
+
+function AlertPreferencesCard() {
+  const [prefs, setPrefs] = useState<AlertPreferences | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/user/notification-preferences")
+      .then((res) => res.json())
+      .then((data) => setPrefs(data.preferences))
+      .catch(() => toast.error("Não foi possível carregar as preferências de alerta."))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const update = (patch: Partial<AlertPreferences>) => {
+    setPrefs((current) => (current ? { ...current, ...patch } : current))
+  }
+
+  const save = async () => {
+    if (!prefs) return
+    setSaving(true)
+    try {
+      const res = await fetch("/api/user/notification-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(prefs),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar.")
+      setPrefs(data.preferences)
+      toast.success("Preferências de alerta salvas.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading || !prefs) {
+    return (
+      <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Bell size={16} className="text-purple-400" />
+          <h2 className="font-semibold text-white text-sm">Alertas personalizados</h2>
+        </div>
+        <p className="text-sm text-gray-500">Carregando preferências...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-2">
+        <Bell size={16} className="text-purple-400" />
+        <h2 className="font-semibold text-white text-sm">Alertas personalizados</h2>
+      </div>
+      <p className="text-sm text-gray-500 mb-5">
+        Ajuste quando cada aviso dispara. Só funciona com as notificações ativadas no card acima.
+      </p>
+
+      <div className="space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-white cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={prefs.massDisconnectEnabled}
+                onChange={(e) => update({ massDisconnectEnabled: e.target.checked })}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-purple-500"
+              />
+              Queda em massa de contas
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              Avisa quando várias contas desconectam de uma vez (janela de 30 minutos).
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="number"
+              min={1}
+              disabled={!prefs.massDisconnectEnabled}
+              value={prefs.massDisconnectThreshold}
+              onChange={(e) => update({ massDisconnectThreshold: Number(e.target.value) || 1 })}
+              className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-purple-500 disabled:opacity-40"
+            />
+            <span className="text-xs text-gray-500">contas</span>
+          </div>
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-white cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={prefs.viralEnabled}
+                onChange={(e) => update({ viralEnabled: e.target.checked })}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-purple-500"
+              />
+              Vídeo bombando
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">A partir de quantas visualizações avisar.</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="number"
+              min={1000}
+              step={1000}
+              disabled={!prefs.viralEnabled}
+              value={prefs.viralViewsThreshold}
+              onChange={(e) => update({ viralViewsThreshold: Number(e.target.value) || 1000 })}
+              className="w-24 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-purple-500 disabled:opacity-40"
+            />
+            <span className="text-xs text-gray-500">views</span>
+          </div>
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-white cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={prefs.viewsGoalEnabled}
+                onChange={(e) => update({ viewsGoalEnabled: e.target.checked })}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-purple-500"
+              />
+              Meta de views do dia
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              Avisa uma vez quando a soma de views do dia bater a meta.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="number"
+              min={1}
+              step={1000}
+              disabled={!prefs.viewsGoalEnabled}
+              value={prefs.dailyViewsGoal ?? 50000}
+              onChange={(e) => update({ dailyViewsGoal: Number(e.target.value) || 1 })}
+              className="w-24 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-purple-500 disabled:opacity-40"
+            />
+            <span className="text-xs text-gray-500">views/dia</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-white cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={prefs.digestEnabled}
+              onChange={(e) => update({ digestEnabled: e.target.checked })}
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-purple-500"
+            />
+            Resumo diário de performance
+          </label>
+          <p className="text-xs text-gray-500 mt-1 ml-6">
+            Total de views do dia, enviado às 08h, 12h, 14h, 18h e 22h.
+          </p>
+        </div>
+      </div>
+
+      <button
+        onClick={save}
+        disabled={saving}
+        className="mt-6 flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+      >
+        <Save size={14} />
+        {saving ? "Salvando..." : "Salvar preferências"}
+      </button>
     </div>
   )
 }
@@ -483,6 +665,8 @@ export default function SettingsPage() {
         <AppearanceCard />
 
         <NotificationsCard />
+
+        <AlertPreferencesCard />
 
         <ApiTokensCard />
 
