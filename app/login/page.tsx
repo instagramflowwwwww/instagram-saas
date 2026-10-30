@@ -26,6 +26,17 @@ const MOCK_TABS = [
   { icon: BarChart3, label: "Performance" },
 ]
 
+const MOCK_STATS = [
+  { icon: Eye, value: "12.4K", label: "Views hoje" },
+  { icon: ListChecks, value: "86", label: "Na fila" },
+  { icon: Users, value: "34", label: "Contas ativas" },
+]
+
+const MOCK_QUEUE = [
+  { username: "loja.ju", time: "14:30" },
+  { username: "studio.leo", time: "15:00" },
+]
+
 export default function LoginPage() {
   const router = useRouter()
   const [isRegister, setIsRegister] = useState(false)
@@ -151,8 +162,41 @@ export default function LoginPage() {
                 ))}
               </div>
             </div>
-            <div className="h-40 bg-gradient-to-br from-purple-500/[0.04] to-pink-500/[0.04] flex items-center justify-center">
-              <ListChecks size={28} className="text-white/10" />
+            <div className="bg-gradient-to-br from-purple-500/[0.03] to-pink-500/[0.03] p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-gray-400">Dashboard geral</span>
+                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[9px] text-gray-600">
+                  Exemplo ilustrativo
+                </span>
+              </div>
+
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                {MOCK_STATS.map((stat) => (
+                  <div key={stat.label} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5">
+                    <stat.icon size={12} className="mb-1.5 text-purple-400" />
+                    <p className="text-sm font-bold text-white leading-none">{stat.value}</p>
+                    <p className="mt-1 text-[9px] text-gray-600 leading-none">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1.5">
+                {MOCK_QUEUE.map((item) => (
+                  <div
+                    key={item.username}
+                    className="flex items-center gap-2 rounded-lg border border-white/[0.05] bg-black/10 px-2.5 py-2"
+                  >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500">
+                      <Instagram size={9} className="text-white" />
+                    </span>
+                    <span className="flex-1 truncate text-[10px] text-gray-300">@{item.username}</span>
+                    <span className="text-[9px] text-gray-600">{item.time}</span>
+                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-medium text-amber-300">
+                      Na fila
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
