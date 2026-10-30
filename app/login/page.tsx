@@ -122,9 +122,11 @@ export default function LoginPage() {
         />
 
         <div className="relative flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-            <Instagram size={18} className="text-white" />
-          </div>
+          <img
+            src="/logo/logosfundo.png"
+            alt="Logo InstaFlow"
+            className="h-9 w-9 shrink-0 rounded-xl object-contain"
+          />
           <span className="text-xl font-bold text-white">InstaFlow</span>
         </div>
 
@@ -215,9 +217,11 @@ export default function LoginPage() {
       <div className="flex w-full lg:w-1/2 items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-3 mb-10 justify-center">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-              <Instagram size={20} className="text-white" />
-            </div>
+            <img
+              src="/logo/logosfundo.png"
+              alt="Logo InstaFlow"
+              className="h-10 w-10 rounded-xl object-contain"
+            />
             <span className="text-2xl font-bold text-white">InstaFlow</span>
           </div>
 
