@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react"
 import toast from "react-hot-toast"
+import { Wordmark } from "@/components/Wordmark"
 
 const FEATURES = ["Instagram", "Automação", "Biblioteca", "Fila", "Performance"]
 
@@ -127,7 +128,7 @@ export default function LoginPage() {
             alt="Logo InstaFlow"
             className="h-9 w-9 shrink-0 rounded-xl object-contain"
           />
-          <span className="text-xl font-bold text-white">InstaFlow</span>
+          <Wordmark className="text-xl font-bold text-white" />
         </div>
 
         <div className="relative max-w-md">
@@ -222,7 +223,7 @@ export default function LoginPage() {
               alt="Logo InstaFlow"
               className="h-10 w-10 rounded-xl object-contain"
             />
-            <span className="text-2xl font-bold text-white">InstaFlow</span>
+            <Wordmark className="text-2xl font-bold text-white" />
           </div>
 
           <div className="flex items-center gap-2 mb-3">

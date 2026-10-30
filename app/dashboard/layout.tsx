@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import toast from "react-hot-toast"
 import { isAdminEmail } from "@/lib/account-access"
+import { Wordmark } from "@/components/Wordmark"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, FolderOpen,
@@ -107,7 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             alt="Logo InstaFlow"
             className="h-8 w-8 shrink-0 rounded-lg object-contain"
           />
-          {!collapsed && <span className="whitespace-nowrap font-bold text-theme-text">InstaFlow</span>}
+          {!collapsed && <Wordmark className="whitespace-nowrap font-bold text-theme-text" />}
         </div>
         {!collapsed && onClose && (
           <button onClick={onClose} className="text-theme-text-muted hover:text-theme-text">
@@ -221,7 +222,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               alt="Logo InstaFlow"
               className="h-7 w-7 rounded-lg object-contain"
             />
-            <span className="font-bold text-theme-text text-sm">InstaFlow</span>
+            <Wordmark className="font-bold text-theme-text text-sm" />
           </div>
           <div className="w-8" />
         </div>
