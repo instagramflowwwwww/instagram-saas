@@ -2,6 +2,7 @@ import { randomBytes } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { ensureDefaultInstagramApp } from "@/lib/instagram-default-app"
 import {
   buildInstagramAuthorizeUrl,
   getInstagramRedirectUri,
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
   } else {
     // Sem app escolhido: usa o que tem menos contas, pra distribuir sozinho
     // entre os vários Apps Meta sem precisar selecionar antes de conectar.
-    const apps = await prisma.instagramApp.findMany({
+    let apps = await prisma.instagramApp.findMany({
       where: { userId: session.user.id },
       orderBy: { createdAt: "asc" },
       select: {
@@ -64,6 +65,25 @@ export async function GET(request: NextRequest) {
         _count: { select: { accounts: true } },
       },
     })
+
+    // Primeira conexão deste usuário, sem nenhum app próprio configurado
+    // ainda: garante o App padrão (Live, sem convite de testador) antes de
+    // desistir — isso não mexe em nada que o usuário já tenha cadastrado.
+    if (apps.length === 0) {
+      const defaultAppId = await ensureDefaultInstagramApp(session.user.id)
+      if (defaultAppId) {
+        apps = await prisma.instagramApp.findMany({
+          where: { userId: session.user.id },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            metaAppId: true,
+            _count: { select: { accounts: true } },
+          },
+        })
+      }
+    }
+
     if (apps.length === 0) {
       return redirectToMetaApp(request, "app_not_configured", popupMode)
     }
