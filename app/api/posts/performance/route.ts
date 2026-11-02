@@ -13,6 +13,13 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
+// Quantos posts vencidos, no máximo, atualizamos sozinhos ao abrir a tela —
+// sempre os mais recentes primeiro (a lista já vem ordenada por data). Sem
+// esse limite, abrir "Mês" ou "Tudo" com o cache vencido tentava atualizar
+// cada post do período de uma vez, travando a tela por muito tempo. O botão
+// "Atualizar dados" (force=1) continua atualizando tudo, sem esse limite.
+const MAX_AUTO_REFRESH = 40
+
 function parseDate(value: string | null) {
   if (!value) return null
   const date = new Date(value)
@@ -127,7 +134,7 @@ export async function GET(request: Request) {
 
     const logsToRefresh = forceRefresh
       ? uniqueLogs
-      : uniqueLogs.filter((log) => !isCacheFresh(log, now))
+      : uniqueLogs.filter((log) => !isCacheFresh(log, now)).slice(0, MAX_AUTO_REFRESH)
 
     if (logsToRefresh.length === 0) {
       return NextResponse.json(
