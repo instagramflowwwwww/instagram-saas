@@ -327,6 +327,10 @@ model PostLog {
   @@index([instagramAccountId, mediaId])
   @@index([instagramAccountId, createdAt])
   @@index([username])
+  // Sustenta os somatórios de views por intervalo de data (dashboard e
+  // ranking geral), que antes faziam full scan por não ter índice nessa
+  // coluna.
+  @@index([performancePublishedAt])
 }
 
 model MediaLibrary {
