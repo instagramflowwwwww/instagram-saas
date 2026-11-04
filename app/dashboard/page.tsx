@@ -16,6 +16,8 @@ import {
   ListChecks,
   Loader2,
   Minus,
+  Crown,
+  Medal,
   Play,
   RefreshCw,
   Send,
@@ -206,6 +208,49 @@ function formatCompactNumber(value: number) {
   }).format(value)
 }
 
+const RANK_STYLES: Record<number, { badge: string; icon: ElementType | null; glow: string }> = {
+  1: {
+    badge: "bg-gradient-to-br from-yellow-300 to-amber-500 text-amber-950 shadow-[0_0_16px_-2px_rgba(251,191,36,0.6)]",
+    icon: Crown,
+    glow: "border-amber-400/30 bg-gradient-to-r from-amber-500/[0.08] to-transparent",
+  },
+  2: {
+    badge: "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900",
+    icon: Medal,
+    glow: "border-white/[0.07] bg-white/[0.02]",
+  },
+  3: {
+    badge: "bg-gradient-to-br from-orange-300 to-orange-600 text-orange-950",
+    icon: Medal,
+    glow: "border-white/[0.07] bg-white/[0.02]",
+  },
+}
+
+function rankStyle(rank: number) {
+  return (
+    RANK_STYLES[rank] || {
+      badge: "bg-white/[0.05] border border-white/10 text-gray-400",
+      icon: null,
+      glow: "",
+    }
+  )
+}
+
+const AVATAR_GRADIENTS = [
+  "from-purple-500 to-pink-500",
+  "from-blue-500 to-cyan-400",
+  "from-emerald-500 to-teal-400",
+  "from-pink-500 to-rose-400",
+  "from-indigo-500 to-purple-400",
+  "from-amber-500 to-orange-400",
+]
+
+function avatarGradient(userId: string) {
+  let hash = 0
+  for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
+  return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]
+}
+
 function formatDate(value: string | null) {
   if (!value) return "—"
 
@@ -317,6 +362,56 @@ function StatCard({
       <div className="flex min-h-8 flex-col gap-1">
         {trend !== undefined && <TrendBadge value={trend} inverse={inverseTrend} />}
         <p className="text-[11px] text-gray-600">{description}</p>
+      </div>
+    </div>
+  )
+}
+
+function RankingRow({ entry, detached = false }: { entry: RankingEntry; detached?: boolean }) {
+  const style = rankStyle(entry.rank)
+  const RankIcon = style.icon
+
+  return (
+    <div
+      className={`flex items-center gap-2.5 rounded-lg p-2 transition-colors ${
+        entry.isYou
+          ? "border border-purple-500/30 bg-purple-500/[0.08]"
+          : detached
+            ? "border border-white/[0.06] bg-white/[0.02]"
+            : `border border-transparent ${style.glow}`
+      }`}
+    >
+      <div
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${style.badge}`}
+      >
+        {RankIcon ? <RankIcon size={13} strokeWidth={2.4} /> : entry.rank}
+      </div>
+
+      <div
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-[11px] font-bold text-white ${avatarGradient(entry.userId)}`}
+      >
+        {entry.name.trim().charAt(0).toUpperCase() || "?"}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-white">
+          {entry.name}
+          {entry.isYou && (
+            <span className="rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[9px] font-medium text-purple-300">
+              VOCÊ
+            </span>
+          )}
+        </p>
+        <p className="mt-0.5 truncate text-[10px] text-gray-500">
+          {entry.accountsCount} conta(s) · {formatNumber(entry.postsCount)} posts hoje
+        </p>
+      </div>
+
+      <div className="shrink-0 rounded-md bg-yellow-500/10 px-2 py-1 text-right">
+        <p className="text-xs font-bold leading-tight text-yellow-300">
+          {formatNumber(entry.viewsToday)}
+        </p>
+        <p className="text-[8px] uppercase tracking-wide text-yellow-600/80">views</p>
       </div>
     </div>
   )
@@ -542,6 +637,64 @@ export default function DashboardPage() {
               iconBackground="bg-red-500/10"
               inverseTrend
             />
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-amber-500/20 bg-[#111] shadow-[0_0_30px_-12px_rgba(251,191,36,0.35)]">
+            <div className="relative overflow-hidden border-b border-amber-500/10 bg-gradient-to-r from-amber-500/[0.12] via-amber-500/[0.02] to-transparent px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-yellow-300 to-amber-500 text-amber-950 shadow-[0_0_14px_-2px_rgba(251,191,36,0.7)]">
+                    <Trophy size={14} strokeWidth={2.4} />
+                  </span>
+                  <h2 className="flex items-center gap-2 text-sm font-bold text-white">
+                    Ranking geral
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                      Hoje
+                    </span>
+                  </h2>
+                </div>
+                {ranking?.updatedAt && !rankingLoading && (
+                  <span className="shrink-0 text-[10px] text-gray-600">
+                    Atualizado {formatDate(ranking.updatedAt)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3">
+              {rankingLoading ? (
+                <div className="flex min-h-20 items-center justify-center">
+                  <Loader2 size={18} className="animate-spin text-purple-400" />
+                </div>
+              ) : !ranking || ranking.ranking.length === 0 ? (
+                <div className="flex min-h-20 flex-col items-center justify-center px-5 py-3 text-center">
+                  <p className="text-xs font-medium text-gray-400">
+                    Ninguém no ranking ainda hoje
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5 text-gray-600">
+                    Assim que alguma conta registrar views hoje, o ranking aparece aqui.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {ranking.ranking.map((entry) => (
+                    <RankingRow key={entry.userId} entry={entry} />
+                  ))}
+
+                  {ranking.you && (
+                    <>
+                      <div className="relative py-1 text-center">
+                        <div className="absolute left-0 right-0 top-1/2 h-px bg-white/[0.06]" />
+                        <span className="relative bg-[#111] px-2 text-[10px] text-gray-600">
+                          sua posição
+                        </span>
+                      </div>
+                      <RankingRow entry={ranking.you} detached />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </section>
 
           {!hasAccounts ? (
@@ -797,89 +950,6 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="flex items-center gap-2 font-semibold text-white">
-                    <Trophy size={16} className="text-yellow-400" />
-                    Ranking geral
-                  </h2>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Top contas em views hoje, entre todos os usuários do InstaFlow.
-                  </p>
-                </div>
-              </div>
-
-              {rankingLoading ? (
-                <div className="flex min-h-32 items-center justify-center">
-                  <Loader2 size={18} className="animate-spin text-purple-400" />
-                </div>
-              ) : !ranking || ranking.ranking.length === 0 ? (
-                <div className="flex min-h-32 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] px-5 text-center">
-                  <Trophy size={19} className="text-gray-700" />
-                  <p className="mt-3 text-sm font-medium text-gray-300">
-                    Ninguém no ranking ainda hoje
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-gray-600">
-                    Assim que alguma conta registrar views hoje, o ranking aparece aqui.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-white/[0.05]">
-                  {ranking.ranking.map((entry) => (
-                    <div
-                      key={entry.userId}
-                      className={`flex items-center gap-3 py-3 first:pt-0 last:pb-0 ${
-                        entry.isYou ? "rounded-xl bg-purple-500/[0.06] px-3" : ""
-                      }`}
-                    >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-xs font-bold text-gray-300">
-                        {entry.rank}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-white">
-                          {entry.name}
-                          {entry.isYou && (
-                            <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-medium text-purple-300">
-                              VOCÊ
-                            </span>
-                          )}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-gray-600">
-                          {entry.accountsCount} conta(s) · {formatNumber(entry.postsCount)} posts hoje
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs font-semibold text-yellow-300">
-                        {formatNumber(entry.viewsToday)} views
-                      </span>
-                    </div>
-                  ))}
-
-                  {ranking.you && (
-                    <div className="flex items-center gap-3 rounded-xl bg-purple-500/[0.06] px-3 py-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-xs font-bold text-gray-300">
-                        {ranking.you.rank}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-white">
-                          {ranking.you.name}
-                          <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-medium text-purple-300">
-                            VOCÊ
-                          </span>
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-gray-600">
-                          {ranking.you.accountsCount} conta(s) · {formatNumber(ranking.you.postsCount)} posts hoje
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs font-semibold text-yellow-300">
-                        {formatNumber(ranking.you.viewsToday)} views
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
             </section>

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma"
 export const runtime = "nodejs"
 
 const BRAZIL_OFFSET = "-03:00"
-const RANKING_LIMIT = 10
+const RANKING_LIMIT = 5
 
 type RankingRow = {
   userId: string
