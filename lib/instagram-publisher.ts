@@ -230,12 +230,19 @@ async function ensurePublishingQuota(account: OfficialAccount, token: string) {
       throw error
     }
   } catch (error) {
-    if (isPublishingLimitError(error) || isInstagramPermanentPublishError(error)) {
+    if (isPublishingLimitError(error) || isInstagramDisconnectError(error)) {
       throw error
     }
 
-    // A consulta de cota é preventiva. Só ignoramos falhas realmente
-    // transitórias; erros permanentes da conta interrompem a publicação.
+    // A consulta de cota é preventiva — não é a publicação em si. Usamos
+    // só o classificador de token inválido/expirado aqui (não o de erro
+    // permanente de publicação, mais amplo e usado para as chamadas reais
+    // de /media e /media_publish): esse endpoint de cota já respondeu com
+    // "Unsupported request" por conta própria (ex.: mudança/instabilidade
+    // da Meta nesse endpoint específico) e isso não significa que o token
+    // da conta esteja quebrado. Tratar isso como erro permanente
+    // desconectava TODAS as contas de uma vez, toda vez que esse endpoint
+    // de cota falhava — mesmo com token válido.
     console.warn("Instagram publishing quota check failed; continuing", {
       accountId: account.id,
       message: error instanceof Error ? error.message : String(error),
