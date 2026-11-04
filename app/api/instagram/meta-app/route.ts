@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { ensureDefaultInstagramApp } from "@/lib/instagram-default-app"
 import { getInstagramRedirectUri } from "@/lib/instagram-meta"
 import { prisma } from "@/lib/prisma"
 import { encryptValue } from "@/lib/secure-store"
@@ -14,8 +13,6 @@ export async function GET(request: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
-
-  await ensureDefaultInstagramApp(session.user.id)
 
   const apps = await prisma.instagramApp.findMany({
     where: { userId: session.user.id },
