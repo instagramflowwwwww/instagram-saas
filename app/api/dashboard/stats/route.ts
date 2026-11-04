@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { Prisma } from "@prisma/client"
+import { waitUntil } from "@vercel/functions"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isCacheFresh, refreshPerformanceLogs, type PerformanceLog } from "@/lib/instagram-performance"
@@ -265,12 +266,18 @@ export async function GET(request: Request) {
 
     // O `where` já garante instagramAccount válida nessas linhas; o Prisma
     // só não reflete isso no tipo porque a FK em si é opcional no schema.
+    // A busca na Meta roda em segundo plano (waitUntil) em vez de travar a
+    // resposta — ela pode levar até 15s por conta, e o dashboard não pode
+    // ficar "Carregando..." esse tempo todo a cada F5. As views hoje saem
+    // do cache (até 10min) e chegam atualizadas no carregamento seguinte.
     const todayLogs = todayLogsForRefresh as unknown as PerformanceLog[]
     const staleTodayLogs = todayLogs.filter((log) => !isCacheFresh(log, Date.now()))
     if (staleTodayLogs.length > 0) {
-      await refreshPerformanceLogs(staleTodayLogs).catch((error) => {
-        console.error("[dashboard-stats] Falha ao atualizar performance de hoje", error)
-      })
+      waitUntil(
+        refreshPerformanceLogs(staleTodayLogs).catch((error) => {
+          console.error("[dashboard-stats] Falha ao atualizar performance de hoje", error)
+        })
+      )
     }
 
     const summaryRows = await prisma.$queryRaw<SummaryCountsRow[]>(Prisma.sql`
