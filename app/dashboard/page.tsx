@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCw,
   Send,
+  Trophy,
   TrendingUp,
 } from "lucide-react"
 import {
@@ -31,6 +32,22 @@ import {
 } from "react"
 import toast from "react-hot-toast"
 import { toastWarning } from "@/lib/toast"
+
+type RankingEntry = {
+  userId: string
+  name: string
+  accountsCount: number
+  viewsToday: number
+  postsCount: number
+  rank: number
+  isYou: boolean
+}
+
+type RankingData = {
+  updatedAt: string
+  ranking: RankingEntry[]
+  you: RankingEntry | null
+}
 
 type Metric = {
   value: number
@@ -312,6 +329,8 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [dateFrom, setDateFrom] = useState(getInitialDateFrom)
   const [dateTo, setDateTo] = useState(getToday)
+  const [ranking, setRanking] = useState<RankingData | null>(null)
+  const [rankingLoading, setRankingLoading] = useState(true)
 
   const loadDashboard = useCallback(
     async (syncAccounts = false) => {
@@ -378,6 +397,23 @@ export default function DashboardPage() {
     setLoading(true)
     void loadDashboard(false)
   }, [loadDashboard])
+
+  const loadRanking = useCallback(async () => {
+    try {
+      const response = await fetch("/api/dashboard/ranking", { cache: "no-store" })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || "Não foi possível carregar o ranking.")
+      setRanking(payload)
+    } catch {
+      // Ranking é informativo — uma falha aqui não deve atrapalhar o resto do dashboard.
+    } finally {
+      setRankingLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadRanking()
+  }, [loadRanking])
 
   const maxFollowers = useMemo(
     () =>
@@ -761,6 +797,89 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   ))}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="flex items-center gap-2 font-semibold text-white">
+                    <Trophy size={16} className="text-yellow-400" />
+                    Ranking geral
+                  </h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Top contas em views hoje, entre todos os usuários do InstaFlow.
+                  </p>
+                </div>
+              </div>
+
+              {rankingLoading ? (
+                <div className="flex min-h-32 items-center justify-center">
+                  <Loader2 size={18} className="animate-spin text-purple-400" />
+                </div>
+              ) : !ranking || ranking.ranking.length === 0 ? (
+                <div className="flex min-h-32 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] px-5 text-center">
+                  <Trophy size={19} className="text-gray-700" />
+                  <p className="mt-3 text-sm font-medium text-gray-300">
+                    Ninguém no ranking ainda hoje
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-gray-600">
+                    Assim que alguma conta registrar views hoje, o ranking aparece aqui.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/[0.05]">
+                  {ranking.ranking.map((entry) => (
+                    <div
+                      key={entry.userId}
+                      className={`flex items-center gap-3 py-3 first:pt-0 last:pb-0 ${
+                        entry.isYou ? "rounded-xl bg-purple-500/[0.06] px-3" : ""
+                      }`}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-xs font-bold text-gray-300">
+                        {entry.rank}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-white">
+                          {entry.name}
+                          {entry.isYou && (
+                            <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-medium text-purple-300">
+                              VOCÊ
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-gray-600">
+                          {entry.accountsCount} conta(s) · {formatNumber(entry.postsCount)} posts hoje
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-yellow-300">
+                        {formatNumber(entry.viewsToday)} views
+                      </span>
+                    </div>
+                  ))}
+
+                  {ranking.you && (
+                    <div className="flex items-center gap-3 rounded-xl bg-purple-500/[0.06] px-3 py-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-xs font-bold text-gray-300">
+                        {ranking.you.rank}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-white">
+                          {ranking.you.name}
+                          <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-medium text-purple-300">
+                            VOCÊ
+                          </span>
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-gray-600">
+                          {ranking.you.accountsCount} conta(s) · {formatNumber(ranking.you.postsCount)} posts hoje
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-yellow-300">
+                        {formatNumber(ranking.you.viewsToday)} views
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
