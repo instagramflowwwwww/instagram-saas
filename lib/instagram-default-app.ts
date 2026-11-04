@@ -13,19 +13,32 @@ export function getDefaultInstagramAppCredentials() {
   return { metaAppId, appSecret }
 }
 
-// Idempotente: só cria a linha se este usuário ainda não tiver um app com
-// esse mesmo metaAppId. Nunca toca em apps já cadastrados pelo usuário —
-// é puramente aditivo, pra não arriscar nenhuma conta já conectada em
-// outro app.
+// Identifica a linha do App Padrão pelo nome reservado, não pelo metaAppId
+// — assim, quando a credencial na variável de ambiente troca (ex.: app
+// republicado), a mesma linha é atualizada em vez de virar uma segunda
+// linha órfã. Nunca toca em apps que o próprio usuário cadastrou com outro
+// nome — só mexe na linha "App Padrão".
 export async function ensureDefaultInstagramApp(userId: string) {
   const credentials = getDefaultInstagramAppCredentials()
   if (!credentials) return null
 
   const existing = await prisma.instagramApp.findFirst({
-    where: { userId, metaAppId: credentials.metaAppId },
-    select: { id: true },
+    where: { userId, name: "App Padrão" },
+    select: { id: true, metaAppId: true },
   })
-  if (existing) return existing.id
+
+  if (existing) {
+    if (existing.metaAppId !== credentials.metaAppId) {
+      await prisma.instagramApp.update({
+        where: { id: existing.id },
+        data: {
+          metaAppId: credentials.metaAppId,
+          appSecretEncrypted: encryptValue(credentials.appSecret),
+        },
+      })
+    }
+    return existing.id
+  }
 
   const created = await prisma.instagramApp.create({
     data: {
