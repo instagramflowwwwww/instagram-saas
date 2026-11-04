@@ -12,6 +12,7 @@ import {
   KeyRound,
   Loader2,
   RefreshCw,
+  Search,
   Shield,
   ShieldOff,
   TimerOff,
@@ -95,6 +96,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [filter, setFilter] = useState<"all" | UserStatus>("all")
+  const [search, setSearch] = useState("")
   const [plans, setPlans] = useState<Record<string, PlanId>>({})
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [resettingId, setResettingId] = useState<string | null>(null)
@@ -205,17 +207,26 @@ export default function AdminPage() {
 
   const filteredUsers = useMemo(() => {
     if (!data) return []
-    const users =
+    let users =
       filter === "all"
         ? data.users
         : data.users.filter((user) => user.effectiveStatus === filter)
+
+    const query = search.trim().toLowerCase()
+    if (query) {
+      users = users.filter((user) =>
+        [user.name, user.email, user.id].some((field) =>
+          field?.toLowerCase().includes(query)
+        )
+      )
+    }
 
     return users.slice().sort((a, b) => {
       if (a.effectiveStatus === "pending" && b.effectiveStatus !== "pending") return -1
       if (a.effectiveStatus !== "pending" && b.effectiveStatus === "pending") return 1
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
-  }, [data, filter])
+  }, [data, filter, search])
 
   if (loading) {
     return (
@@ -290,7 +301,29 @@ export default function AdminPage() {
               Cadastros pendentes aparecem primeiro.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nome, email ou ID"
+                className="w-56 rounded-lg border border-white/10 bg-[#171717] py-2 pl-8 pr-3 text-xs text-gray-300 placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  aria-label="Limpar busca"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             {(
               [
                 ["all", "Todos"],
