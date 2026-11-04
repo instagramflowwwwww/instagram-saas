@@ -35,6 +35,7 @@ import { toastWarning } from "@/lib/toast"
 type RankingEntry = {
   userId: string
   name: string
+  image: string | null
   accountsCount: number
   viewsToday: number
   postsCount: number
@@ -348,11 +349,19 @@ function RankingRow({ entry, detached = false }: { entry: RankingEntry; detached
         {RankIcon ? <RankIcon size={13} strokeWidth={2.4} /> : entry.rank}
       </div>
 
-      <div
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-[11px] font-bold text-white ${avatarGradient(entry.userId)}`}
-      >
-        {entry.name.trim().charAt(0).toUpperCase() || "?"}
-      </div>
+      {entry.image ? (
+        <img
+          src={entry.image}
+          alt={entry.name}
+          className="h-7 w-7 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <div
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-[11px] font-bold text-white ${avatarGradient(entry.userId)}`}
+        >
+          {entry.name.trim().charAt(0).toUpperCase() || "?"}
+        </div>
+      )}
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-white">

@@ -69,7 +69,7 @@ export async function GET() {
   const [users, accountsCounts] = await Promise.all([
     prisma.user.findMany({
       where: { id: { in: relevantUserIds }, accessStatus: "approved" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, image: true },
     }),
     prisma.$queryRaw<AccountsCountRow[]>`
       SELECT "userId", COUNT(*) AS "accountsCount"
@@ -79,7 +79,7 @@ export async function GET() {
     `,
   ])
 
-  const userMap = new Map(users.map((user) => [user.id, user.name]))
+  const userMap = new Map(users.map((user) => [user.id, user]))
   const accountsMap = new Map(
     accountsCounts.map((row) => [row.userId, Number(row.accountsCount)])
   )
@@ -94,9 +94,11 @@ export async function GET() {
     .filter((row) => userMap.has(row.userId))
     .map((row) => {
       const stats = statsMap.get(row.userId)!
+      const user = userMap.get(row.userId)
       return {
         userId: row.userId,
-        name: displayName(userMap.get(row.userId) || null, row.userId),
+        name: displayName(user?.name || null, row.userId),
+        image: user?.image || null,
         accountsCount: accountsMap.get(row.userId) || 0,
         viewsToday: stats.viewsToday,
         postsCount: stats.postsCount,

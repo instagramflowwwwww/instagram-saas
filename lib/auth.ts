@@ -89,6 +89,8 @@ export const authOptions: NextAuthOptions = {
         select: {
           id: true,
           email: true,
+          name: true,
+          image: true,
           accessStatus: true,
           planName: true,
           accessExpiresAt: true,
@@ -105,6 +107,8 @@ export const authOptions: NextAuthOptions = {
       token.accessStatus = effectiveStatus
       token.planName = access.planName || undefined
       token.accessExpiresAt = access.accessExpiresAt?.toISOString()
+      token.name = access.name || undefined
+      token.picture = access.image || undefined
 
       if (!isAdminEmail(access.email) && effectiveStatus !== "approved") {
         token.id = undefined
@@ -115,6 +119,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = typeof token.id === "string" ? token.id : ""
+        session.user.image = typeof token.picture === "string" ? token.picture : null
         session.user.accessStatus = String(token.accessStatus || "approved")
         session.user.planName =
           typeof token.planName === "string" ? token.planName : null

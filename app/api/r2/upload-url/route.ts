@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic"
 
 const FILE_RULES: Record<string, { maxSize: number; type: "image" | "video" }> = {
   "image/jpeg": { maxSize: 8 * 1024 * 1024, type: "image" },
+  "image/png": { maxSize: 8 * 1024 * 1024, type: "image" },
+  "image/webp": { maxSize: 8 * 1024 * 1024, type: "image" },
   "video/mp4": { maxSize: 200 * 1024 * 1024, type: "video" },
   "video/quicktime": { maxSize: 200 * 1024 * 1024, type: "video" },
 }

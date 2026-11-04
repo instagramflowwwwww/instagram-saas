@@ -1,7 +1,7 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useSession, signOut } from "next-auth/react"
-import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing, KeyRound, Plus, Copy, Check, Trash2, Loader2, Sun, Moon, Monitor, Palette } from "lucide-react"
+import { User, Lock, LogOut, Save, Eye, EyeOff, Bell, BellOff, BellRing, KeyRound, Plus, Copy, Check, Trash2, Loader2, Sun, Moon, Monitor, Palette, Camera } from "lucide-react"
 import toast from "react-hot-toast"
 import {
   disablePush,
@@ -492,10 +492,20 @@ function ApiTokensCard() {
   )
 }
 
+const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"]
+const AVATAR_MAX_SIZE = 8 * 1024 * 1024
+
 export default function SettingsPage() {
   const { data: session, update } = useSession()
   const [name, setName] = useState(session?.user?.name || "")
   const [savingName, setSavingName] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(session?.user?.image || null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setAvatarUrl(session?.user?.image || null)
+  }, [session?.user?.image])
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -525,6 +535,65 @@ export default function SettingsPage() {
       toast.error(error instanceof Error ? error.message : "Não foi possível salvar o nome.")
     } finally {
       setSavingName(false)
+    }
+  }
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+
+    if (!AVATAR_TYPES.includes(file.type)) {
+      toast.error("Use uma imagem JPG, PNG ou WEBP.")
+      return
+    }
+    if (file.size > AVATAR_MAX_SIZE) {
+      toast.error("A imagem excede o limite de 8 MB.")
+      return
+    }
+
+    setUploadingAvatar(true)
+    try {
+      const presignRes = await fetch("/api/r2/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type,
+          size: file.size,
+        }),
+      })
+      const presignData = await presignRes.json().catch(() => ({}))
+      if (!presignRes.ok) {
+        throw new Error(presignData.error || "Não foi possível preparar o upload.")
+      }
+
+      const uploadRes = await fetch(presignData.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      })
+      if (!uploadRes.ok) {
+        throw new Error("Não foi possível enviar a imagem.")
+      }
+
+      const saveRes = await fetch("/api/user/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: presignData.publicUrl }),
+      })
+      const saveData = await saveRes.json().catch(() => ({}))
+      if (!saveRes.ok) {
+        throw new Error(saveData.error || "Não foi possível salvar a foto de perfil.")
+      }
+
+      setAvatarUrl(presignData.publicUrl)
+      await update({ image: presignData.publicUrl })
+      toast.success("Foto de perfil atualizada.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar a foto.")
+    } finally {
+      setUploadingAvatar(false)
     }
   }
 
@@ -576,6 +645,43 @@ export default function SettingsPage() {
             <h2 className="font-semibold text-white text-sm">Informações pessoais</h2>
           </div>
           <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept={AVATAR_TYPES.join(",")}
+                onChange={handleAvatarChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-full border border-white/10 bg-gradient-to-br from-purple-500 to-pink-500 disabled:opacity-60"
+                title="Trocar foto de perfil"
+              >
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Foto de perfil" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-lg font-bold text-white">
+                    {(name || session?.user?.email || "?").trim().charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                  {uploadingAvatar ? (
+                    <Loader2 size={18} className="animate-spin text-white" />
+                  ) : (
+                    <Camera size={18} className="text-white" />
+                  )}
+                </span>
+              </button>
+              <div>
+                <p className="text-sm font-medium text-white">Foto de perfil</p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  JPG, PNG ou WEBP, até 8 MB. Aparece no ranking geral.
+                </p>
+              </div>
+            </div>
             <div>
               <label className="text-xs text-gray-400 mb-1.5 block">Email</label>
               <input
