@@ -11,16 +11,13 @@ import {
   CalendarClock,
   CheckCircle2,
   Eye,
-  ImageIcon,
   Instagram,
   ListChecks,
   Loader2,
   Minus,
   Crown,
   Medal,
-  Play,
   RefreshCw,
-  Send,
   Trophy,
   TrendingUp,
 } from "lucide-react"
@@ -138,42 +135,6 @@ type StatCardProps = {
   iconClassName: string
   iconBackground: string
   inverseTrend?: boolean
-}
-
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; className: string; dot: string }
-> = {
-  published: {
-    label: "Publicado",
-    className: "border-green-500/20 bg-green-500/10 text-green-400",
-    dot: "bg-green-400",
-  },
-  partial: {
-    label: "Parcial",
-    className: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
-    dot: "bg-yellow-400",
-  },
-  scheduled: {
-    label: "Agendado",
-    className: "border-blue-500/20 bg-blue-500/10 text-blue-300",
-    dot: "bg-blue-400",
-  },
-  publishing: {
-    label: "Publicando",
-    className: "border-purple-500/20 bg-purple-500/10 text-purple-300",
-    dot: "bg-purple-400",
-  },
-  failed: {
-    label: "Falhou",
-    className: "border-red-500/20 bg-red-500/10 text-red-300",
-    dot: "bg-red-400",
-  },
-  draft: {
-    label: "Rascunho",
-    className: "border-white/10 bg-white/[0.04] text-gray-400",
-    dot: "bg-gray-500",
-  },
 }
 
 function getToday() {
@@ -639,64 +600,6 @@ export default function DashboardPage() {
             />
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-amber-500/20 bg-[#111] shadow-[0_0_30px_-12px_rgba(251,191,36,0.35)]">
-            <div className="relative overflow-hidden border-b border-amber-500/10 bg-gradient-to-r from-amber-500/[0.12] via-amber-500/[0.02] to-transparent px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-yellow-300 to-amber-500 text-amber-950 shadow-[0_0_14px_-2px_rgba(251,191,36,0.7)]">
-                    <Trophy size={14} strokeWidth={2.4} />
-                  </span>
-                  <h2 className="flex items-center gap-2 text-sm font-bold text-white">
-                    Ranking geral
-                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
-                      Hoje
-                    </span>
-                  </h2>
-                </div>
-                {ranking?.updatedAt && !rankingLoading && (
-                  <span className="shrink-0 text-[10px] text-gray-600">
-                    Atualizado {formatDate(ranking.updatedAt)}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="p-3">
-              {rankingLoading ? (
-                <div className="flex min-h-20 items-center justify-center">
-                  <Loader2 size={18} className="animate-spin text-purple-400" />
-                </div>
-              ) : !ranking || ranking.ranking.length === 0 ? (
-                <div className="flex min-h-20 flex-col items-center justify-center px-5 py-3 text-center">
-                  <p className="text-xs font-medium text-gray-400">
-                    Ninguém no ranking ainda hoje
-                  </p>
-                  <p className="mt-1 text-[11px] leading-5 text-gray-600">
-                    Assim que alguma conta registrar views hoje, o ranking aparece aqui.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {ranking.ranking.map((entry) => (
-                    <RankingRow key={entry.userId} entry={entry} />
-                  ))}
-
-                  {ranking.you && (
-                    <>
-                      <div className="relative py-1 text-center">
-                        <div className="absolute left-0 right-0 top-1/2 h-px bg-white/[0.06]" />
-                        <span className="relative bg-[#111] px-2 text-[10px] text-gray-600">
-                          sua posição
-                        </span>
-                      </div>
-                      <RankingRow entry={ranking.you} detached />
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
-
           {!hasAccounts ? (
             <section className="rounded-2xl border border-dashed border-white/10 bg-[#111] px-6 py-16 text-center">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
@@ -820,82 +723,57 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+              <div className="rounded-2xl border border-amber-500/20 bg-[#111] p-5 shadow-[0_0_30px_-14px_rgba(251,191,36,0.35)]">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="font-semibold text-white">Atividade recente</h2>
+                    <h2 className="flex items-center gap-2 font-semibold text-white">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-yellow-300 to-amber-500 text-amber-950">
+                        <Trophy size={12} strokeWidth={2.4} />
+                      </span>
+                      Ranking geral
+                    </h2>
                     <p className="mt-1 text-xs text-gray-500">
-                      Últimas publicações e tentativas.
+                      Top views hoje, entre todos os usuários.
                     </p>
                   </div>
-                  <Link
-                    href="/dashboard/history"
-                    className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-purple-400 hover:text-purple-300"
-                  >
-                    Ver histórico
-                    <ArrowRight size={13} />
-                  </Link>
+                  {ranking?.updatedAt && !rankingLoading && (
+                    <span className="shrink-0 text-[10px] text-gray-600">
+                      {formatDate(ranking.updatedAt)}
+                    </span>
+                  )}
                 </div>
 
-                {data.recentPosts.length === 0 ? (
+                {rankingLoading ? (
+                  <div className="flex min-h-56 items-center justify-center">
+                    <Loader2 size={18} className="animate-spin text-purple-400" />
+                  </div>
+                ) : !ranking || ranking.ranking.length === 0 ? (
                   <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] px-5 text-center">
-                    <Send size={19} className="text-gray-700" />
+                    <Trophy size={19} className="text-gray-700" />
                     <p className="mt-3 text-sm font-medium text-gray-300">
-                      Nenhuma atividade
+                      Ninguém no ranking ainda hoje
                     </p>
                     <p className="mt-1 text-xs leading-5 text-gray-600">
-                      As próximas publicações aparecerão aqui.
+                      Assim que alguma conta registrar views hoje, o ranking aparece aqui.
                     </p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-white/[0.05]">
-                    {data.recentPosts.slice(0, 5).map((post) => {
-                      const status = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
-                      const activityDate =
-                        post.publishedAt || post.scheduledAt || post.createdAt
+                  <div className="space-y-1">
+                    {ranking.ranking.map((entry) => (
+                      <RankingRow key={entry.userId} entry={entry} />
+                    ))}
 
-                      return (
-                        <div key={post.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.03]">
-                            {post.thumbnailUrl ? (
-                              <img
-                                src={post.thumbnailUrl}
-                                alt="Prévia da publicação"
-                                className="h-full w-full object-cover"
-                              />
-                            ) : post.kind === "Reel" ? (
-                              <Play size={14} className="text-purple-400" />
-                            ) : (
-                              <ImageIcon size={14} className="text-purple-400" />
-                            )}
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium text-gray-200">
-                              {post.caption}
-                            </p>
-                            <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-600">
-                              <span>{formatDate(activityDate)}</span>
-                              {post.errorCount > 0 ? (
-                                <span className="text-red-400/80">
-                                  {post.errorCount} falha(s)
-                                </span>
-                              ) : (
-                                <span>{post.successCount} envio(s)</span>
-                              )}
-                            </div>
-                          </div>
-
-                          <span
-                            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${status.className}`}
-                            title={post.errorMessage || undefined}
-                          >
-                            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-                            {status.label}
+                    {ranking.you && (
+                      <>
+                        <div className="relative py-1 text-center">
+                          <div className="absolute left-0 right-0 top-1/2 h-px bg-white/[0.06]" />
+                          <span className="relative bg-[#111] px-2 text-[10px] text-gray-600">
+                            sua posição
                           </span>
                         </div>
-                      )
-                    })}
+                        <RankingRow entry={ranking.you} detached />
+                      </>
+                    )}
                   </div>
                 )}
               </div>
