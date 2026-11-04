@@ -146,10 +146,43 @@ export default function AdminPage() {
     user: AdminUser,
     action: "approve" | "reject"
   ) => {
+    const isActive = user.effectiveStatus === "approved"
+
+    // "Recusar" exclui o cadastro de vez (some da lista). Em usuário já
+    // ativo o botão vira "Bloquear" e só suspende o acesso, sem apagar
+    // contas/posts reais.
+    if (action === "reject" && !isActive) {
+      const confirmed = await confirmToast(
+        `Excluir permanentemente o cadastro de ${user.name || user.email || "este usuário"}? Essa ação não pode ser desfeita.`,
+        { confirmLabel: "Excluir", danger: true }
+      )
+      if (!confirmed) return
+
+      setProcessingId(user.id)
+      try {
+        const response = await fetch(`/api/admin/users/${user.id}/access`, {
+          method: "DELETE",
+        })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || "Não foi possível excluir")
+        toast.success(payload.message || "Cadastro excluído.")
+        await loadData()
+      } catch (requestError) {
+        toast.error(
+          requestError instanceof Error
+            ? requestError.message
+            : "Não foi possível excluir"
+        )
+      } finally {
+        setProcessingId(null)
+      }
+      return
+    }
+
     if (action === "reject") {
       const confirmed = await confirmToast(
-        `Recusar o acesso de ${user.name || user.email || "este usuário"}?`,
-        { confirmLabel: "Recusar", danger: true }
+        `Bloquear o acesso de ${user.name || user.email || "este usuário"}?`,
+        { confirmLabel: "Bloquear", danger: true }
       )
       if (!confirmed) return
     }
@@ -453,11 +486,12 @@ export default function AdminPage() {
                           </button>
                           <button
                             onClick={() => void updateAccess(user, "reject")}
-                            disabled={processing || user.effectiveStatus === "rejected"}
+                            disabled={processing}
+                            title={active ? undefined : "Exclui o cadastro permanentemente"}
                             className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-40"
                           >
                             <UserRoundX size={13} />
-                            {active ? "Bloquear" : "Recusar"}
+                            {active ? "Bloquear" : "Excluir"}
                           </button>
                           <button
                             onClick={() => void resetUserPassword(user)}

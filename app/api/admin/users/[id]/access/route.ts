@@ -8,6 +8,36 @@ import {
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
+export async function DELETE(
+  _request: Request,
+  { params }: { params: { id: string } }
+) {
+  const session = await getServerSession(authOptions)
+  if (!isAdminEmail(session?.user?.email)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  const target = await prisma.user.findUnique({
+    where: { id: params.id },
+    select: { id: true, email: true },
+  })
+
+  if (!target) {
+    return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 })
+  }
+
+  if (isAdminEmail(target.email)) {
+    return NextResponse.json(
+      { error: "A conta principal do administrador não pode ser excluída." },
+      { status: 400 }
+    )
+  }
+
+  await prisma.user.delete({ where: { id: target.id } })
+
+  return NextResponse.json({ message: "Cadastro excluído." })
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
