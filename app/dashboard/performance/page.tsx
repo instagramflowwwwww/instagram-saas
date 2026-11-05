@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ElementType, type ReactNode } from "react"
 import {
   ExternalLink,
   Heart,
@@ -12,6 +12,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import toast from "react-hot-toast"
+import { statCardBorder } from "@/lib/stat-card"
 
 type AccountGroup = {
   id: string
@@ -66,6 +67,43 @@ const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
 
 function formatNumber(value: number | null) {
   return value === null ? "—" : numberFormatter.format(value)
+}
+
+function MetricCard({
+  label,
+  value,
+  icon: Icon,
+  iconClassName,
+  hero,
+  helper,
+}: {
+  label: string
+  value: ReactNode
+  icon: ElementType
+  iconClassName: string
+  hero?: boolean
+  helper?: ReactNode
+}) {
+  return (
+    <div className="rounded-2xl p-px" style={{ background: statCardBorder(iconClassName, hero) }}>
+      <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-500">{label}</span>
+          <Icon size={15} className={iconClassName} />
+        </div>
+        <p
+          className={
+            hero
+              ? "bg-gradient-to-br from-purple-200 to-pink-200 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+              : "text-2xl font-bold tracking-tight text-white"
+          }
+        >
+          {value}
+        </p>
+        <div className="mt-1.5 min-h-4 text-[11px] text-gray-600">{helper}</div>
+      </div>
+    </div>
+  )
 }
 
 function mediaLabel(post: PerformancePost) {
@@ -395,7 +433,13 @@ export default function PerformancePage() {
   }, [filteredPosts, sortBy])
 
   return (
-    <div className="min-w-0 max-w-full overflow-x-hidden">
+    <div
+      className="relative -m-4 min-w-0 max-w-full overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-6 flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Performance</h1>
@@ -411,7 +455,7 @@ export default function PerformancePage() {
           <div
             role="tablist"
             aria-label="Período da performance"
-            className="inline-flex rounded-xl border border-white/[0.07] bg-[#111] p-1"
+            className="inline-flex rounded-xl border border-white/[0.07] bg-[#0d0d10] p-1"
           >
             {PERIOD_OPTIONS.map((option) => {
               const active = option.value === selectedPeriod
@@ -434,7 +478,7 @@ export default function PerformancePage() {
             })}
           </div>
 
-          <label className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.07] bg-[#111] px-3 text-xs text-gray-500">
+          <label className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.07] bg-[#0d0d10] px-3 text-xs text-gray-500">
             <span className="whitespace-nowrap">Ordenar por</span>
             <select
               value={sortBy}
@@ -443,7 +487,7 @@ export default function PerformancePage() {
               className="min-w-0 cursor-pointer bg-transparent font-medium text-gray-200 outline-none"
             >
               {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value} className="bg-[#111]">
+                <option key={option.value} value={option.value} className="bg-[#0d0d10]">
                   {option.label}
                 </option>
               ))}
@@ -506,88 +550,82 @@ export default function PerformancePage() {
       )}
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-xl border border-white/5 bg-[#111] p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500">
-              Posts analisados
-            </span>
-            <TrendingUp size={14} className="text-purple-400" />
-          </div>
-          <p className="text-2xl font-bold text-white">
-            {loading ? "..." : numberFormatter.format(posts.length)}
-          </p>
-        </div>
+        <MetricCard
+          label="Posts analisados"
+          icon={TrendingUp}
+          iconClassName="text-purple-400"
+          value={loading ? "..." : numberFormatter.format(posts.length)}
+        />
 
-        <div className="rounded-xl border border-white/5 bg-[#111] p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500">
-              Total de curtidas
-            </span>
-            <Heart size={14} className="text-pink-400" />
-          </div>
-          <p className="text-2xl font-bold text-white">
-            {loading || (refreshing && !hasMetrics)
+        <MetricCard
+          label="Total de curtidas"
+          icon={Heart}
+          iconClassName="text-pink-400"
+          value={
+            loading || (refreshing && !hasMetrics)
               ? "..."
-              : numberFormatter.format(totals.likes)}
-          </p>
-        </div>
+              : numberFormatter.format(totals.likes)
+          }
+          helper={
+            !loading && posts.length > 0
+              ? `média de ${numberFormatter.format(Math.round(totals.likes / posts.length))} por post`
+              : null
+          }
+        />
 
-        <div className="rounded-xl border border-white/5 bg-[#111] p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500">
-              Total de comentários
-            </span>
-            <MessageCircle size={14} className="text-blue-400" />
-          </div>
-          <p className="text-2xl font-bold text-white">
-            {loading || (refreshing && !hasMetrics)
+        <MetricCard
+          label="Total de comentários"
+          icon={MessageCircle}
+          iconClassName="text-blue-400"
+          value={
+            loading || (refreshing && !hasMetrics)
               ? "..."
-              : numberFormatter.format(totals.comments)}
-          </p>
-        </div>
+              : numberFormatter.format(totals.comments)
+          }
+          helper={
+            !loading && posts.length > 0
+              ? `média de ${numberFormatter.format(Math.round(totals.comments / posts.length))} por post`
+              : null
+          }
+        />
 
-        <div className="rounded-xl border border-white/5 bg-[#111] p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500">
-              Total de visualizações
-            </span>
-            <Play size={14} className="text-purple-400" />
-          </div>
-          <p className="text-2xl font-bold text-white">
-            {loading || (refreshing && !hasMetrics)
+        <MetricCard
+          label="Total de visualizações"
+          icon={Play}
+          iconClassName="text-purple-400"
+          hero
+          value={
+            loading || (refreshing && !hasMetrics)
               ? "..."
-              : numberFormatter.format(totals.views)}
-          </p>
-        </div>
+              : numberFormatter.format(totals.views)
+          }
+        />
 
-        <div className="rounded-xl border border-white/5 bg-[#111] p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500">
-              Views nos stories
-            </span>
-            <Star size={14} className="text-yellow-400" />
-          </div>
-          <p className="text-2xl font-bold text-white">
-            {storiesLoading || !storiesSummary
+        <MetricCard
+          label="Views nos stories"
+          icon={Star}
+          iconClassName="text-amber-400"
+          value={
+            storiesLoading || !storiesSummary
               ? "..."
               : storiesSummary.storiesCount === 0
                 ? "—"
-                : numberFormatter.format(storiesSummary.totalViews)}
-          </p>
-          {!storiesLoading && storiesSummary && storiesSummary.storiesCount > 0 && storiesSummary.storiesWithData === 0 && (
-            <p className="mt-1 text-[11px] text-yellow-300">
-              Abra Stories e atualize para buscar as views
-            </p>
-          )}
-          {!storiesLoading &&
+                : numberFormatter.format(storiesSummary.totalViews)
+          }
+          helper={
+            !storiesLoading &&
             storiesSummary &&
-            storiesSummary.storiesWithData > 0 &&
-            storiesSummary.storiesWithData < storiesSummary.storiesCount && (
-              <p className="mt-1 text-[11px] text-gray-600">
-                {storiesSummary.storiesWithData} de {storiesSummary.storiesCount} com dado
-              </p>
-            )}
-        </div>
+            storiesSummary.storiesCount > 0 &&
+            storiesSummary.storiesWithData === 0 ? (
+              <span className="text-amber-300">Abra Stories e atualize para buscar as views</span>
+            ) : !storiesLoading &&
+              storiesSummary &&
+              storiesSummary.storiesWithData > 0 &&
+              storiesSummary.storiesWithData < storiesSummary.storiesCount ? (
+              `${storiesSummary.storiesWithData} de ${storiesSummary.storiesCount} com dado`
+            ) : null
+          }
+        />
       </div>
 
       {loading && (
@@ -597,7 +635,7 @@ export default function PerformancePage() {
       )}
 
       {!loading && !pageError && posts.length === 0 && (
-        <div className="rounded-xl border border-white/5 bg-[#111] p-16 text-center">
+        <div className="rounded-xl border border-white/5 bg-[#0d0d10] p-16 text-center">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
             <TrendingUp size={24} className="text-purple-400" />
           </div>
@@ -612,80 +650,89 @@ export default function PerformancePage() {
       )}
 
       {!loading && posts.length > 0 && (
-        <div className="space-y-3">
-          {sortedPosts.map((post) => (
-            <div
-              key={post.id}
-              className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-hidden rounded-xl border border-white/5 bg-[#111] p-5 lg:flex-row lg:items-center"
-            >
-              <div className="flex w-full min-w-0 flex-1 items-center gap-4 lg:w-0">
-                {post.profilePicture ? (
-                  <img
-                    src={post.profilePicture}
-                    alt={`Foto de @${post.username}`}
-                    className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
-                  />
+        <div className="rounded-2xl border border-white/5 bg-[#0d0d10] p-2">
+          <div className="flex items-center justify-between px-3 py-3">
+            <h2 className="text-sm font-bold text-white">Publicações</h2>
+            <span className="text-[11px] text-gray-600">
+              {numberFormatter.format(sortedPosts.length)} resultados
+            </span>
+          </div>
+
+          <div className="space-y-2 px-2 pb-2">
+            {sortedPosts.map((post) => (
+              <div
+                key={post.id}
+                className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-hidden rounded-xl border border-white/5 bg-[#111114] p-4 transition-colors hover:border-purple-400/20 hover:bg-[#15121c] lg:flex-row lg:items-center"
+              >
+                <div className="flex w-full min-w-0 flex-1 items-center gap-3 lg:w-0">
+                  {post.profilePicture ? (
+                    <img
+                      src={post.profilePicture}
+                      alt={`Foto de @${post.username}`}
+                      className="h-9 w-9 flex-shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500">
+                      <Instagram size={15} className="text-white" />
+                    </div>
+                  )}
+
+                  <div className="w-0 min-w-0 flex-1 overflow-hidden">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-white">
+                        @{post.username}
+                      </p>
+                      <span className="rounded-full border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] text-gray-500">
+                        {mediaLabel(post)}
+                      </span>
+                    </div>
+                    <p
+                      className="mt-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-500"
+                      title={post.caption || "Sem legenda"}
+                    >
+                      {post.caption || "Sem legenda"}
+                    </p>
+                  </div>
+                </div>
+
+                {post.error ? (
+                  <span className="max-w-md text-xs text-red-400">
+                    {post.error}
+                  </span>
                 ) : (
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500">
-                    <Instagram size={16} className="text-white" />
+                  <div className="flex flex-wrap items-center gap-4 lg:flex-shrink-0">
+                    <div className="flex items-center gap-1.5 text-sm text-gray-300">
+                      <Heart size={14} className="text-pink-400" />
+                      {formatNumber(post.likeCount)}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm text-gray-300">
+                      <MessageCircle size={14} className="text-blue-400" />
+                      {formatNumber(post.commentsCount)}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm text-gray-300">
+                      <Play size={14} className="text-purple-400" />
+                      {formatNumber(post.viewsCount)}
+                    </div>
+                    {post.permalink && (
+                      <a
+                        href={post.permalink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Abrir publicação no Instagram"
+                        className="text-gray-500 transition hover:text-white"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
                   </div>
                 )}
 
-                <div className="w-0 min-w-0 flex-1 overflow-hidden">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-white">
-                      @{post.username}
-                    </p>
-                    <span className="rounded-full border border-white/5 bg-white/[0.03] px-2 py-0.5 text-[10px] text-gray-500">
-                      {mediaLabel(post)}
-                    </span>
-                  </div>
-                  <p
-                    className="mt-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-500"
-                    title={post.caption || "Sem legenda"}
-                  >
-                    {post.caption || "Sem legenda"}
-                  </p>
-                </div>
-              </div>
-
-              {post.error ? (
-                <span className="max-w-md text-xs text-red-400">
-                  {post.error}
+                <span className="text-xs text-gray-600 lg:flex-shrink-0">
+                  {new Date(post.publishedAt).toLocaleDateString("pt-BR")}
                 </span>
-              ) : (
-                <div className="flex flex-wrap items-center gap-4 lg:flex-shrink-0">
-                  <div className="flex items-center gap-1.5 text-sm text-gray-300">
-                    <Heart size={14} className="text-pink-400" />
-                    {formatNumber(post.likeCount)}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-gray-300">
-                    <MessageCircle size={14} className="text-blue-400" />
-                    {formatNumber(post.commentsCount)}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-gray-300">
-                    <Play size={14} className="text-purple-400" />
-                    {formatNumber(post.viewsCount)}
-                  </div>
-                  {post.permalink && (
-                    <a
-                      href={post.permalink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="Abrir publicação no Instagram"
-                      className="text-gray-500 transition hover:text-white"
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
-                </div>
-              )}
-
-              <span className="text-xs text-gray-600 lg:flex-shrink-0">
-                {new Date(post.publishedAt).toLocaleDateString("pt-BR")}
-              </span>
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
