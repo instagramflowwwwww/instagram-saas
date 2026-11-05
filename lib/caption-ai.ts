@@ -40,7 +40,7 @@ export async function generateCaptionFromFrames(params: {
     : "Estes são frames em ordem de um vídeo curto."
 
   const response = await client.messages.parse({
-    model: "claude-opus-5",
+    model: "claude-opus-5-5",
     max_tokens: 8000,
     system: SYSTEM,
     thinking: { type: "adaptive" },
