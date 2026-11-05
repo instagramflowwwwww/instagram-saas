@@ -28,6 +28,7 @@ model User {
   postingBatches    PostingBatch[]
   apiTokens         ApiToken[]
   apiConnectionRequests ApiConnectionRequest[]
+  pixOrders         PixOrder[]
   accessStatus      String             @default("approved")
   planName          String?
   planDurationDays  Int?
@@ -159,6 +160,26 @@ model ApiToken {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Pedido de pagamento Pix via WiinPay pra assinar um plano (/dashboard/plans).
+// O status só muda pra "paid" depois de confirmar com a própria WiinPay
+// (GET /payment/list/{id}) — nunca só por confiar no corpo do webhook.
+model PixOrder {
+  id                String    @id @default(cuid())
+  userId            String
+  planId            String
+  amountBRL         Int
+  wiinpayPaymentId  String?   @unique
+  status            String    @default("pending") // pending | paid | failed
+  pixCode           String?
+  rawCreateResponse Json?
+  createdAt         DateTime  @default(now())
+  paidAt            DateTime?
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
 
 // Registro de uma tentativa de conexão iniciada pela API (/api/v1/connections),

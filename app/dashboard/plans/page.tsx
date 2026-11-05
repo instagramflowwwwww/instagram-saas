@@ -22,11 +22,11 @@ export default function DashboardPlansPage() {
         </div>
       </div>
 
-      <PricingPlans />
+      <PricingPlans mode="checkout" />
 
       <p className="mt-8 text-sm text-gray-500">
-        Já mandou o pagamento? Avisa a gente por e-mail que liberamos o acesso assim que
-        confirmar.
+        O pagamento é via Pix. Assim que confirmar, seu acesso é liberado na hora — não precisa
+        esperar ninguém aprovar.
       </p>
     </div>
   )

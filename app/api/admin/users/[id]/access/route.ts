@@ -108,7 +108,7 @@ export async function PATCH(
     currentExpiration.getTime() > now.getTime()
       ? currentExpiration
       : now
-  const expiresAt = addPlanDays(renewalBase, plan.days)
+  const expiresAt = plan.days === null ? null : addPlanDays(renewalBase, plan.days)
 
   const user = await prisma.user.update({
     where: { id: target.id },

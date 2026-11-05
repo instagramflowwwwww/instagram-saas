@@ -64,8 +64,8 @@ export default function PlansPage() {
         </div>
 
         <p className="mt-10 text-center text-xs text-gray-600">
-          Já assinou? Entre em contato pelo e-mail e nosso time libera o acesso assim que o
-          pagamento for confirmado.
+          Já tem conta? Faça login e escolha o plano direto no painel — o pagamento é por Pix
+          e o acesso libera na hora.
         </p>
       </main>
     </div>

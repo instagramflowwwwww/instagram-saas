@@ -8,12 +8,33 @@ export const ACCESS_PLANS = {
   vip: {
     id: "vip",
     label: "VIP",
-    days: 15,
+    days: 15 as number | null,
   },
   premium: {
     id: "premium",
     label: "Premium",
-    days: 30,
+    days: 30 as number | null,
+  },
+  // Planos pagos via Pix (WiinPay) na página /planos e /dashboard/plans.
+  semanal: {
+    id: "semanal",
+    label: "Semanal",
+    days: 7 as number | null,
+    priceBRL: 400,
+  },
+  mensal: {
+    id: "mensal",
+    label: "Mensal",
+    days: 30 as number | null,
+    priceBRL: 800,
+  },
+  // days: null = nunca expira (a checagem de status só olha accessExpiresAt
+  // quando ele existe — veja getEffectiveAccessStatus).
+  vitalicio: {
+    id: "vitalicio",
+    label: "Vitalício",
+    days: null as number | null,
+    priceBRL: 1600,
   },
 } as const
 
