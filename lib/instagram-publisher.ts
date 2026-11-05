@@ -45,8 +45,12 @@ const MAX_ACCOUNT_ATTEMPTS = 2
 // Igual ao ACCOUNT_CHUNK_SIZE da fila (lib/queue-processor.ts): processando
 // o lote inteiro numa onda só, o tempo da função deixa de ser (contas ÷
 // concorrência) × até 60s de espera da Meta por conta — o que estourava os
-// 120s da function em lotes de 12 contas com só 4 em paralelo.
-const ACCOUNT_CONCURRENCY = 12
+// 120s da function em lotes de 12 contas com só 4 em paralelo. Subido pra 24
+// junto com ACCOUNT_CHUNK_SIZE pra escalar contas de automações grandes
+// (ex.: 500 contas) sem aumentar o tempo de parede de cada ciclo — como
+// continua sendo uma onda só, o teto de tempo por ciclo não muda, só o
+// volume processado nele.
+const ACCOUNT_CONCURRENCY = 24
 const DEFAULT_PUBLISH_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000
 
 type InstagramOperationError = Error & {

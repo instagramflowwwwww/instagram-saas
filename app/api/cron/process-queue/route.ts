@@ -9,8 +9,12 @@ export const dynamic = "force-dynamic"
 // junto com ACCOUNT_CONCURRENCY em lib/instagram-publisher.ts.
 export const maxDuration = 280
 
-const DEFAULT_PARALLEL_USERS = 9
-const MAX_PARALLEL_USERS = 12
+// Quantos usuários diferentes da plataforma avançam por execução da fila
+// (a cada minuto). Subido pra dar mais fôlego com contas em grande volume
+// sem deixar outros usuários famintos de slot — o plano Pro da Vercel
+// aguenta a concorrência extra.
+const DEFAULT_PARALLEL_USERS = 12
+const MAX_PARALLEL_USERS = 20
 
 function authorized(request: Request) {
   const secrets = [

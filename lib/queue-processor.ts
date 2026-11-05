@@ -14,10 +14,14 @@ const MAX_ITEM_ATTEMPTS = 3
 // "travado" antes mesmo da function original terminar.
 const STUCK_AFTER_MS = 6 * 60 * 1000
 // Quantas contas uma automação avança por execução da fila (a cada minuto).
-const ACCOUNT_CHUNK_SIZE = 12
+// Igual ao ACCOUNT_CONCURRENCY em lib/instagram-publisher.ts — os dois sobem
+// juntos pra continuar sendo uma onda só (ver comentário lá).
+const ACCOUNT_CHUNK_SIZE = 24
 // Quantas automações do MESMO usuário podem rodar por execução, em vez de
-// uma travar as outras em 0% até terminar.
-const MAX_BATCHES_PER_USER = 3
+// uma travar as outras em 0% até terminar. Com contas em grande volume
+// (centenas), vale a pena dividir em várias automações menores — cada uma
+// ocupa um desses slots e avança em paralelo.
+const MAX_BATCHES_PER_USER = 5
 const OLD_CANDIDATE_WINDOW = 48
 const RECENT_CANDIDATE_WINDOW = 120
 const NEAR_DUE_CANDIDATE_WINDOW = 200
@@ -437,7 +441,10 @@ export async function processDueQueue(options: {
   await maintainInstagramAccounts(options.userId)
   await recoverStuckItems(options.userId)
 
-  const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 12)
+  // Teto de segurança interno — precisa acompanhar o MAX_PARALLEL_USERS de
+  // app/api/cron/process-queue/route.ts, senão esse limite aqui dentro
+  // anula silenciosamente o aumento feito lá.
+  const requestedLimit = Math.min(Math.max(options.limit || 1, 1), 20)
   const now = new Date()
   const nearScheduleCutoff = new Date(now.getTime() - NEAR_SCHEDULE_WINDOW_MS)
   const freshDueCutoff = new Date(now.getTime() - FRESH_DUE_WINDOW_MS)
