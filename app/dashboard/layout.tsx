@@ -10,7 +10,7 @@ import { Wordmark } from "@/components/Wordmark"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, FolderOpen,
-  ListChecks, Star, TrendingUp, Shield, Boxes, Users, Menu, X, Activity, Banknote
+  ListChecks, Star, TrendingUp, Shield, Boxes, Users, Menu, X, Activity, Banknote, Bell
 } from "lucide-react"
 
 const navGroups = [
@@ -95,6 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           label: "Administração",
           items: [
             { href: "/dashboard/admin", icon: Shield, label: "Painel Admin" },
+            { href: "/dashboard/admin/notifications", icon: Bell, label: "Notificações" },
           ],
         },
       ]

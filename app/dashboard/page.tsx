@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  Bell,
   Calendar,
   CalendarClock,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   Trophy,
   TrendingUp,
+  X,
 } from "lucide-react"
 import {
   type ChangeEvent,
@@ -353,6 +355,168 @@ function StatCard({
   )
 }
 
+type NotificationItem = {
+  id: string
+  title: string
+  message: string
+  createdAt: string
+  read: boolean
+}
+
+function timeAgo(value: string) {
+  const diffMs = Date.now() - new Date(value).getTime()
+  const minutes = Math.floor(diffMs / 60000)
+  if (minutes < 1) return "agora"
+  if (minutes < 60) return `${minutes}min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  return `${days}d`
+}
+
+function NotificationBell() {
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<NotificationItem[] | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const response = await fetch("/api/notifications", { cache: "no-store" })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || "Erro ao carregar avisos.")
+      setItems(payload.notifications)
+      setUnreadCount(payload.unreadCount)
+    } catch {
+      // Sininho é informativo — falha aqui não deve atrapalhar o resto do dashboard.
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const markAllRead = async () => {
+    if (unreadCount === 0) return
+    setItems((current) => current?.map((item) => ({ ...item, read: true })) || null)
+    setUnreadCount(0)
+    await fetch("/api/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    }).catch(() => {})
+  }
+
+  const markOneRead = async (id: string) => {
+    setItems(
+      (current) =>
+        current?.map((item) => (item.id === id ? { ...item, read: true } : item)) || null
+    )
+    setUnreadCount((count) => Math.max(0, count - 1))
+    await fetch("/api/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {})
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label="Notificações"
+        className="relative flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#111] text-gray-300 transition-colors hover:bg-white/[0.06]"
+      >
+        <Bell size={15} />
+        {unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-pink-500 px-1 text-[9px] font-bold text-white">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-80 max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-2xl border border-white/10 bg-[#111] shadow-2xl shadow-black/50">
+            <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+              <p className="text-sm font-semibold text-white">Notificações</p>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void markAllRead()}
+                    className="text-[11px] font-medium text-purple-400 hover:text-purple-300"
+                  >
+                    Marcar todas como lidas
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Fechar"
+                  className="text-gray-500 hover:text-white"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto">
+              {loading && !items ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 size={18} className="animate-spin text-purple-400" />
+                </div>
+              ) : !items || items.length === 0 ? (
+                <div className="px-4 py-10 text-center">
+                  <Bell size={18} className="mx-auto text-gray-700" />
+                  <p className="mt-2 text-xs text-gray-500">Nenhum aviso por enquanto.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/[0.05]">
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => !item.read && void markOneRead(item.id)}
+                      className={`block w-full px-4 py-3 text-left transition-colors hover:bg-white/[0.03] ${
+                        item.read ? "" : "bg-purple-500/[0.05]"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!item.read && (
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-pink-400" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-semibold text-white">
+                              {item.title}
+                            </p>
+                            <span className="shrink-0 text-[10px] text-gray-600">
+                              {timeAgo(item.createdAt)}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">
+                            {item.message}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function RankingRow({ entry, detached = false }: { entry: RankingEntry; detached?: boolean }) {
   const style = rankStyle(entry.rank)
   const RankIcon = style.icon
@@ -533,6 +697,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <NotificationBell />
           <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-3 py-2.5">
             <Calendar size={14} className="shrink-0 text-gray-500" />
             <input

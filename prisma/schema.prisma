@@ -21,6 +21,7 @@ model User {
   posts             Post[]
   pushSubscriptions PushSubscription[]
   notificationPreference NotificationPreference?
+  notificationReads NotificationRead[]
   media             MediaLibrary[]
   mediaFolders      MediaFolder[]
   accountGroups     AccountGroup[]
@@ -89,6 +90,32 @@ model NotificationPreference {
   dailyViewsGoalReachedDate  String?
   digestEnabled              Boolean   @default(true)
   updatedAt                  DateTime  @updatedAt
+}
+
+// Aviso que o admin manda pra todo mundo (manutenção, novidade, aviso
+// geral) — aparece no sininho do dashboard de cada usuário.
+model Notification {
+  id        String             @id @default(cuid())
+  title     String
+  message   String
+  createdAt DateTime           @default(now())
+  reads     NotificationRead[]
+
+  @@index([createdAt])
+}
+
+// Marca que um usuário já viu um aviso — a existência da linha é o
+// próprio estado, igual ao EmployeePaidDay.
+model NotificationRead {
+  id             String       @id @default(cuid())
+  notificationId String
+  userId         String
+  readAt         DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId])
 }
 
 model VerificationToken {
