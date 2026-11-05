@@ -10,7 +10,7 @@ import { Wordmark } from "@/components/Wordmark"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
   History, Settings, LogOut, FolderOpen,
-  ListChecks, Star, TrendingUp, Shield, Boxes, Users, Menu, X, Activity, Banknote, Bell
+  ListChecks, Star, TrendingUp, Shield, Boxes, Users, Menu, X, Activity, Banknote, Bell, Gem
 } from "lucide-react"
 
 const navGroups = [
@@ -50,6 +50,7 @@ const navGroups = [
   {
     label: "Conta",
     items: [
+      { href: "/dashboard/plans", icon: Gem, label: "Planos" },
       { href: "/dashboard/settings", icon: Settings, label: "Configurações" },
     ],
   },

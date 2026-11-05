@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import Link from "next/link"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import {
@@ -447,6 +448,11 @@ export default function LoginPage() {
 
           <p className="text-center text-gray-600 text-xs mt-6">
             Ao entrar, você concorda com nossos termos de uso
+          </p>
+          <p className="text-center text-gray-500 text-xs mt-2">
+            <Link href="/planos" className="text-purple-400 hover:text-purple-300 transition-colors">
+              Ver planos e preços
+            </Link>
           </p>
         </div>
       </div>
