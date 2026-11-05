@@ -11,6 +11,7 @@ import {
   Instagram,
   Loader2,
   RefreshCw,
+  Search,
   Trash2,
   UserPlus,
   XCircle,
@@ -18,6 +19,7 @@ import {
   Square,
   Check,
   FolderPlus,
+  X,
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast, toastWarning } from "@/lib/toast"
@@ -98,6 +100,7 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<FilterType>("all")
+  const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<string[]>([])
   const [deletingBulk, setDeletingBulk] = useState(false)
   const [groups, setGroups] = useState<AccountGroup[]>([])
@@ -246,9 +249,17 @@ export default function AccountsPage() {
     account.isActive &&
     !account.requiresReconnect
 
+  const normalizedSearch = search.trim().toLowerCase().replace(/^@/, "")
+
   const filteredAccounts = accounts.filter((account) => {
-    if (filter === "connected") return isConnected(account)
-    if (filter === "error") return isError(account)
+    if (filter === "connected" && !isConnected(account)) return false
+    if (filter === "error" && !isError(account)) return false
+    if (normalizedSearch) {
+      const matches =
+        account.username.toLowerCase().includes(normalizedSearch) ||
+        (account.name || "").toLowerCase().includes(normalizedSearch)
+      if (!matches) return false
+    }
     return true
   })
 
@@ -385,6 +396,26 @@ export default function AccountsPage() {
       {/* Filtros */}
       {!loading && accounts.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-5">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar por @usuário ou nome..."
+              className="w-56 rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-8 text-sm text-white placeholder-gray-500 focus:border-purple-500/50 focus:outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
           {(["all", "connected", "error"] as FilterType[]).map((f) => (
             <button
               key={f}
