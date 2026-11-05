@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { toastWarning } from "@/lib/toast"
+import { statCardBorder } from "@/lib/stat-card"
 
 type MediaItem = {
   id: string
@@ -151,7 +152,7 @@ function StoriesPerformance() {
   if (loading) return null
 
   return (
-    <div className="mb-6 rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+    <div className="mb-6 rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Eye size={15} className="text-purple-400" />
@@ -461,14 +462,26 @@ export default function StoriesPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div
+        className="relative -m-4 flex min-h-[60vh] items-center justify-center overflow-x-hidden p-4 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Stories</h1>
@@ -488,41 +501,50 @@ export default function StoriesPage() {
       <StoriesPerformance />
 
       <div className="mb-6 grid gap-3 md:grid-cols-3">
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">Mídias selecionadas</p>
-            <Layers3 size={15} className="text-purple-400" />
+        <div className="rounded-2xl p-px" style={{ background: statCardBorder("text-purple-400") }}>
+          <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">Mídias selecionadas</p>
+              <Layers3 size={15} className="text-purple-400" />
+            </div>
+            <p className="mt-2 text-2xl font-bold text-white">{selectedMedia.length}</p>
+            <p className="mt-1 text-[11px] text-gray-600">Máximo de 50 por sequência</p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-white">{selectedMedia.length}</p>
-          <p className="mt-1 text-[11px] text-gray-600">Máximo de 50 por sequência</p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">Contas selecionadas</p>
-            <Instagram size={15} className="text-pink-400" />
+        <div className="rounded-2xl p-px" style={{ background: statCardBorder("text-pink-400") }}>
+          <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">Contas selecionadas</p>
+              <Instagram size={15} className="text-pink-400" />
+            </div>
+            <p className="mt-2 text-2xl font-bold text-white">{selectedAccounts.length}</p>
+            <p className="mt-1 text-[11px] text-gray-600">Publicação oficial pela Meta</p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-white">{selectedAccounts.length}</p>
-          <p className="mt-1 text-[11px] text-gray-600">Publicação oficial pela Meta</p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">Modo atual</p>
-            {publishMode === "now" ? (
-              <Play size={15} className="text-green-400" />
-            ) : (
-              <Clock3 size={15} className="text-blue-400" />
-            )}
+        <div
+          className="rounded-2xl p-px"
+          style={{ background: statCardBorder(publishMode === "now" ? "text-green-400" : "text-blue-400") }}
+        >
+          <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">Modo atual</p>
+              {publishMode === "now" ? (
+                <Play size={15} className="text-green-400" />
+              ) : (
+                <Clock3 size={15} className="text-blue-400" />
+              )}
+            </div>
+            <p className="mt-2 text-lg font-bold text-white">
+              {publishMode === "now" ? "Publicar agora" : "Agendado"}
+            </p>
+            <p className="mt-1 text-[11px] text-gray-600">Um Story por mídia e por conta</p>
           </div>
-          <p className="mt-2 text-lg font-bold text-white">
-            {publishMode === "now" ? "Publicar agora" : "Agendado"}
-          </p>
-          <p className="mt-1 text-[11px] text-gray-600">Um Story por mídia e por conta</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         <div className="space-y-6 xl:col-span-3">
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-white">
@@ -595,7 +617,7 @@ export default function StoriesPage() {
                           />
                         )}
                       </div>
-                      <div className="flex items-center gap-2 bg-[#151515] p-2.5">
+                      <div className="flex items-center gap-2 bg-[#111114] p-2.5">
                         {item.type === "video" ? (
                           <Film size={12} className="text-purple-400" />
                         ) : (
@@ -682,7 +704,7 @@ export default function StoriesPage() {
         </div>
 
         <div className="space-y-6 xl:col-span-2">
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
             <h2 className="mb-4 text-sm font-semibold text-white">
               2. Publicação e contas
             </h2>
@@ -742,7 +764,7 @@ export default function StoriesPage() {
             <select
               value={intervalMinutes}
               onChange={(event) => setIntervalMinutes(Number(event.target.value))}
-              className="mb-5 w-full rounded-lg border border-white/10 bg-[#171717] px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none"
+              className="mb-5 w-full rounded-lg border border-white/10 bg-[#0a0a0c] px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none"
             >
               {INTERVAL_OPTIONS.map((minutes) => (
                 <option key={minutes} value={minutes}>
@@ -847,7 +869,7 @@ export default function StoriesPage() {
             )}
           </section>
 
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
             <div className="mb-4 flex items-center gap-2">
               <Sparkles size={16} className="text-purple-400" />
               <h2 className="text-sm font-semibold text-white">Prévia da sequência</h2>

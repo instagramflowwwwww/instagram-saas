@@ -106,7 +106,7 @@ function NotificationsCard() {
   }
 
   return (
-    <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+    <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
       <div className="flex items-center gap-2 mb-2">
         <BellRing size={16} className="text-purple-400" />
         <h2 className="font-semibold text-white text-sm">Notificações</h2>
@@ -202,7 +202,7 @@ function AlertPreferencesCard() {
 
   if (loading || !prefs) {
     return (
-      <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+      <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
         <div className="flex items-center gap-2 mb-2">
           <Bell size={16} className="text-purple-400" />
           <h2 className="font-semibold text-white text-sm">Alertas personalizados</h2>
@@ -213,7 +213,7 @@ function AlertPreferencesCard() {
   }
 
   return (
-    <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+    <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
       <div className="flex items-center gap-2 mb-2">
         <Bell size={16} className="text-purple-400" />
         <h2 className="font-semibold text-white text-sm">Alertas personalizados</h2>
@@ -413,7 +413,7 @@ function ApiTokensCard() {
   }
 
   return (
-    <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+    <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
       <div className="flex items-center gap-2 mb-2">
         <KeyRound size={16} className="text-purple-400" />
         <h2 className="font-semibold text-white text-sm">Tokens de API</h2>
@@ -639,7 +639,7 @@ export default function SettingsPage() {
         <p className="text-gray-500 mt-1">Gerencie sua conta</p>
       </div>
       <div className="max-w-xl space-y-4">
-        <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-5">
             <User size={16} className="text-purple-400" />
             <h2 className="font-semibold text-white text-sm">Informações pessoais</h2>
@@ -711,7 +711,7 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
-        <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-5">
             <Lock size={16} className="text-purple-400" />
             <h2 className="font-semibold text-white text-sm">Alterar senha</h2>
@@ -776,7 +776,7 @@ export default function SettingsPage() {
 
         <ApiTokensCard />
 
-        <div className="bg-[#111] border border-white/5 rounded-xl p-6">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <LogOut size={16} className="text-red-400" />
             <h2 className="font-semibold text-white text-sm">Sair da conta</h2>

@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast } from "@/lib/toast"
+import { statCardBorder } from "@/lib/stat-card"
 
 type UserStatus = "pending" | "approved" | "rejected" | "expired"
 type PlanId = "vip" | "premium"
@@ -263,7 +264,13 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div
+        className="relative -m-4 flex items-center justify-center overflow-x-hidden p-4 py-20 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
@@ -271,7 +278,7 @@ export default function AdminPage() {
 
   if (forbidden) {
     return (
-      <div className="rounded-xl border border-white/5 bg-[#111] p-16 text-center">
+      <div className="rounded-xl border border-white/5 bg-[#0d0d10] p-16 text-center">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10">
           <ShieldOff size={24} className="text-red-400" />
         </div>
@@ -287,15 +294,21 @@ export default function AdminPage() {
 
   const cards = [
     { label: "Usuários", value: data.totalUsers, icon: Users, className: "text-purple-400" },
-    { label: "Aguardando aprovação", value: data.pendingUsers, icon: Clock3, className: "text-yellow-400" },
+    { label: "Aguardando aprovação", value: data.pendingUsers, icon: Clock3, className: "text-amber-400" },
     { label: "Contas ativas", value: data.activeUsers, icon: UserCheck, className: "text-green-400" },
-    { label: "Planos expirados", value: data.expiredUsers, icon: TimerOff, className: "text-orange-400" },
+    { label: "Planos expirados", value: data.expiredUsers, icon: TimerOff, className: "text-red-400" },
     { label: "Instagram conectados", value: data.totalAccounts, icon: Instagram, className: "text-pink-400" },
     { label: "Posts criados", value: data.totalPosts, icon: FileText, className: "text-blue-400" },
   ]
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Shield size={21} className="text-purple-400" />
@@ -316,17 +329,19 @@ export default function AdminPage() {
 
       <div className="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         {cards.map((card) => (
-          <div key={card.label} className="rounded-xl border border-white/5 bg-[#111] p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <span className="text-[11px] font-medium text-gray-500">{card.label}</span>
-              <card.icon size={14} className={card.className} />
+          <div key={card.label} className="rounded-2xl p-px" style={{ background: statCardBorder(card.className) }}>
+            <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-gray-500">{card.label}</span>
+                <card.icon size={14} className={card.className} />
+              </div>
+              <p className="text-2xl font-bold text-white">{card.value}</p>
             </div>
-            <p className="text-2xl font-bold text-white">{card.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/5 bg-[#111]">
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-[#0d0d10]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 p-5">
           <div>
             <h2 className="text-sm font-semibold text-white">Usuários e acessos</h2>
@@ -345,7 +360,7 @@ export default function AdminPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar por nome, email ou ID"
-                className="w-56 rounded-lg border border-white/10 bg-[#171717] py-2 pl-8 pr-3 text-xs text-gray-300 placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
+                className="w-56 rounded-lg border border-white/10 bg-[#0a0a0c] py-2 pl-8 pr-3 text-xs text-gray-300 placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
               />
               {search && (
                 <button
@@ -468,7 +483,7 @@ export default function AdminPage() {
                               }))
                             }
                             disabled={processing}
-                            className="rounded-lg border border-white/10 bg-[#171717] px-3 py-2 text-xs text-gray-300 focus:border-purple-500 focus:outline-none disabled:opacity-50"
+                            className="rounded-lg border border-white/10 bg-[#0a0a0c] px-3 py-2 text-xs text-gray-300 focus:border-purple-500 focus:outline-none disabled:opacity-50"
                           >
                             {PLAN_OPTIONS.map((plan) => (
                               <option key={plan.id} value={plan.id}>
@@ -530,7 +545,7 @@ export default function AdminPage() {
           onClick={() => setResetResult(null)}
         >
           <div
-            className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5"
+            className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">

@@ -457,13 +457,26 @@ export default function MetaAppPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
+      <div
+        className="relative -m-4 flex items-center justify-center overflow-x-hidden p-4 py-24 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
   }
 
   return (
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
     <div className="max-w-6xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Apps Meta</h1>
@@ -471,15 +484,15 @@ export default function MetaAppPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-        <div className="bg-[#111] border border-white/5 rounded-2xl p-5">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-2xl p-5">
           <p className="text-xs text-gray-500">Apps configurados</p>
           <p className="text-2xl text-white font-bold mt-1">{apps.length}</p>
         </div>
-        <div className="bg-[#111] border border-white/5 rounded-2xl p-5">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-2xl p-5">
           <p className="text-xs text-gray-500">Contas conectadas</p>
           <p className="text-2xl text-white font-bold mt-1">{metaData?.accountsCount || 0}</p>
         </div>
-        <div className="bg-[#111] border border-white/5 rounded-2xl p-5">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-2xl p-5">
           <p className="text-xs text-gray-500">App selecionado</p>
           <p className="text-lg text-white font-semibold mt-1">
             {selectedApp ? (selectedApp.name || maskAppId(selectedApp.appId)) : "—"}
@@ -488,7 +501,7 @@ export default function MetaAppPage() {
       </div>
 
       <div className="space-y-5">
-        <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
+        <section className="bg-[#0d0d10] border border-white/5 rounded-2xl p-6">
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h2 className="text-white font-semibold">Redirect URI compartilhada</h2>
@@ -504,7 +517,7 @@ export default function MetaAppPage() {
           </div>
         </section>
 
-        <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
+        <section className="bg-[#0d0d10] border border-white/5 rounded-2xl p-6">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
               <h2 className="text-white font-semibold">{editingAppId ? "Editar App Meta" : "Adicionar App Meta"}</h2>
@@ -577,7 +590,7 @@ export default function MetaAppPage() {
           </form>
         </section>
 
-        <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
+        <section className="bg-[#0d0d10] border border-white/5 rounded-2xl p-6">
           <div className="mb-5">
             <h2 className="text-white font-semibold">Seus Apps Meta</h2>
             <p className="text-xs text-gray-500 mt-1">
@@ -654,7 +667,7 @@ export default function MetaAppPage() {
           )}
         </section>
 
-        <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
+        <section className="bg-[#0d0d10] border border-white/5 rounded-2xl p-6">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
               <h2 className="text-white font-semibold">Conectar conta</h2>
@@ -757,7 +770,7 @@ export default function MetaAppPage() {
           )}
         </section>
 
-        <section className="bg-[#111] border border-white/5 rounded-2xl p-6">
+        <section className="bg-[#0d0d10] border border-white/5 rounded-2xl p-6">
           <div className="flex items-center justify-between gap-4 mb-5">
             <div>
               <h2 className="text-white font-semibold">Como configurar</h2>
@@ -791,7 +804,7 @@ export default function MetaAppPage() {
           onClick={() => setFolderPrompt(null)}
         >
           <div
-            className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5"
+            className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
@@ -861,6 +874,7 @@ export default function MetaAppPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }

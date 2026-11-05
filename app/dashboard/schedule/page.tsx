@@ -454,14 +454,26 @@ export default function SchedulePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div
+        className="relative -m-4 flex min-h-[60vh] items-center justify-center overflow-x-hidden p-4 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Automação de posts</h1>
@@ -593,7 +605,7 @@ export default function SchedulePage() {
         <div className="space-y-6 xl:col-span-3">
           {!randomMode && (
             <>
-              <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+              <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-semibold text-white">1. Escolha e ordene as mídias</h2>
@@ -620,7 +632,7 @@ export default function SchedulePage() {
                               ? <video src={item.url} className="h-full w-full object-cover" muted preload="metadata" />
                               : <img src={item.url} alt={item.fileName} className="h-full w-full object-cover" />}
                           </div>
-                          <div className="flex items-center gap-2 bg-[#151515] p-2.5">
+                          <div className="flex items-center gap-2 bg-[#111114] p-2.5">
                             {item.type === "video" ? <Film size={12} className="text-purple-400" /> : <ImageIcon size={12} className="text-pink-400" />}
                             <span className="truncate text-xs text-gray-300">{item.fileName}</span>
                           </div>
@@ -658,7 +670,7 @@ export default function SchedulePage() {
                 )}
               </section>
 
-              <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+              <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
                 <h2 className="mb-4 text-sm font-semibold text-white">2. Capa dos vídeos</h2>
                 {videoItems.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
@@ -699,7 +711,7 @@ export default function SchedulePage() {
             </>
           )}
 
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
             <h2 className="mb-4 text-sm font-semibold text-white">{randomMode ? "2." : "3."} Configure as legendas</h2>
             <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {([["single", "Uma para todas"], ["per_media", "Uma por mídia"], ["rotate", "Alternar lista"], ["library", "Da biblioteca"]] as const).map(([value, label]) => (
@@ -767,14 +779,14 @@ export default function SchedulePage() {
         </div>
 
         <div className="space-y-6 xl:col-span-2">
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
             <h2 className="mb-4 text-sm font-semibold text-white">{randomMode ? "3." : "4."} Contas e intervalo</h2>
             <label className="mb-1.5 block text-xs text-gray-400">Nome da automação <span className="text-gray-600">(opcional)</span></label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Conteúdo da semana" className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-purple-500 focus:outline-none" />
             <label className="mb-1.5 block text-xs text-gray-400">Primeira publicação</label>
             <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none" />
             <label className="mb-1.5 block text-xs text-gray-400">Intervalo entre mídias</label>
-            <select value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} className="mb-5 w-full rounded-lg border border-white/10 bg-[#171717] px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none">
+            <select value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} className="mb-5 w-full rounded-lg border border-white/10 bg-[#0a0a0c] px-3 py-2.5 text-sm text-white focus:border-purple-500 focus:outline-none">
               {INTERVAL_OPTIONS.map((minutes) => (
                 <option key={minutes} value={minutes}>
                   {minutes < 60 ? `${minutes} minutos` : minutes === 60 ? "1 hora" : minutes < 1440 ? `${minutes / 60} horas` : "24 horas"}
@@ -843,7 +855,7 @@ export default function SchedulePage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+          <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarClock size={16} className="text-purple-400" />
               <h2 className="text-sm font-semibold text-white">Prévia da fila</h2>

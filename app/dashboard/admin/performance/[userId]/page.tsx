@@ -105,14 +105,26 @@ export default function AdminUserPerformancePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div
+        className="relative -m-4 flex min-h-[60vh] items-center justify-center overflow-x-hidden p-4 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <Link
         href="/dashboard/admin"
         className="mb-6 inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-white"
@@ -130,7 +142,7 @@ export default function AdminUserPerformancePage() {
         </p>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-white/[0.07] bg-[#111] p-4">
+      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-4">
         <div>
           <label className="mb-1 block text-[11px] text-gray-500">De</label>
           <input
@@ -172,30 +184,30 @@ export default function AdminUserPerformancePage() {
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Posts com dado</p>
           <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{posts.length}</p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Com visualizações</p>
           <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{withViews.length}</p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Média de views</p>
           <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{formatNumber(averageViews)}</p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Total de views</p>
           <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{formatNumber(totalViews)}</p>
         </div>
       </div>
 
       {sorted.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 bg-[#111] py-16 text-center">
+        <div className="rounded-2xl border border-dashed border-white/10 bg-[#0d0d10] py-16 text-center">
           <p className="text-sm text-gray-500">Nenhum post com dado de performance ainda.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-white/[0.07] bg-[#111]">
+        <div className="overflow-x-auto rounded-2xl border border-white/[0.07] bg-[#0d0d10]">
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-white/5 text-left text-[11px] text-gray-500">

@@ -346,7 +346,13 @@ export default function PublishPage() {
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Publicar conteúdo</h1>
@@ -378,7 +384,7 @@ export default function PublishPage() {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-5">
         <div className="space-y-4 md:col-span-3">
           {!randomMode && (
-            <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
+            <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6 space-y-4">
               <h2 className="font-semibold text-white text-sm">Conteúdo</h2>
 
               <div>
@@ -475,7 +481,7 @@ export default function PublishPage() {
           )}
 
           {randomMode && (
-            <div className="bg-[#111] border border-green-500/20 rounded-xl p-6">
+            <div className="bg-[#0d0d10] border border-green-500/20 rounded-xl p-6">
               <div className="flex items-center gap-2 mb-3">
                 <Shuffle size={16} className="text-green-400" />
                 <h2 className="font-semibold text-white text-sm">Modo aleatório</h2>
@@ -488,7 +494,7 @@ export default function PublishPage() {
             </div>
           )}
 
-          <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-4">
+          <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6 space-y-4">
             <h2 className="font-semibold text-white text-sm">Legenda e hashtags</h2>
             <div>
               <label className="text-xs text-gray-400 mb-1.5 block">Legenda</label>
@@ -512,7 +518,7 @@ export default function PublishPage() {
           </div>
 
           {!randomMode && (
-            <div className="bg-[#111] border border-white/5 rounded-xl p-6 space-y-3">
+            <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-6 space-y-3">
               <h2 className="font-semibold text-white text-sm">Quando publicar</h2>
               <div className="flex gap-2">
                 <button
@@ -583,7 +589,7 @@ export default function PublishPage() {
           </button>
 
           {results.length > 0 && (
-            <div className="bg-[#111] border border-white/5 rounded-xl p-5 space-y-3">
+            <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-5 space-y-3">
               <h3 className="font-semibold text-white text-sm">Resultado</h3>
               {results.map((result) => (
                 <div key={result.accountId} className="flex items-center gap-3">
@@ -603,7 +609,7 @@ export default function PublishPage() {
         </div>
 
         <div className="md:col-span-2">
-          <div className="bg-[#111] border border-white/5 rounded-xl p-5">
+          <div className="bg-[#0d0d10] border border-white/5 rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-white text-sm">Contas</h2>
               <button onClick={selectAll} className="text-xs text-purple-400 hover:text-purple-300">

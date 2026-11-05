@@ -274,14 +274,26 @@ export default function GroupsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div
+        className="relative -m-4 flex min-h-[60vh] items-center justify-center overflow-x-hidden p-4 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Pastas de contas</h1>
@@ -297,7 +309,7 @@ export default function GroupsPage() {
       </div>
 
       {showNewForm && (
-        <div className="bg-[#111] border border-white/10 rounded-2xl p-6 mb-6">
+        <div className="bg-[#0d0d10] border border-white/10 rounded-2xl p-6 mb-6">
           <h2 className="text-sm font-semibold text-white mb-4">Nova pasta</h2>
           <div className="space-y-4">
             <div>
@@ -363,7 +375,7 @@ export default function GroupsPage() {
       )}
 
       {groups.length === 0 ? (
-        <div className="bg-[#111] border border-dashed border-white/10 rounded-2xl py-20 text-center">
+        <div className="bg-[#0d0d10] border border-dashed border-white/10 rounded-2xl py-20 text-center">
           <div className="w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center mx-auto mb-5">
             <Folder size={24} className="text-purple-400" />
           </div>
@@ -379,7 +391,7 @@ export default function GroupsPage() {
             const isAddingMembers = addingToGroup === group.id
 
             return (
-              <div key={group.id} className="bg-[#111] border border-white/[0.07] rounded-2xl p-5">
+              <div key={group.id} className="bg-[#0d0d10] border border-white/[0.07] rounded-2xl p-5">
                 <div className="flex items-center justify-between gap-3 mb-4">
                   {isEditing ? (
                     <div className="flex items-center gap-3 flex-1">

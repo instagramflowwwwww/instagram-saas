@@ -118,7 +118,7 @@ function MonthCalendar({
   ).reduce((total, value) => total + value, 0)
 
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+    <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
       <div className="mb-1 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-white">
           {firstUpper(MONTHS[view.month])} de {view.year}
@@ -257,7 +257,13 @@ export default function HealthPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div
+        className="relative -m-4 flex min-h-[60vh] items-center justify-center overflow-x-hidden p-4 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
@@ -282,7 +288,13 @@ export default function HealthPage() {
   ]
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
@@ -307,7 +319,7 @@ export default function HealthPage() {
         {tiles.map((tile) => (
           <div
             key={tile.label}
-            className="rounded-2xl border border-white/[0.07] bg-[#111] p-5"
+            className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5"
           >
             <p className="text-[10px] uppercase tracking-wide text-gray-600">{tile.label}</p>
             <p className="mt-1.5 text-3xl font-semibold tabular-nums text-white">{tile.value}</p>
@@ -332,14 +344,14 @@ export default function HealthPage() {
 
       {/* Estado atual — cor sempre acompanhada de rótulo e ícone */}
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <div className="flex items-center gap-2">
             <Instagram size={14} className="text-gray-500" />
             <p className="text-xs text-gray-400">Total conectado</p>
           </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{data.total}</p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <div className="flex items-center gap-2">
             <CheckCircle size={14} style={{ color: GOOD }} />
             <p className="text-xs text-gray-400">Funcionando</p>
@@ -348,7 +360,7 @@ export default function HealthPage() {
             {data.connected}
           </p>
         </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <div className="flex items-center gap-2">
             <XCircle size={14} style={{ color: BAD }} />
             <p className="text-xs text-gray-400">Precisa reconectar</p>
@@ -360,7 +372,7 @@ export default function HealthPage() {
       </div>
 
       {/* Ritmo diário */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
         <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-white">Contas adicionadas por dia</h2>
           <p className="text-xs text-gray-600">últimos 30 dias · passe o mouse nas barras</p>
@@ -438,7 +450,7 @@ export default function HealthPage() {
 
       {/* Quem caiu e quem está de pé, nome por nome */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <XCircle size={15} style={{ color: BAD }} />
@@ -480,7 +492,7 @@ export default function HealthPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+        <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <CheckCircle size={15} style={{ color: GOOD }} />
@@ -512,7 +524,7 @@ export default function HealthPage() {
       </div>
 
       {/* Os mesmos dados em número, para quem prefere ler */}
-      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
         <h2 className="mb-4 text-sm font-semibold text-white">Dias com contas adicionadas</h2>
         {recentDays.length === 0 ? (
           <p className="text-xs text-gray-500">Nenhuma conta adicionada nos últimos 30 dias.</p>

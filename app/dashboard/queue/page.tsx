@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { confirmToast, toastWarning } from "@/lib/toast"
+import { statCardBorder } from "@/lib/stat-card"
 
 type BatchItem = {
   id: string
@@ -327,7 +328,13 @@ export default function QueuePage() {
   }, [data.batches])
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Status da fila</h1>
@@ -370,12 +377,14 @@ export default function QueuePage() {
           { label: "Publicados", value: summary.published, icon: CheckCircle2, color: "text-green-400" },
           { label: "Com falha", value: summary.failed, icon: AlertCircle, color: "text-red-400" },
         ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">{label}</p>
-              <Icon size={15} className={color} />
+          <div key={label} className="rounded-2xl p-px" style={{ background: statCardBorder(color) }}>
+            <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">{label}</p>
+                <Icon size={15} className={color} />
+              </div>
+              <p className="mt-2 text-2xl font-bold text-white">{value}</p>
             </div>
-            <p className="mt-2 text-2xl font-bold text-white">{value}</p>
           </div>
         ))}
       </div>
@@ -387,10 +396,15 @@ export default function QueuePage() {
             {accountSummaries.map((account) => (
               <div
                 key={account.id}
-                className={`rounded-2xl border bg-[#111] p-4 ${
-                  account.failed > 0 ? "border-red-500/25" : "border-white/[0.07]"
-                }`}
+                className="rounded-2xl p-px"
+                style={{
+                  background:
+                    account.failed > 0
+                      ? "linear-gradient(135deg, rgba(248,113,113,0.3), rgba(255,255,255,0.03) 60%)"
+                      : "linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02) 60%)",
+                }}
               >
+              <div className="h-full rounded-[15px] bg-[#0d0d10] p-4">
                 <div className="mb-3 flex items-center gap-2.5">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-purple-500/10">
                     {account.profilePicture ? (
@@ -425,6 +439,7 @@ export default function QueuePage() {
                   <span>Feed <span className="text-gray-300">{account.feed}</span></span>
                 </div>
               </div>
+              </div>
             ))}
           </div>
         </div>
@@ -451,7 +466,7 @@ export default function QueuePage() {
           <Loader2 size={24} className="animate-spin text-purple-400" />
         </div>
       ) : batches.length === 0 ? (
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-16 text-center">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-16 text-center">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
             <ListChecks size={24} className="text-purple-400" />
           </div>
@@ -475,7 +490,7 @@ export default function QueuePage() {
             const canRetry = batch.items.some((item) => item.status === "failed")
 
             return (
-              <section key={batch.id} className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111]">
+              <section key={batch.id} className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d0d10]">
                 <div className="p-5">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">

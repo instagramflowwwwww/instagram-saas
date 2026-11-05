@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Banknote, Calendar, Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import toast from "react-hot-toast"
+import { statCardBorder } from "@/lib/stat-card"
 
 type DaySeries = { day: string; accounts: number; amount: number }
 
@@ -126,14 +127,26 @@ export default function PaymentsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div
+        className="relative -m-4 flex min-h-[60vh] items-center justify-center overflow-x-hidden p-4 md:-m-8 md:p-8"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+        }}
+      >
         <Loader2 size={24} className="animate-spin text-purple-400" />
       </div>
     )
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Pagamentos</h1>
         <p className="text-gray-500 mt-1">
@@ -147,15 +160,24 @@ export default function PaymentsPage() {
           { label: "Últimos 7 dias", value: totals.last7 },
           { label: "Últimos 30 dias", value: totals.last30 },
         ].map((card) => (
-          <div key={card.label} className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
-            <p className="text-xs text-gray-500">{card.label}</p>
-            <p className="mt-1.5 text-2xl font-bold text-white">{formatBRL(card.value)}</p>
+          <div
+            key={card.label}
+            className="rounded-2xl p-px"
+            style={{ background: statCardBorder("text-green-400") }}
+          >
+            <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">{card.label}</span>
+                <Banknote size={15} className="text-green-400" />
+              </div>
+              <p className="text-2xl font-bold tracking-tight text-white">{formatBRL(card.value)}</p>
+            </div>
           </div>
         ))}
       </div>
 
       {employees.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 bg-[#111] py-20 text-center">
+        <div className="rounded-2xl border border-dashed border-white/10 bg-[#0d0d10] py-20 text-center">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-green-500/10">
             <Banknote size={24} className="text-green-400" />
           </div>
@@ -171,7 +193,7 @@ export default function PaymentsPage() {
       ) : (
         <div className="space-y-4">
           {employees.map((employee) => (
-            <div key={employee.id} className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <div key={employee.id} className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div

@@ -81,7 +81,7 @@ export default function AdminNotificationsPage() {
 
   if (forbidden) {
     return (
-      <div className="rounded-xl border border-white/5 bg-[#111] p-16 text-center">
+      <div className="rounded-xl border border-white/5 bg-[#0d0d10] p-16 text-center">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10">
           <ShieldOff size={24} className="text-red-400" />
         </div>
@@ -94,7 +94,13 @@ export default function AdminNotificationsPage() {
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-8">
         <Link
           href="/dashboard/admin"
@@ -115,7 +121,7 @@ export default function AdminNotificationsPage() {
       </div>
 
       <div className="max-w-xl space-y-4">
-        <div className="rounded-xl border border-white/5 bg-[#111] p-6">
+        <div className="rounded-xl border border-white/5 bg-[#0d0d10] p-6">
           <div className="mb-5 flex items-center gap-2">
             <Send size={16} className="text-purple-400" />
             <h2 className="text-sm font-semibold text-white">Novo aviso</h2>
@@ -155,7 +161,7 @@ export default function AdminNotificationsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/5 bg-[#111] p-6">
+        <div className="rounded-xl border border-white/5 bg-[#0d0d10] p-6">
           <div className="mb-5 flex items-center gap-2">
             <Users size={16} className="text-purple-400" />
             <h2 className="text-sm font-semibold text-white">Avisos enviados</h2>

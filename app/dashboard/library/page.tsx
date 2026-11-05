@@ -418,7 +418,13 @@ export default function LibraryPage() {
   const uncategorizedCount = media.filter((item) => item.folderId === null).length
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Biblioteca</h1>
@@ -513,7 +519,7 @@ export default function LibraryPage() {
             {folders.map((folder) => (
               <div
                 key={folder.id}
-                className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/[0.07] bg-[#111] p-4 transition-colors hover:border-purple-500/25 hover:bg-[#141414]"
+                className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/[0.07] bg-[#0d0d10] p-4 transition-colors hover:border-purple-500/25 hover:bg-[#111114]"
                 onClick={() => openFolder(folder.id)}
               >
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
@@ -592,7 +598,7 @@ export default function LibraryPage() {
       )}
 
       {!loading && filtered.length === 0 && (
-        <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-16 text-center">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-16 text-center">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
             <FolderOpen size={24} className="text-purple-400" />
           </div>
@@ -620,7 +626,7 @@ export default function LibraryPage() {
             return (
               <div
                 key={item.id}
-                className={`group overflow-hidden rounded-2xl border bg-[#111] transition-colors ${
+                className={`group overflow-hidden rounded-2xl border bg-[#0d0d10] transition-colors ${
                   isSelected ? "border-purple-500/50" : "border-white/[0.07] hover:border-white/15"
                 }`}
               >
@@ -716,7 +722,7 @@ export default function LibraryPage() {
 
       {folderEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5 shadow-2xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold text-white">
@@ -768,7 +774,7 @@ export default function LibraryPage() {
 
       {moveOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl">
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="font-semibold text-white">Mover arquivos</h2>
@@ -831,7 +837,7 @@ export default function LibraryPage() {
           onClick={() => !captionLoading && setCaptionFor(null)}
         >
           <div
-            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-5"
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
