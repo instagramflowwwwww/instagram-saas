@@ -320,10 +320,15 @@ export default function HistoryPage() {
     void loadHistory()
   }, [loadHistory])
 
-  const retryFailed = async (post: HistoryPost) => {
-    setRetryingId(post.id)
+  const retryFailed = async (post: HistoryPost, accountId?: string) => {
+    const key = accountId ? `${post.id}:${accountId}` : post.id
+    setRetryingId(key)
     try {
-      const response = await fetch(`/api/posts/${post.id}/retry`, { method: "POST" })
+      const response = await fetch(`/api/posts/${post.id}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(accountId ? { accountId } : {}),
+      })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error || "Não foi possível repetir a publicação.")
 
@@ -790,8 +795,27 @@ export default function HistoryPage() {
                                       </div>
 
                                       {log.errorMessage && (
-                                        <div className="mt-3 rounded-lg border border-red-500/15 bg-red-500/[0.07] px-3 py-2 text-xs leading-5 text-red-300">
-                                          {log.errorMessage}
+                                        <div className="mt-3 space-y-2">
+                                          <div className="rounded-lg border border-red-500/15 bg-red-500/[0.07] px-3 py-2 text-xs leading-5 text-red-300">
+                                            {log.errorMessage}
+                                          </div>
+                                          <button
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              void retryFailed(post, log.instagramAccount.id)
+                                            }}
+                                            disabled={retryingId === `${post.id}:${log.instagramAccount.id}`}
+                                            className="flex items-center gap-1.5 text-[11px] font-medium text-red-300 hover:text-red-200 disabled:opacity-50"
+                                          >
+                                            {retryingId === `${post.id}:${log.instagramAccount.id}` ? (
+                                              <Loader2 size={11} className="animate-spin" />
+                                            ) : (
+                                              <RotateCcw size={11} />
+                                            )}
+                                            {retryingId === `${post.id}:${log.instagramAccount.id}`
+                                              ? "Repetindo..."
+                                              : "Repetir só esta conta"}
+                                          </button>
                                         </div>
                                       )}
 

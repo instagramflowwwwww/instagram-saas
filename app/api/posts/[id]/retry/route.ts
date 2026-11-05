@@ -9,11 +9,12 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 280
 
-// Repete só as contas que falharam numa publicação específica (usado no
-// Histórico). Reaproveita a mesma função que a fila usa pra publicar de
-// verdade — não é um "reagendar", tenta na hora.
+// Repete as contas que falharam numa publicação específica (usado no
+// Histórico) — todas, ou só uma, se vier um accountId no corpo. Reaproveita
+// a mesma função que a fila usa pra publicar de verdade — não é um
+// "reagendar", tenta na hora.
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   const session = await getServerSession(authOptions)
@@ -29,8 +30,15 @@ export async function POST(
     return NextResponse.json({ error: "Publicação não encontrada." }, { status: 404 })
   }
 
+  const body = await request.json().catch(() => ({}))
+  const onlyAccountId = typeof body.accountId === "string" ? body.accountId : null
+
   const failedLogs = await prisma.postLog.findMany({
-    where: { postId: post.id, status: "error" },
+    where: {
+      postId: post.id,
+      status: "error",
+      ...(onlyAccountId ? { instagramAccountId: onlyAccountId } : {}),
+    },
     select: { instagramAccountId: true },
   })
   const accountIds = Array.from(
@@ -57,13 +65,20 @@ export async function POST(
 
     // Se esse post veio de uma automação, mantém o item da fila em sincronia
     // com o resultado dessa tentativa manual — senão o Status da Fila ficaria
-    // mostrando "falhou" mesmo depois de ter sido repetido por aqui.
+    // mostrando "falhou" mesmo depois de ter sido repetido por aqui. Olha o
+    // estado de TODOS os logs do post (não só os que acabaram de ser
+    // tentados agora), porque um retry por conta única não reflete sozinho
+    // se outra conta, não tentada dessa vez, continua falhando.
     const batchItem = await prisma.postingBatchItem.findFirst({
       where: { postId: post.id },
       select: { id: true, batchId: true },
     })
     if (batchItem) {
-      const stillFailing = results.some((result) => result.status === "error")
+      const allLogs = await prisma.postLog.findMany({
+        where: { postId: post.id },
+        select: { status: true, errorMessage: true },
+      })
+      const stillFailing = allLogs.some((log) => log.status === "error")
       await prisma.postingBatchItem.update({
         where: { id: batchItem.id },
         data: stillFailing
@@ -74,7 +89,7 @@ export async function POST(
               processingStartedAt: null,
               processedAt: null,
               lastError:
-                results.find((result) => result.status === "error")?.error || null,
+                allLogs.find((log) => log.status === "error")?.errorMessage || null,
             }
           : {
               status: "published",
