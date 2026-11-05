@@ -1,4 +1,8 @@
-export const ADMIN_EMAILS = ["jfontesdacunha@gmail.com", "biel2@gmail.com"]
+export const ADMIN_EMAILS = [
+  "jfontesdacunha@gmail.com",
+  "biel2@gmail.com",
+  "ronaldojuniorsoaressantos567@gmail.com",
+]
 
 export const ACCESS_PLANS = {
   vip: {
