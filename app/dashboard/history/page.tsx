@@ -261,6 +261,7 @@ export default function HistoryPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [retryingAll, setRetryingAll] = useState(false)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState("all")
   const [type, setType] = useState("all")
@@ -349,6 +350,33 @@ export default function HistoryPage() {
     }
   }
 
+  const retryAllFailed = async () => {
+    setRetryingAll(true)
+    try {
+      const response = await fetch("/api/posts/retry-all", { method: "POST" })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || "Não foi possível repetir as falhas.")
+
+      if (payload.postsStillFailing > 0) {
+        toast.error(
+          `${payload.postsFixed} publicação(ões) corrigidas, ${payload.postsStillFailing} ainda com falha.`
+        )
+      } else {
+        toast.success(`${payload.postsFixed} publicação(ões) corrigidas.`)
+      }
+      if (payload.hasMore) {
+        toast("Ainda há mais falhas — clique em repetir de novo pra continuar.")
+      }
+      await loadHistory()
+    } catch (retryError) {
+      toast.error(
+        retryError instanceof Error ? retryError.message : "Não foi possível repetir as falhas."
+      )
+    } finally {
+      setRetryingAll(false)
+    }
+  }
+
   const activeFilterCount = useMemo(
     () =>
       [
@@ -391,15 +419,28 @@ export default function HistoryPage() {
             Logs completos das publicações, entregas e falhas por conta.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadHistory(true)}
-          disabled={refreshing}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-gray-300 transition hover:border-purple-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
-          Atualizar logs
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {((data?.summary.failed || 0) > 0 || (data?.summary.partial || 0) > 0) && (
+            <button
+              type="button"
+              onClick={() => void retryAllFailed()}
+              disabled={retryingAll}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 text-sm font-medium text-red-300 transition hover:border-red-500/50 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RotateCcw size={15} className={retryingAll ? "animate-spin" : ""} />
+              {retryingAll ? "Repetindo todas..." : "Repetir todas as falhas"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void loadHistory(true)}
+            disabled={refreshing}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-gray-300 transition hover:border-purple-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+            Atualizar logs
+          </button>
+        </div>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
