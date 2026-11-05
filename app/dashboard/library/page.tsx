@@ -25,7 +25,6 @@ import {
 } from "lucide-react"
 import toast from "react-hot-toast"
 import { uploadFileToR2 } from "@/lib/r2-upload"
-import { extractVideoFrames } from "@/lib/video-frames"
 import { confirmToast } from "@/lib/toast"
 
 type MediaItem = {
@@ -42,12 +41,6 @@ type MediaItem = {
   createdAt: string
   caption: string | null
   hashtags: string | null
-}
-
-type GeneratedCaption = {
-  caption: string
-  hashtags: string
-  description: string
 }
 
 type MediaFolder = {
@@ -80,10 +73,6 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [captionFor, setCaptionFor] = useState<MediaItem | null>(null)
-  const [captionContext, setCaptionContext] = useState("")
-  const [captionLoading, setCaptionLoading] = useState(false)
-  const [captionStep, setCaptionStep] = useState("")
-  const [captionResult, setCaptionResult] = useState<GeneratedCaption | null>(null)
   const [captionDraft, setCaptionDraft] = useState("")
   const [hashtagsDraft, setHashtagsDraft] = useState("")
   const [savingCaption, setSavingCaption] = useState(false)
@@ -181,35 +170,6 @@ export default function LibraryPage() {
     }
 
     throw new Error(`${file.name}: formato não suportado.`)
-  }
-
-  const generateCaption = async (item: MediaItem) => {
-    setCaptionLoading(true)
-    setCaptionResult(null)
-    try {
-      setCaptionStep("Lendo o vídeo...")
-      const frames = await extractVideoFrames(item.url, 4)
-
-      setCaptionStep("A IA está escrevendo...")
-      const response = await fetch("/api/ai/caption", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames, context: captionContext }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Não foi possível gerar a legenda.")
-
-      setCaptionResult(data as GeneratedCaption)
-      setCaptionDraft(data.caption || "")
-      setHashtagsDraft(data.hashtags || "")
-    } catch (captionError) {
-      toast.error(
-        captionError instanceof Error ? captionError.message : "Não foi possível gerar a legenda."
-      )
-    } finally {
-      setCaptionLoading(false)
-      setCaptionStep("")
-    }
   }
 
   const saveCaption = async (item: MediaItem) => {
@@ -700,7 +660,6 @@ export default function LibraryPage() {
                   <button
                     onClick={() => {
                       setCaptionFor(item)
-                      setCaptionResult(null)
                       setCaptionDraft(item.caption || "")
                       setHashtagsDraft(item.hashtags || "")
                     }}
@@ -834,7 +793,7 @@ export default function LibraryPage() {
       {captionFor && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          onClick={() => !captionLoading && setCaptionFor(null)}
+          onClick={() => setCaptionFor(null)}
         >
           <div
             className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5"
@@ -847,7 +806,7 @@ export default function LibraryPage() {
               </div>
               <button
                 onClick={() => setCaptionFor(null)}
-                disabled={captionLoading || savingCaption}
+                disabled={savingCaption}
                 className="shrink-0 text-gray-500 hover:text-white disabled:opacity-40"
                 aria-label="Fechar"
               >
@@ -869,29 +828,11 @@ export default function LibraryPage() {
             )}
 
             {captionFor.type === "video" && (
-              <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3.5">
-                <label className="mb-1.5 block text-xs text-gray-400">
-                  Gerar com IA a partir do vídeo{" "}
-                  <span className="text-gray-600">(opcional — sobre o perfil e o tom ajuda muito)</span>
-                </label>
-                <textarea
-                  value={captionContext}
-                  onChange={(event) => setCaptionContext(event.target.value)}
-                  rows={2}
-                  placeholder="Ex: perfil de cortes de futebol, tom debochado, falo direto com torcedor"
-                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-purple-500 focus:outline-none"
-                />
-                <button
-                  onClick={() => generateCaption(captionFor)}
-                  disabled={captionLoading}
-                  className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-purple-500/25 bg-purple-500/10 py-2 text-xs font-medium text-purple-300 hover:bg-purple-500/15 disabled:opacity-50"
-                >
-                  {captionLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                  {captionLoading ? captionStep : captionResult ? "Gerar outra" : "Gerar com IA"}
-                </button>
-                {captionResult && (
-                  <p className="mt-2 text-[11px] text-gray-500">A IA viu: {captionResult.description}</p>
-                )}
+              <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3">
+                <Sparkles size={14} className="shrink-0 text-amber-400" />
+                <p className="text-xs text-gray-400">
+                  Gerar legenda com IA a partir do vídeo — <span className="text-amber-300">em breve</span>.
+                </p>
               </div>
             )}
 
