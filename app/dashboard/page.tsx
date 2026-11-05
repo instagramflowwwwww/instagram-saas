@@ -517,15 +517,13 @@ export default function DashboardPage() {
   const hasAccounts = Boolean(data?.accounts.length)
 
   return (
-    <div className="relative space-y-6">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(1100px 650px at 15% 0%, rgba(192,132,252,0.28), transparent 65%), radial-gradient(950px 600px at 88% 8%, rgba(236,72,153,0.22), transparent 62%), radial-gradient(700px 500px at 50% 100%, rgba(168,85,247,0.1), transparent 70%)",
-        }}
-      />
+    <div
+      className="relative -m-4 space-y-6 p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(1100px 650px at 15% 0%, rgba(192,132,252,0.28), transparent 65%), radial-gradient(950px 600px at 88% 8%, rgba(236,72,153,0.22), transparent 62%), radial-gradient(700px 500px at 50% 100%, rgba(168,85,247,0.1), transparent 70%)",
+      }}
+    >
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Olá, {firstName} 👋</h1>
