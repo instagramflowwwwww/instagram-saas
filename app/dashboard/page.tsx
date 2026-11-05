@@ -296,6 +296,21 @@ function TrendBadge({
   )
 }
 
+const STAT_CARD_TINTS: Record<string, [string, string]> = {
+  pink: ["rgba(244,114,182,0.55)", "rgba(236,72,153,0.22)"],
+  purple: ["rgba(192,132,252,0.55)", "rgba(168,85,247,0.22)"],
+  green: ["rgba(134,239,172,0.5)", "rgba(74,222,128,0.2)"],
+  amber: ["rgba(252,211,77,0.5)", "rgba(251,191,36,0.2)"],
+  blue: ["rgba(125,211,252,0.5)", "rgba(56,189,248,0.2)"],
+  red: ["rgba(252,165,165,0.5)", "rgba(248,113,113,0.2)"],
+}
+
+function statCardTint(iconClassName: string) {
+  const match = iconClassName.match(/text-(\w+)-\d+/)
+  const color = match ? STAT_CARD_TINTS[match[1]] : undefined
+  return color || STAT_CARD_TINTS.purple
+}
+
 function StatCard({
   label,
   value,
@@ -306,24 +321,33 @@ function StatCard({
   iconBackground,
   inverseTrend,
 }: StatCardProps) {
+  const [tintStrong, tintSoft] = statCardTint(iconClassName)
+
   return (
-    <div className="card-glow-border rounded-2xl border border-white/[0.07] bg-[#111] p-5 transition-colors hover:border-white/10">
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium text-gray-500">{label}</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-white">
-            {formatNumber(value)}
-          </p>
+    <div
+      className="h-full rounded-2xl p-px"
+      style={{
+        background: `linear-gradient(135deg, ${tintStrong}, rgba(255,255,255,0.04) 55%, ${tintSoft})`,
+      }}
+    >
+      <div className="card-glow-border h-full rounded-[15px] bg-[#0d0d10] p-5 transition-colors">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-gray-500">{label}</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-white">
+              {formatNumber(value)}
+            </p>
+          </div>
+          <div
+            className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBackground}`}
+          >
+            <Icon size={16} className={iconClassName} />
+          </div>
         </div>
-        <div
-          className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBackground}`}
-        >
-          <Icon size={16} className={iconClassName} />
+        <div className="flex min-h-8 flex-col gap-1">
+          {trend !== undefined && <TrendBadge value={trend} inverse={inverseTrend} />}
+          <p className="text-[11px] text-gray-600">{description}</p>
         </div>
-      </div>
-      <div className="flex min-h-8 flex-col gap-1">
-        {trend !== undefined && <TrendBadge value={trend} inverse={inverseTrend} />}
-        <p className="text-[11px] text-gray-600">{description}</p>
       </div>
     </div>
   )
@@ -493,7 +517,15 @@ export default function DashboardPage() {
   const hasAccounts = Boolean(data?.accounts.length)
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.1), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.08), transparent 55%)",
+        }}
+      />
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Olá, {firstName} 👋</h1>
