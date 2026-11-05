@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import toast from "react-hot-toast"
 import { isAdminEmail } from "@/lib/account-access"
+import { AssistantWidget } from "@/components/AssistantWidget"
 import { Wordmark } from "@/components/Wordmark"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
@@ -235,6 +236,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       </main>
+
+      <AssistantWidget />
     </div>
   )
 }
