@@ -65,6 +65,12 @@ function formatDate(value: string | null) {
   }).format(new Date(value))
 }
 
+function accountCardBorder(isSelected: boolean, hasError: boolean) {
+  if (isSelected) return "linear-gradient(135deg, rgba(248,113,113,0.55), rgba(255,255,255,0.03) 60%)"
+  if (hasError) return "linear-gradient(135deg, rgba(248,113,113,0.3), rgba(255,255,255,0.03) 60%)"
+  return "linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02) 60%)"
+}
+
 function getAccountTypeLabel(value: string | null) {
   if (value === "BUSINESS") return "Conta comercial"
   if (value === "MEDIA_CREATOR") return "Criador de conteúdo"
@@ -351,7 +357,13 @@ export default function AccountsPage() {
   }
 
   return (
-    <div>
+    <div
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Contas do Instagram</h1>
@@ -484,7 +496,7 @@ export default function AccountsPage() {
           <Loader2 size={24} className="animate-spin text-purple-400" />
         </div>
       ) : accounts.length === 0 ? (
-        <div className="bg-[#111] border border-dashed border-white/10 rounded-2xl py-20 text-center">
+        <div className="bg-[#0d0d10] border border-dashed border-white/10 rounded-2xl py-20 text-center">
           <div className="w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
             <Instagram size={24} className="text-purple-400" />
           </div>
@@ -501,7 +513,7 @@ export default function AccountsPage() {
           </Link>
         </div>
       ) : filteredAccounts.length === 0 ? (
-        <div className="bg-[#111] border border-white/5 rounded-2xl py-16 text-center">
+        <div className="bg-[#0d0d10] border border-white/5 rounded-2xl py-16 text-center">
           <CheckCircle size={24} className="text-green-400 mx-auto mb-3" />
           <p className="text-white font-semibold mb-1">Nenhuma conta com erro!</p>
           <p className="text-gray-500 text-sm">Todas as contas estão conectadas corretamente.</p>
@@ -518,13 +530,17 @@ export default function AccountsPage() {
             return (
               <div
                 key={account.id}
+                className="rounded-2xl p-px"
+                style={{ background: accountCardBorder(isSelected, hasError) }}
+              >
+              <div
                 onClick={() => hasError && toggleSelect(account.id)}
-                className={`bg-[#111] border rounded-2xl p-5 transition-colors ${
+                className={`h-full rounded-[15px] bg-[#0d0d10] p-5 transition-colors ${
                   isSelected
-                    ? "border-red-500/40 bg-red-500/5"
+                    ? "bg-red-500/5"
                     : hasError
-                    ? "border-red-500/20 hover:border-red-500/30 cursor-pointer"
-                    : "border-white/[0.07] hover:border-white/10"
+                    ? "cursor-pointer hover:bg-[#121013]"
+                    : "hover:bg-[#121214]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3 mb-5">
@@ -708,6 +724,7 @@ export default function AccountsPage() {
                     <Trash2 size={14} />
                   </button>
                 </div>
+              </div>
               </div>
             )
           })}
