@@ -5,7 +5,7 @@ import { processDueQueue } from "@/lib/queue-processor"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-export const maxDuration = 120
+export const maxDuration = 280
 
 export async function POST() {
   const session = await getServerSession(authOptions)

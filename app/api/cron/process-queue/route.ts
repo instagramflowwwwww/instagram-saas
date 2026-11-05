@@ -3,7 +3,11 @@ import { processDueQueue } from "@/lib/queue-processor"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-export const maxDuration = 120
+// Era 120s — com 12 contas por ciclo e só 4 em paralelo, um lote podia
+// precisar de até 3 ondas de até 60s de espera da Meta cada, estourando o
+// limite antigo (via de regra o motivo de posts saírem atrasados). Subido
+// junto com ACCOUNT_CONCURRENCY em lib/instagram-publisher.ts.
+export const maxDuration = 280
 
 const DEFAULT_PARALLEL_USERS = 9
 const MAX_PARALLEL_USERS = 12

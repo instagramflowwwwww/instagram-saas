@@ -42,7 +42,11 @@ const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
 const WAIT_INTERVAL = 3_000
 const MAX_STATUS_CHECKS = 20
 const MAX_ACCOUNT_ATTEMPTS = 2
-const ACCOUNT_CONCURRENCY = 4
+// Igual ao ACCOUNT_CHUNK_SIZE da fila (lib/queue-processor.ts): processando
+// o lote inteiro numa onda só, o tempo da função deixa de ser (contas ÷
+// concorrência) × até 60s de espera da Meta por conta — o que estourava os
+// 120s da function em lotes de 12 contas com só 4 em paralelo.
+const ACCOUNT_CONCURRENCY = 12
 const DEFAULT_PUBLISH_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000
 
 type InstagramOperationError = Error & {

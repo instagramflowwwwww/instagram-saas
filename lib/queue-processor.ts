@@ -8,7 +8,11 @@ import { publishExistingPost } from "@/lib/instagram-publisher"
 import { prisma } from "@/lib/prisma"
 
 const MAX_ITEM_ATTEMPTS = 3
-const STUCK_AFTER_MS = 3 * 60 * 1000
+// Tem que ficar acima do maxDuration da cron (280s em
+// app/api/cron/process-queue/route.ts) — senão um item que ainda está
+// processando de verdade, só que demorado, seria liberado de volta como
+// "travado" antes mesmo da function original terminar.
+const STUCK_AFTER_MS = 6 * 60 * 1000
 // Quantas contas uma automação avança por execução da fila (a cada minuto).
 const ACCOUNT_CHUNK_SIZE = 12
 // Quantas automações do MESMO usuário podem rodar por execução, em vez de
