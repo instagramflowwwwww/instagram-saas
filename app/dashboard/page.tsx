@@ -136,6 +136,7 @@ type StatCardProps = {
   iconClassName: string
   iconBackground: string
   inverseTrend?: boolean
+  hero?: boolean
 }
 
 function getToday() {
@@ -296,19 +297,22 @@ function TrendBadge({
   )
 }
 
-const STAT_CARD_TINTS: Record<string, [string, string]> = {
-  pink: ["rgba(244,114,182,0.55)", "rgba(236,72,153,0.22)"],
-  purple: ["rgba(192,132,252,0.55)", "rgba(168,85,247,0.22)"],
-  green: ["rgba(134,239,172,0.5)", "rgba(74,222,128,0.2)"],
-  amber: ["rgba(252,211,77,0.5)", "rgba(251,191,36,0.2)"],
-  blue: ["rgba(125,211,252,0.5)", "rgba(56,189,248,0.2)"],
-  red: ["rgba(252,165,165,0.5)", "rgba(248,113,113,0.2)"],
+const STAT_CARD_ACCENTS: Record<string, string> = {
+  pink: "rgba(236,72,153,0.3)",
+  purple: "rgba(192,132,252,0.3)",
+  green: "rgba(74,222,128,0.3)",
+  amber: "rgba(251,191,36,0.3)",
+  blue: "rgba(56,189,248,0.3)",
+  red: "rgba(248,113,113,0.3)",
 }
 
-function statCardTint(iconClassName: string) {
+function statCardBorder(iconClassName: string, hero?: boolean) {
+  if (hero) {
+    return "linear-gradient(135deg, rgba(192,132,252,0.55), rgba(255,255,255,0.03) 40%, rgba(236,72,153,0.3) 100%)"
+  }
   const match = iconClassName.match(/text-(\w+)-\d+/)
-  const color = match ? STAT_CARD_TINTS[match[1]] : undefined
-  return color || STAT_CARD_TINTS.purple
+  const accent = (match && STAT_CARD_ACCENTS[match[1]]) || STAT_CARD_ACCENTS.purple
+  return `linear-gradient(135deg, ${accent}, rgba(255,255,255,0.03) 60%)`
 }
 
 function StatCard({
@@ -320,15 +324,12 @@ function StatCard({
   iconClassName,
   iconBackground,
   inverseTrend,
+  hero,
 }: StatCardProps) {
-  const [tintStrong, tintSoft] = statCardTint(iconClassName)
-
   return (
     <div
       className="h-full rounded-2xl p-px"
-      style={{
-        background: `linear-gradient(135deg, ${tintStrong}, rgba(255,255,255,0.04) 55%, ${tintSoft})`,
-      }}
+      style={{ background: statCardBorder(iconClassName, hero) }}
     >
       <div className="card-glow-border h-full rounded-[15px] bg-[#0d0d10] p-5 transition-colors">
         <div className="mb-5 flex items-start justify-between gap-4">
@@ -521,7 +522,7 @@ export default function DashboardPage() {
       className="relative -m-4 space-y-6 p-4 md:-m-8 md:p-8"
       style={{
         background:
-          "radial-gradient(1100px 650px at 15% 0%, rgba(192,132,252,0.28), transparent 65%), radial-gradient(950px 600px at 88% 8%, rgba(236,72,153,0.22), transparent 62%), radial-gradient(700px 500px at 50% 100%, rgba(168,85,247,0.1), transparent 70%)",
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
       }}
     >
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -591,6 +592,7 @@ export default function DashboardPage() {
               icon={Eye}
               iconClassName="text-pink-400"
               iconBackground="bg-pink-500/10"
+              hero
             />
             <StatCard
               label="Contas conectadas"
@@ -659,7 +661,7 @@ export default function DashboardPage() {
           ) : (
             <>
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5 xl:col-span-2">
+              <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center justify-between gap-4">
                   <div>
                     <h2 className="font-semibold text-white">Visão das contas</h2>
@@ -762,7 +764,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-amber-500/20 bg-[#111] p-5 shadow-[0_0_30px_-14px_rgba(251,191,36,0.35)]">
+              <div className="rounded-2xl border border-amber-500/20 bg-[#0d0d10] p-5 shadow-[0_0_60px_-28px_rgba(251,191,36,0.3)]">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
                     <h2 className="flex items-center gap-2 font-semibold text-white">
@@ -806,7 +808,7 @@ export default function DashboardPage() {
                       <>
                         <div className="relative py-1 text-center">
                           <div className="absolute left-0 right-0 top-1/2 h-px bg-white/[0.06]" />
-                          <span className="relative bg-[#111] px-2 text-[10px] text-gray-600">
+                          <span className="relative bg-[#0d0d10] px-2 text-[10px] text-gray-600">
                             sua posição
                           </span>
                         </div>
@@ -818,7 +820,7 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-5">
+            <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-white">Próximas publicações</h2>
