@@ -434,7 +434,7 @@ export default function PerformancePage() {
 
   return (
     <div
-      className="relative -m-4 min-w-0 max-w-full overflow-x-hidden p-4 md:-m-8 md:p-8"
+      className="relative -m-4 min-w-0 overflow-x-hidden p-4 md:-m-8 md:p-8"
       style={{
         background:
           "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
