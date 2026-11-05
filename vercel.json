@@ -21,6 +21,10 @@
     {
       "path": "/api/cron/sync-accounts",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-performance",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
