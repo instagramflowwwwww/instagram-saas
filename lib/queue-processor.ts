@@ -256,9 +256,24 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
   }
 
   // Item com conta própria publica só nela; sem conta, vale o lote inteiro.
+  // Quando o lote tem mais contas que ACCOUNT_CHUNK_SIZE, cada vídeo precisa
+  // de mais de uma rodada pra cobrir todo mundo (rodada 1 = primeiras N
+  // contas, rodada 2 = as próximas, etc. — ver getProgress/remainingIds
+  // abaixo). Sem rotacionar o início dessa lista por vídeo, as mesmas
+  // primeiras contas sempre caem na rodada 1 e as de trás sempre esperam —
+  // ao longo de uma sequência longa isso vira uma defasagem grande e
+  // consistente entre contas. Girando o ponto de partida a cada vídeo
+  // (baseado na posição dele na sequência), quem fica pra trás num vídeo
+  // vira prioridade no próximo.
+  const batchAccountIds = item.batch.accounts.map((account) => account.instagramAccountId)
   const targetAccountIds = item.instagramAccountId
     ? [item.instagramAccountId]
-    : item.batch.accounts.map((account) => account.instagramAccountId)
+    : batchAccountIds.length > ACCOUNT_CHUNK_SIZE
+      ? (() => {
+          const offset = (item.position * ACCOUNT_CHUNK_SIZE) % batchAccountIds.length
+          return [...batchAccountIds.slice(offset), ...batchAccountIds.slice(0, offset)]
+        })()
+      : batchAccountIds
 
   try {
     const before = await getProgress(item.post.id, targetAccountIds)
