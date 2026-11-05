@@ -72,6 +72,7 @@ export async function POST(request: Request) {
       planLabel: plan.label,
     })
   } catch (error) {
+    console.error("[wiinpay-create] Falha ao gerar pagamento", error)
     await prisma.pixOrder.update({ where: { id: order.id }, data: { status: "failed" } })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Não foi possível gerar o Pix." },

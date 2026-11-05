@@ -19,6 +19,26 @@ function requireApiKey() {
   return key
 }
 
+// data.message/data.error podem vir como string, mas também como objeto
+// (ex.: erro de validação por campo) ou array — um String(objeto) vira o
+// literal "[object Object]", que é o que chegava pro usuário. Aqui sempre
+// devolvemos algo legível.
+function stringifyApiError(data: unknown, fallback: string): string {
+  if (!data || typeof data !== "object") return fallback
+  const d = data as Record<string, unknown>
+  const candidate = d.message ?? d.error ?? d.errors
+  if (typeof candidate === "string" && candidate.trim()) return candidate
+  if (candidate && typeof candidate === "object") {
+    try {
+      const text = JSON.stringify(candidate)
+      return text && text !== "{}" ? text : fallback
+    } catch {
+      return fallback
+    }
+  }
+  return fallback
+}
+
 type CreatePixPaymentParams = {
   value: number
   name: string
@@ -47,10 +67,10 @@ export async function createPixPayment(params: CreatePixPaymentParams) {
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const message =
-      (data && (data.message || data.error)) ||
-      `WiinPay respondeu ${response.status} ao criar o pagamento.`
-    throw new Error(String(message))
+    console.error("[wiinpay] Falha ao criar pagamento", response.status, JSON.stringify(data))
+    throw new Error(
+      stringifyApiError(data, `WiinPay respondeu ${response.status} ao criar o pagamento.`)
+    )
   }
 
   return data as Record<string, unknown>
@@ -69,10 +89,10 @@ export async function getPixPayment(paymentId: string) {
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const message =
-      (data && (data.message || data.error)) ||
-      `WiinPay respondeu ${response.status} ao consultar o pagamento.`
-    throw new Error(String(message))
+    console.error("[wiinpay] Falha ao consultar pagamento", response.status, JSON.stringify(data))
+    throw new Error(
+      stringifyApiError(data, `WiinPay respondeu ${response.status} ao consultar o pagamento.`)
+    )
   }
 
   return data as Record<string, unknown>
