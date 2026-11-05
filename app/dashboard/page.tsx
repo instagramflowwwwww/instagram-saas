@@ -307,7 +307,7 @@ function StatCard({
   inverseTrend,
 }: StatCardProps) {
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-5 transition-colors hover:border-white/10">
+    <div className="card-glow-border rounded-2xl border border-white/[0.07] bg-[#111] p-5 transition-colors hover:border-white/10">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium text-gray-500">{label}</p>
