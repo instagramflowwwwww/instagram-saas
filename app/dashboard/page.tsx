@@ -523,7 +523,7 @@ export default function DashboardPage() {
         className="pointer-events-none fixed inset-0 -z-10"
         style={{
           background:
-            "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.1), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.08), transparent 55%)",
+            "radial-gradient(1100px 650px at 15% 0%, rgba(192,132,252,0.28), transparent 65%), radial-gradient(950px 600px at 88% 8%, rgba(236,72,153,0.22), transparent 62%), radial-gradient(700px 500px at 50% 100%, rgba(168,85,247,0.1), transparent 70%)",
         }}
       />
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
