@@ -30,6 +30,7 @@ import {
   useState,
 } from "react"
 import toast from "react-hot-toast"
+import { statCardBorder } from "@/lib/stat-card"
 
 type Account = {
   id: string
@@ -98,7 +99,6 @@ type SummaryCardProps = {
   value: number
   icon: ElementType
   iconClassName: string
-  iconBackground: string
 }
 
 const STATUS_CONFIG: Record<
@@ -221,22 +221,17 @@ function SummaryCard({
   value,
   icon: Icon,
   iconClassName,
-  iconBackground,
 }: SummaryCardProps) {
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-xs text-gray-500">{label}</p>
-          <p className="mt-1 text-2xl font-bold tracking-tight text-white">
-            {formatNumber(value)}
-          </p>
+    <div className="rounded-2xl p-px" style={{ background: statCardBorder(iconClassName) }}>
+      <div className="card-glow-border rounded-[15px] bg-[#0d0d10] p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-500">{label}</span>
+          <Icon size={15} className={iconClassName} />
         </div>
-        <div
-          className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBackground}`}
-        >
-          <Icon size={16} className={iconClassName} />
-        </div>
+        <p className="text-2xl font-bold tracking-tight text-white">
+          {formatNumber(value)}
+        </p>
       </div>
     </div>
   )
@@ -351,7 +346,13 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div
+      className="relative -m-4 min-w-0 space-y-6 overflow-x-hidden p-4 md:-m-8 md:p-8"
+      style={{
+        background:
+          "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
+      }}
+    >
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Histórico</h1>
@@ -375,40 +376,35 @@ export default function HistoryPage() {
           label="Total no período"
           value={data?.summary.total || 0}
           icon={FileText}
-          iconClassName="text-purple-300"
-          iconBackground="bg-purple-500/10"
+          iconClassName="text-purple-400"
         />
         <SummaryCard
           label="Publicadas"
           value={data?.summary.published || 0}
           icon={CheckCircle2}
-          iconClassName="text-green-300"
-          iconBackground="bg-green-500/10"
+          iconClassName="text-green-400"
         />
         <SummaryCard
           label="Parciais"
           value={data?.summary.partial || 0}
           icon={AlertCircle}
-          iconClassName="text-yellow-300"
-          iconBackground="bg-yellow-500/10"
+          iconClassName="text-amber-400"
         />
         <SummaryCard
           label="Com falha"
           value={data?.summary.failed || 0}
           icon={XCircle}
-          iconClassName="text-red-300"
-          iconBackground="bg-red-500/10"
+          iconClassName="text-red-400"
         />
         <SummaryCard
           label="Agendadas"
           value={data?.summary.scheduled || 0}
           icon={CalendarClock}
-          iconClassName="text-blue-300"
-          iconBackground="bg-blue-500/10"
+          iconClassName="text-blue-400"
         />
       </section>
 
-      <section className="rounded-2xl border border-white/[0.07] bg-[#111] p-4">
+      <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-4">
         <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,190px))]">
           <div className="flex h-10 items-center rounded-xl border border-white/10 bg-black/20 px-3 focus-within:border-purple-500/40">
             <Search size={15} className="shrink-0 text-gray-600" />
@@ -436,7 +432,7 @@ export default function HistoryPage() {
               setPage(1)
               setStatus(event.target.value)
             }}
-            className="h-10 rounded-xl border border-white/10 bg-[#161616] px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
+            className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
           >
             <option value="all">Todos os status</option>
             <option value="published">Publicado</option>
@@ -454,7 +450,7 @@ export default function HistoryPage() {
               setPage(1)
               setType(event.target.value)
             }}
-            className="h-10 rounded-xl border border-white/10 bg-[#161616] px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
+            className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
           >
             <option value="all">Todos os conteúdos</option>
             <option value="image">Imagens</option>
@@ -468,7 +464,7 @@ export default function HistoryPage() {
               setPage(1)
               setAccountId(event.target.value)
             }}
-            className="h-10 rounded-xl border border-white/10 bg-[#161616] px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
+            className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-gray-300 outline-none focus:border-purple-500/40"
           >
             <option value="">Todas as contas</option>
             {(data?.accounts || []).map((account) => (
@@ -505,7 +501,7 @@ export default function HistoryPage() {
                 setPage(1)
                 setDateFrom(event.target.value)
               }}
-              className="h-9 rounded-lg border border-white/10 bg-[#161616] px-2.5 text-xs text-gray-300 outline-none focus:border-purple-500/40"
+              className="h-9 rounded-lg border border-white/10 bg-black/20 px-2.5 text-xs text-gray-300 outline-none focus:border-purple-500/40"
             />
             <span className="text-xs text-gray-600">até</span>
             <input
@@ -515,22 +511,22 @@ export default function HistoryPage() {
                 setPage(1)
                 setDateTo(event.target.value)
               }}
-              className="h-9 rounded-lg border border-white/10 bg-[#161616] px-2.5 text-xs text-gray-300 outline-none focus:border-purple-500/40"
+              className="h-9 rounded-lg border border-white/10 bg-black/20 px-2.5 text-xs text-gray-300 outline-none focus:border-purple-500/40"
             />
           </div>
         </div>
       </section>
 
       {loading ? (
-        <div className="flex min-h-72 items-center justify-center rounded-2xl border border-white/[0.07] bg-[#111]">
+        <div className="flex min-h-72 items-center justify-center rounded-2xl border border-white/[0.07] bg-[#0d0d10]">
           <div className="text-center">
             <Loader2 size={26} className="mx-auto animate-spin text-purple-400" />
             <p className="mt-3 text-sm text-gray-500">Carregando histórico...</p>
           </div>
         </div>
       ) : data?.posts.length ? (
-        <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111]">
-          <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
+        <section className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-2">
+          <div className="flex items-center justify-between px-3 py-3">
             <div>
               <h2 className="text-sm font-semibold text-white">Logs de publicação</h2>
               <p className="mt-0.5 text-xs text-gray-600">
@@ -545,7 +541,7 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          <div className="divide-y divide-white/[0.06]">
+          <div className="space-y-2 px-2 pb-2">
             {data.posts.map((post) => {
               const expanded = expandedId === post.id
               const config = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
@@ -559,11 +555,14 @@ export default function HistoryPage() {
               )
 
               return (
-                <article key={post.id} className="group">
+                <article
+                  key={post.id}
+                  className="group overflow-hidden rounded-xl border border-white/5 bg-[#111114] transition-colors hover:border-purple-400/20 hover:bg-[#15121c]"
+                >
                   <button
                     type="button"
                     onClick={() => setExpandedId(expanded ? null : post.id)}
-                    className="grid w-full gap-4 p-5 text-left transition hover:bg-white/[0.02] lg:grid-cols-[auto_minmax(0,1fr)_auto]"
+                    className="grid w-full gap-4 p-4 text-left lg:grid-cols-[auto_minmax(0,1fr)_auto]"
                   >
                     <div className="relative hidden pt-1 sm:block">
                       <div
@@ -578,7 +577,7 @@ export default function HistoryPage() {
                         )}
                       </div>
                       <span
-                        className={`absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#111] ${config.dotClassName}`}
+                        className={`absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#111114] ${config.dotClassName}`}
                       />
                     </div>
 
@@ -626,7 +625,7 @@ export default function HistoryPage() {
                           />
                         ))}
                         {accounts.length > 4 && (
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#111] bg-[#242424] text-[10px] font-semibold text-gray-400">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#111114] bg-[#242424] text-[10px] font-semibold text-gray-400">
                             +{accounts.length - 4}
                           </div>
                         )}
@@ -662,7 +661,7 @@ export default function HistoryPage() {
                           <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
                             Conteúdo
                           </p>
-                          <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#141414]">
+                          <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#111114]">
                             {post.thumbnailUrl ? (
                               <img
                                 src={post.thumbnailUrl}
@@ -705,7 +704,7 @@ export default function HistoryPage() {
                                 return (
                                   <div
                                     key={log.id}
-                                    className="relative flex gap-3 rounded-xl border border-white/[0.07] bg-[#141414] p-3"
+                                    className="relative flex gap-3 rounded-xl border border-white/[0.07] bg-[#111114] p-3"
                                   >
                                     {index < post.logs.length - 1 && (
                                       <span className="absolute bottom-[-9px] left-[28px] top-[44px] w-px bg-white/[0.08]" />
@@ -815,7 +814,7 @@ export default function HistoryPage() {
           </div>
         </section>
       ) : (
-        <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-white/[0.07] bg-[#111] px-5 text-center">
+        <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-white/[0.07] bg-[#0d0d10] px-5 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10">
             <FileText size={24} className="text-purple-400" />
           </div>
