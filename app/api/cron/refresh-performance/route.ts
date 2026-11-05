@@ -13,7 +13,13 @@ export const maxDuration = 280
 // plataforma de uma vez, em lotes, periodicamente.
 const BRAZIL_OFFSET = "-03:00"
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
-const MAX_LOGS_PER_RUN = 120
+// Era 120 — e o cron SEMPRE processava exatamente 120, nunca menos, sinal
+// de que o backlog real é maior que isso e a maioria das publicações nunca
+// chegava a reatualizar. Isso é só leitura (buscar views/curtidas), bem
+// mais leve que publicar: 120 itens levavam uns 4-5s de um orçamento de
+// quase 5 minutos. Subido bem acima da demanda esperada, inclusive com
+// contas em grande volume.
+const MAX_LOGS_PER_RUN = 1500
 
 function authorized(request: Request) {
   const secret = process.env.QUEUE_CRON_SECRET?.trim()

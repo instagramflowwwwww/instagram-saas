@@ -23,7 +23,9 @@ const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000
 const DEFAULT_ERROR_CACHE_TTL_MS = 60 * 1000
 const DEFAULT_META_TIMEOUT_MS = 15_000
-const MAX_CONCURRENCY = 12
+// Subido junto com MAX_LOGS_PER_RUN em app/api/cron/refresh-performance —
+// só leitura (media + views), bem mais leve que publicar.
+const MAX_CONCURRENCY = 40
 
 const CACHE_TTL_MS = positiveNumber(
   process.env.PERFORMANCE_CACHE_TTL_MS,
