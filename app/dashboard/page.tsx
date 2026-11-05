@@ -248,7 +248,7 @@ function AccountAvatar({
 
   return (
     <div
-      className={`${classes} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white ${avatarGradient(username)}`}
+      className={`${classes} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white`}
     >
       <Instagram size={size === "sm" ? 13 : 18} />
     </div>
@@ -740,7 +740,7 @@ export default function DashboardPage() {
                             </div>
                             <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.05]">
                               <div
-                                className={`h-full rounded-full bg-gradient-to-r ${avatarGradient(account.id)}`}
+                                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500"
                                 style={{ width: `${width}%` }}
                               />
                             </div>
