@@ -16,6 +16,7 @@ import {
   Instagram,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Sparkles,
@@ -259,6 +260,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState("all")
   const [type, setType] = useState("all")
@@ -317,6 +319,30 @@ export default function HistoryPage() {
     setLoading(true)
     void loadHistory()
   }, [loadHistory])
+
+  const retryFailed = async (post: HistoryPost) => {
+    setRetryingId(post.id)
+    try {
+      const response = await fetch(`/api/posts/${post.id}/retry`, { method: "POST" })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || "Não foi possível repetir a publicação.")
+
+      if (payload.failedCount > 0) {
+        toast.error(
+          `${payload.successCount} conta(s) publicaram, ${payload.failedCount} falharam de novo.`
+        )
+      } else {
+        toast.success(`${payload.successCount} conta(s) publicadas com sucesso.`)
+      }
+      await loadHistory()
+    } catch (retryError) {
+      toast.error(
+        retryError instanceof Error ? retryError.message : "Não foi possível repetir a publicação."
+      )
+    } finally {
+      setRetryingId(null)
+    }
+  }
 
   const activeFilterCount = useMemo(
     () =>
@@ -693,9 +719,30 @@ export default function HistoryPage() {
                         </div>
 
                         <div>
-                          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
-                            Entregas por conta
-                          </p>
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+                              Entregas por conta
+                            </p>
+                            {post.errorCount > 0 && (
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void retryFailed(post)
+                                }}
+                                disabled={retryingId === post.id}
+                                className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-medium text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+                              >
+                                {retryingId === post.id ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <RotateCcw size={12} />
+                                )}
+                                {retryingId === post.id
+                                  ? "Repetindo..."
+                                  : `Repetir ${post.errorCount} falha${post.errorCount === 1 ? "" : "s"}`}
+                              </button>
+                            )}
+                          </div>
 
                           {post.logs.length > 0 ? (
                             <div className="space-y-2">
