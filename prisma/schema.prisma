@@ -37,6 +37,11 @@ model User {
   approvedAt        DateTime?
   rejectedAt        DateTime?
   createdAt         DateTime           @default(now())
+  // Preco personalizado pra "amigos" definido pelo admin: quando o usuario
+  // for pagar customPlanId via Pix, cobra customPriceBRL em vez do preco
+  // de tabela (ver app/api/payments/wiinpay/create/route.ts).
+  customPlanId      String?
+  customPriceBRL    Int?
 }
 
 model Account {

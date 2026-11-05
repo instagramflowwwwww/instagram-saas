@@ -23,18 +23,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Plano inválido." }, { status: 400 })
   }
 
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { customPlanId: true, customPriceBRL: true },
+  })
+
+  // Preço de amigo: o admin definiu um valor específico pra esse usuário
+  // nesse plano — cobra esse valor em vez do preço de tabela.
+  const priceBRL =
+    user?.customPlanId === plan.id && user.customPriceBRL ? user.customPriceBRL : plan.priceBRL
+
   const order = await prisma.pixOrder.create({
     data: {
       userId: session.user.id,
       planId: plan.id,
-      amountBRL: plan.priceBRL,
+      amountBRL: priceBRL,
       status: "pending",
     },
   })
 
   try {
     const raw = await createPixPayment({
-      value: plan.priceBRL,
+      value: priceBRL,
       name: session.user.name || session.user.email,
       email: session.user.email,
       description: `InstaFlow - plano ${plan.label}`,
@@ -68,7 +78,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       orderId: updated.id,
       pixCode: updated.pixCode,
-      value: plan.priceBRL,
+      value: priceBRL,
       planLabel: plan.label,
     })
   } catch (error) {

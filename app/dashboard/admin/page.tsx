@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   BarChart3,
@@ -12,9 +12,11 @@ import {
   KeyRound,
   Loader2,
   RefreshCw,
+  Save,
   Search,
   Shield,
   ShieldOff,
+  Tag,
   TimerOff,
   UserCheck,
   UserRoundX,
@@ -24,9 +26,11 @@ import {
 import toast from "react-hot-toast"
 import { confirmToast } from "@/lib/toast"
 import { statCardBorder } from "@/lib/stat-card"
+import { type AccessPlanId } from "@/lib/account-access"
 
 type UserStatus = "pending" | "approved" | "rejected" | "expired"
-type PlanId = "vip" | "premium"
+type PlanId = AccessPlanId
+type CustomPricePlanId = "semanal" | "mensal" | "vitalicio"
 
 type AdminUser = {
   id: string
@@ -41,6 +45,8 @@ type AdminUser = {
   accessExpiresAt: string | null
   approvedAt: string | null
   rejectedAt: string | null
+  customPlanId: string | null
+  customPriceBRL: number | null
   isAdmin: boolean
   accountsCount: number
   postsCount: number
@@ -61,6 +67,15 @@ type AdminData = {
 const PLAN_OPTIONS: Array<{ id: PlanId; label: string }> = [
   { id: "vip", label: "VIP — 15 dias" },
   { id: "premium", label: "Premium — 30 dias" },
+  { id: "semanal", label: "Semanal — 7 dias (R$ 400)" },
+  { id: "mensal", label: "Mensal — 30 dias (R$ 800)" },
+  { id: "vitalicio", label: "Vitalício (R$ 1.600)" },
+]
+
+const CUSTOM_PRICE_PLAN_OPTIONS: Array<{ id: CustomPricePlanId; label: string }> = [
+  { id: "semanal", label: "Semanal" },
+  { id: "mensal", label: "Mensal" },
+  { id: "vitalicio", label: "Vitalício" },
 ]
 
 const STATUS_LABELS: Record<UserStatus, string> = {
@@ -103,6 +118,10 @@ export default function AdminPage() {
   const [resettingId, setResettingId] = useState<string | null>(null)
   const [resetResult, setResetResult] = useState<{ email: string; temporaryPassword: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [customPriceEditorFor, setCustomPriceEditorFor] = useState<string | null>(null)
+  const [customPricePlan, setCustomPricePlan] = useState<CustomPricePlanId>("mensal")
+  const [customPriceValue, setCustomPriceValue] = useState("")
+  const [savingCustomPrice, setSavingCustomPrice] = useState(false)
 
   const loadData = useCallback(async (notifySuccess = false) => {
     try {
@@ -236,6 +255,58 @@ export default function AdminPage() {
       )
     } finally {
       setResettingId(null)
+    }
+  }
+
+  const openCustomPriceEditor = (user: AdminUser) => {
+    setCustomPriceEditorFor(user.id)
+    setCustomPricePlan((user.customPlanId as CustomPricePlanId) || "mensal")
+    setCustomPriceValue(user.customPriceBRL ? String(user.customPriceBRL) : "")
+  }
+
+  const saveCustomPrice = async (user: AdminUser) => {
+    const priceBRL = Number(customPriceValue)
+    if (!Number.isFinite(priceBRL) || priceBRL < 3) {
+      toast.error("Informe um valor de pelo menos R$ 3.")
+      return
+    }
+
+    setSavingCustomPrice(true)
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/custom-price`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId: customPricePlan, priceBRL }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || "Não foi possível salvar o preço.")
+      toast.success(payload.message || "Preço personalizado salvo.")
+      setCustomPriceEditorFor(null)
+      await loadData()
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Não foi possível salvar o preço."
+      )
+    } finally {
+      setSavingCustomPrice(false)
+    }
+  }
+
+  const clearCustomPrice = async (user: AdminUser) => {
+    setSavingCustomPrice(true)
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/custom-price`, { method: "DELETE" })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || "Não foi possível remover o preço.")
+      toast.success(payload.message || "Preço personalizado removido.")
+      setCustomPriceEditorFor(null)
+      await loadData()
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Não foi possível remover o preço."
+      )
+    } finally {
+      setSavingCustomPrice(false)
     }
   }
 
@@ -420,7 +491,8 @@ export default function AdminPage() {
                       : "Ativar"
 
                 return (
-                  <tr key={user.id} className="border-b border-white/5 last:border-0">
+                  <Fragment key={user.id}>
+                  <tr className="border-b border-white/5 last:border-0">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <div>
@@ -461,6 +533,12 @@ export default function AdminPage() {
                             ? `Expira em ${formatDate(user.accessExpiresAt, true)}`
                             : "Aguardando definição do plano"}
                       </p>
+                      {user.customPlanId && user.customPriceBRL && (
+                        <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                          <Tag size={10} />
+                          Amigo: {user.customPlanId} por R$ {user.customPriceBRL}
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-xs text-gray-400">
                       <p>{user.accountsCount} conta(s) Instagram</p>
@@ -521,10 +599,91 @@ export default function AdminPage() {
                             )}
                             Senha
                           </button>
+                          <button
+                            onClick={() =>
+                              customPriceEditorFor === user.id
+                                ? setCustomPriceEditorFor(null)
+                                : openCustomPriceEditor(user)
+                            }
+                            title="Definir um preço especial pra essa pessoa pagar via Pix"
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${
+                              customPriceEditorFor === user.id
+                                ? "border-amber-500/30 bg-amber-500/15 text-amber-300"
+                                : "border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            <Tag size={13} />
+                            Preço amigo
+                          </button>
                         </div>
                       )}
                     </td>
                   </tr>
+                  {customPriceEditorFor === user.id && (
+                    <tr className="border-b border-white/5 bg-amber-500/[0.03]">
+                    <td colSpan={6} className="px-5 py-4">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div>
+                          <label className="mb-1.5 block text-[11px] text-gray-500">
+                            Preço amigo pra {user.name || user.email}
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={customPricePlan}
+                              onChange={(event) => setCustomPricePlan(event.target.value as CustomPricePlanId)}
+                              className="rounded-lg border border-white/10 bg-[#0a0a0c] px-3 py-2 text-xs text-gray-300 focus:border-amber-500 focus:outline-none"
+                            >
+                              {CUSTOM_PRICE_PLAN_OPTIONS.map((plan) => (
+                                <option key={plan.id} value={plan.id}>
+                                  {plan.label}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-gray-500">por R$</span>
+                            <input
+                              type="number"
+                              min={3}
+                              step="1"
+                              value={customPriceValue}
+                              onChange={(event) => setCustomPriceValue(event.target.value)}
+                              placeholder="50"
+                              className="w-24 rounded-lg border border-white/10 bg-[#0a0a0c] px-3 py-2 text-xs text-gray-300 focus:border-amber-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => void saveCustomPrice(user)}
+                          disabled={savingCustomPrice}
+                          className="flex items-center gap-1.5 rounded-lg bg-amber-500/90 px-3 py-2 text-xs font-medium text-black hover:bg-amber-400 disabled:opacity-50"
+                        >
+                          {savingCustomPrice ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                          Salvar
+                        </button>
+                        {user.customPlanId && (
+                          <button
+                            onClick={() => void clearCustomPrice(user)}
+                            disabled={savingCustomPrice}
+                            className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-40"
+                          >
+                            <X size={13} />
+                            Remover preço especial
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setCustomPriceEditorFor(null)}
+                          className="text-xs text-gray-500 hover:text-white"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      <p className="mt-2 text-[11px] text-gray-600">
+                        Quando essa pessoa pagar o plano {CUSTOM_PRICE_PLAN_OPTIONS.find((p) => p.id === customPricePlan)?.label} via Pix,
+                        é cobrado esse valor em vez do preço normal.
+                      </p>
+                    </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
               {filteredUsers.length === 0 && (
