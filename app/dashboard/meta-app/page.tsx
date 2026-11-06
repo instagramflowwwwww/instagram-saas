@@ -11,6 +11,7 @@ import {
   EyeOff,
   Instagram,
   KeyRound,
+  Link2,
   Loader2,
   Pencil,
   PlugZap,
@@ -128,6 +129,10 @@ export default function MetaAppPage() {
   const [groups, setGroups] = useState<AccountGroup[]>([])
   const [folderPrompt, setFolderPrompt] = useState<{ id: string; username: string } | null>(null)
   const [savingFolderId, setSavingFolderId] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [connectionLink, setConnectionLink] = useState<{ id: string; authorizeUrl: string } | null>(null)
+  const [linkStatus, setLinkStatus] = useState<"pending" | "connected" | "failed" | "expired">("pending")
+  const [linkStatusInfo, setLinkStatusInfo] = useState<{ username?: string | null; errorMessage?: string | null }>({})
 
   const configured = apps.length > 0
   const selectedApp = useMemo(
@@ -452,6 +457,71 @@ export default function MetaAppPage() {
     try { authTab.location.href = popupUrl } catch { authTab.close(); window.location.href = sameTabUrl }
   }
 
+  // Gera um link que completa a conexão sem precisar estar logado no
+  // InstaFlow onde ele for aberto — pra quando a conta vai ser autorizada
+  // num celular/tablet diferente de onde você administra o painel.
+  const generateConnectionLink = async () => {
+    if (!configured) { toast.error("Adicione um App Meta antes de conectar uma conta."); return }
+    if (!canConnect) { toast.error("Informe um usuário do Instagram válido."); return }
+
+    const appConfigIdToUse = matchedExistingAccount?.appConfigId || selectedAppId
+    if (!appConfigIdToUse) { toast.error("Escolha qual App Meta será usado nesta conta."); return }
+
+    setGeneratingLink(true)
+    try {
+      const response = await fetch("/api/instagram/connection-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appConfigId: appConfigIdToUse,
+          ...(normalizedUsername ? { username: normalizedUsername } : {}),
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || "Não foi possível gerar o link.")
+
+      setConnectionLink({ id: data.id, authorizeUrl: data.authorizeUrl })
+      setLinkStatus("pending")
+      setLinkStatusInfo({})
+    } catch (linkError) {
+      toast.error(linkError instanceof Error ? linkError.message : "Não foi possível gerar o link.")
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  const copyConnectionLink = async () => {
+    if (!connectionLink) return
+    try {
+      await navigator.clipboard.writeText(connectionLink.authorizeUrl)
+      toast.success("Link copiado.")
+    } catch {
+      toast.error("Não foi possível copiar o link.")
+    }
+  }
+
+  useEffect(() => {
+    if (!connectionLink || linkStatus !== "pending") return
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/instagram/connection-link/${connectionLink.id}`)
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok || data.status === "pending") return
+
+        setLinkStatus(data.status)
+        setLinkStatusInfo({ username: data.username, errorMessage: data.errorMessage })
+
+        if (data.status === "connected") {
+          toast.success(data.username ? `@${data.username} conectada com sucesso.` : "Conta conectada com sucesso.")
+          setUsername("")
+          await loadData(selectedAppId)
+          await loadGroups()
+        }
+      } catch { }
+    }, 3000)
+    return () => window.clearInterval(interval)
+  }, [connectionLink, linkStatus, selectedAppId])
+
   const removeAccount = async (id: string) => {
     const confirmed = await confirmToast("Remover esta conta conectada?", { confirmLabel: "Remover", danger: true })
     if (!confirmed) return
@@ -730,6 +800,18 @@ export default function MetaAppPage() {
             </button>
           </div>
 
+          <button
+            onClick={() => void generateConnectionLink()}
+            disabled={!canConnect || generatingLink}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 hover:border-purple-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 mb-2"
+          >
+            {generatingLink ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+            Gerar link de conexão (pra abrir em outro aparelho)
+          </button>
+          <p className="text-[11px] text-gray-600 mb-5">
+            Use isso pra conectar de um celular/tablet onde você não está logado no InstaFlow — o link funciona sozinho, sem pedir login ali.
+          </p>
+
           {selectedApp && apps.length > 1 && (
             <p className="text-[11px] text-gray-600 mb-5">
               A conta será vinculada ao app {selectedApp.name || maskAppId(selectedApp.appId)}.
@@ -885,6 +967,77 @@ export default function MetaAppPage() {
               className="w-full mt-3 rounded-lg py-2 text-xs text-gray-500 hover:text-white hover:bg-white/5"
             >
               Agora não
+            </button>
+          </div>
+        </div>
+      )}
+
+      {connectionLink && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setConnectionLink(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d10] p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-white font-semibold">Link de conexão</h3>
+              <button
+                onClick={() => setConnectionLink(null)}
+                className="text-gray-500 hover:text-white shrink-0"
+                aria-label="Fechar"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1 mb-4">
+              Abra esse link no outro celular/tablet. Ele completa a conexão sozinho, sem pedir login no InstaFlow ali. Expira em 10 minutos.
+            </p>
+
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 mb-3">
+              <p className="flex-1 truncate text-xs text-gray-400">{connectionLink.authorizeUrl}</p>
+              <button
+                onClick={() => void copyConnectionLink()}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 px-3 py-1.5 text-xs font-medium text-purple-300 hover:bg-purple-500/25"
+              >
+                <Clipboard size={12} />
+                Copiar
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5 text-xs">
+              {linkStatus === "pending" && (
+                <>
+                  <Loader2 size={14} className="animate-spin text-gray-400" />
+                  <span className="text-gray-400">Aguardando abrir e autorizar no Instagram...</span>
+                </>
+              )}
+              {linkStatus === "connected" && (
+                <>
+                  <Check size={14} className="text-green-400" />
+                  <span className="text-green-400">
+                    {linkStatusInfo.username ? `@${linkStatusInfo.username} conectada.` : "Conta conectada."}
+                  </span>
+                </>
+              )}
+              {(linkStatus === "failed" || linkStatus === "expired") && (
+                <>
+                  <X size={14} className="text-red-400" />
+                  <span className="text-red-400">
+                    {linkStatus === "expired"
+                      ? "O link expirou. Gere um novo."
+                      : linkStatusInfo.errorMessage || "Não foi possível conectar."}
+                  </span>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={() => setConnectionLink(null)}
+              className="w-full mt-3 rounded-lg py-2 text-xs text-gray-500 hover:text-white hover:bg-white/5"
+            >
+              Fechar
             </button>
           </div>
         </div>

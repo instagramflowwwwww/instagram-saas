@@ -1,17 +1,9 @@
-import { randomBytes } from "crypto"
 import { NextResponse } from "next/server"
 import { getApiUserId } from "@/lib/api-auth"
-import {
-  buildInstagramAuthorizeUrl,
-  getInstagramRedirectUri,
-} from "@/lib/instagram-meta"
-import { prisma } from "@/lib/prisma"
-import { sealPayload } from "@/lib/secure-store"
+import { createInstagramConnectionLink } from "@/lib/instagram-connection-link"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-
-const CONNECTION_TTL_MS = 10 * 60 * 1000
 
 export async function POST(request: Request) {
   const userId = await getApiUserId(request)
@@ -41,54 +33,19 @@ export async function POST(request: Request) {
     )
   }
 
-  const app = await prisma.instagramApp.findFirst({
-    where: { id: appConfigId, userId },
-    select: { id: true, metaAppId: true },
+  const result = await createInstagramConnectionLink({
+    userId,
+    appConfigId,
+    username: username || null,
+    request,
   })
 
-  if (!app) {
+  if ("error" in result) {
     return NextResponse.json(
       { error: "app_not_found", message: "App Meta não encontrado para esta conta." },
       { status: 404 }
     )
   }
 
-  const expiresAt = new Date(Date.now() + CONNECTION_TTL_MS)
-
-  const connectionRequest = await prisma.apiConnectionRequest.create({
-    data: {
-      userId,
-      appConfigId: app.id,
-      expectedUsername: username || null,
-      status: "pending",
-      expiresAt,
-    },
-    select: { id: true, expiresAt: true },
-  })
-
-  const redirectUri = getInstagramRedirectUri(request)
-  const state = sealPayload({
-    userId,
-    appConfigId: app.id,
-    expectedUsername: username || null,
-    redirectUri,
-    connectionRequestId: connectionRequest.id,
-    nonce: randomBytes(18).toString("hex"),
-    expiresAt: expiresAt.getTime(),
-  })
-
-  const authorizeUrl = buildInstagramAuthorizeUrl({
-    metaAppId: app.metaAppId,
-    redirectUri,
-    state,
-  })
-
-  return NextResponse.json(
-    {
-      id: connectionRequest.id,
-      authorizeUrl,
-      expiresAt: connectionRequest.expiresAt,
-    },
-    { status: 201 }
-  )
+  return NextResponse.json(result, { status: 201 })
 }
