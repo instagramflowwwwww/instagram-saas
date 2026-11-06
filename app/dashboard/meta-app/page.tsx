@@ -500,6 +500,26 @@ export default function MetaAppPage() {
     }
   }
 
+  // Intent do Android (reconhecido pelo Chrome e navegadores baseados nele)
+  // que manda o sistema abrir direto com o pacote do Instagram, em vez de
+  // depender da configuração "abrir em apps associados" de cada navegador
+  // (que no DuckDuckGo, por exemplo, vem desligada por padrão). Se o app não
+  // estiver instalado, cai de volta pro link https normal.
+  const buildAndroidAppLink = (authorizeUrl: string) => {
+    const schemeless = authorizeUrl.replace(/^https?:\/\//, "")
+    return `intent://${schemeless}#Intent;scheme=https;package=com.instagram.android;S.browser_fallback_url=${encodeURIComponent(authorizeUrl)};end`
+  }
+
+  const copyAndroidAppLink = async () => {
+    if (!connectionLink) return
+    try {
+      await navigator.clipboard.writeText(buildAndroidAppLink(connectionLink.authorizeUrl))
+      toast.success("Link copiado.")
+    } catch {
+      toast.error("Não foi possível copiar o link.")
+    }
+  }
+
   useEffect(() => {
     if (!connectionLink || linkStatus !== "pending") return
     const interval = window.setInterval(async () => {
@@ -995,6 +1015,7 @@ export default function MetaAppPage() {
               Abra esse link no outro celular/tablet. Ele completa a conexão sozinho, sem pedir login no InstaFlow ali. Expira em 10 minutos.
             </p>
 
+            <p className="text-[11px] font-medium text-gray-500 mb-1.5">Link normal (abre no navegador)</p>
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 mb-3">
               <p className="flex-1 truncate text-xs text-gray-400">{connectionLink.authorizeUrl}</p>
               <button
@@ -1005,6 +1026,21 @@ export default function MetaAppPage() {
                 Copiar
               </button>
             </div>
+
+            <p className="text-[11px] font-medium text-gray-500 mb-1.5">Link pra abrir direto no app do Instagram (Android)</p>
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 mb-3">
+              <p className="flex-1 truncate text-xs text-gray-400">intent://...#Intent;package=com.instagram.android;...</p>
+              <button
+                onClick={() => void copyAndroidAppLink()}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 px-3 py-1.5 text-xs font-medium text-purple-300 hover:bg-purple-500/25"
+              >
+                <Clipboard size={12} />
+                Copiar
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-600 mb-4">
+              Cola esse no navegador do tablet (funciona no Chrome e similares). Se o app do Instagram estiver instalado, abre direto nele — se não reconhecer o link, usa o normal acima.
+            </p>
 
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5 text-xs">
               {linkStatus === "pending" && (
