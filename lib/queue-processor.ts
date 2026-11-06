@@ -312,25 +312,26 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
       .map((entry) => `@${entry.username}: ${entry.error || "Erro"}`)
       .join(" | ")
 
-    // Limite diário de publicação da própria Meta (100 posts/24h por conta):
-    // não é falha da conta, é questão de esperar a cota liberar. Sem este
-    // tratamento, o log de erro já gravado marca a conta como "processada"
-    // e o item finaliza como falho de vez — toda rodada seguinte do mesmo
-    // dia falharia igual, e uma conta que só publicou parte do previsto
-    // nunca mais tentaria de novo. Em vez disso, apaga o log de erro desta
-    // tentativa (senão a próxima nem chegaria a rodar) e reagenda o item
-    // para quando a Meta libera a cota.
-    const quotaLimited = result.results.filter(
+    // Erros que a própria Meta resolve sozinha com tempo — limite diário de
+    // publicação (100 posts/24h por conta) ou mídia que ainda está sendo
+    // processada e só demorou mais que o nosso tempo de espera — não são
+    // falha real da conta. Sem este tratamento, o log de erro já gravado
+    // marca a conta como "processada" e o item finaliza como falho de vez —
+    // toda rodada seguinte falharia igual, e uma conta que só publicou parte
+    // do previsto nunca mais tentaria de novo. Em vez disso, apaga o log de
+    // erro desta tentativa (senão a próxima nem chegaria a rodar) e reagenda
+    // o item para quando a condição provavelmente já passou.
+    const autoRetryable = result.results.filter(
       (entry) => entry.status === "error" && entry.retryAfterMs
     )
-    if (quotaLimited.length > 0) {
+    if (autoRetryable.length > 0) {
       const retryAfterMs = Math.max(
-        ...quotaLimited.map((entry) => entry.retryAfterMs || 0)
+        ...autoRetryable.map((entry) => entry.retryAfterMs || 0)
       )
       await prisma.postLog.deleteMany({
         where: {
           postId: item.post.id,
-          instagramAccountId: { in: quotaLimited.map((entry) => entry.accountId) },
+          instagramAccountId: { in: autoRetryable.map((entry) => entry.accountId) },
           status: "error",
         },
       })
@@ -341,7 +342,7 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
             status: "pending",
             scheduledAt: new Date(Date.now() + retryAfterMs),
             processingStartedAt: null,
-            lastError: "Limite diário de publicação da Meta atingido para esta conta. Nova tentativa agendada automaticamente.",
+            lastError: "Algumas contas não publicaram agora (limite da Meta ou mídia ainda processando). Nova tentativa agendada automaticamente.",
           },
         }),
         prisma.post.update({
@@ -354,7 +355,7 @@ async function processCandidate(candidateId: string): Promise<ProcessedQueueItem
         itemId: item.id,
         status: "continuing",
         error: message || undefined,
-        remainingAccounts: quotaLimited.length,
+        remainingAccounts: autoRetryable.length,
       }
     }
 

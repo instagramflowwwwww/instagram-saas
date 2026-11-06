@@ -40,8 +40,17 @@ type OfficialAccount = {
 const GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`
 const TOKEN_REFRESH_WINDOW = 7 * 24 * 60 * 60 * 1000
 const WAIT_INTERVAL = 3_000
-const MAX_STATUS_CHECKS = 20
+// 30 × 3s = 90s de espera pela Meta processar a mídia (era 20 × 3s = 60s).
+// Em volume alto (muitas contas publicando vídeo ao mesmo tempo), a fila de
+// processamento da própria Meta fica mais lenta e passa dos 60s com
+// frequência — isso gerava erro mesmo a mídia estando só atrasada, não
+// quebrada. Ainda cabe com folga numa onda de ACCOUNT_CONCURRENCY contas
+// dentro do maxDuration de 280s do cron.
+const MAX_STATUS_CHECKS = 30
 const MAX_ACCOUNT_ATTEMPTS = 2
+// Tempo de espera antes da fila tentar de novo uma conta que falhou só por
+// demora no processamento da mídia (não é erro de verdade, é timeout nosso).
+const MEDIA_PROCESSING_RETRY_MS = 3 * 60 * 1000
 // Igual ao ACCOUNT_CHUNK_SIZE da fila (lib/queue-processor.ts): processando
 // o lote inteiro numa onda só, o tempo da função deixa de ser (contas ÷
 // concorrência) × até 60s de espera da Meta por conta — o que estourava os
@@ -376,9 +385,11 @@ async function waitUntilReady(
     await sleep(WAIT_INTERVAL)
   }
 
-  throw new Error(
+  const timeoutError = new Error(
     "A mídia demorou demais para ser processada pela Meta. Tente novamente."
-  )
+  ) as InstagramOperationError
+  timeoutError.retryAfterMs = MEDIA_PROCESSING_RETRY_MS
+  throw timeoutError
 }
 
 async function publishContainer(
@@ -417,6 +428,7 @@ function isRetryablePrePublishError(error: unknown) {
     "econnreset",
     "econnrefused",
     "fetch failed",
+    "demorou demais",
   ].some((fragment) => message.includes(fragment))
 }
 
@@ -642,7 +654,7 @@ export async function publishExistingPost(params: {
             !isInstagramPermanentPublishError(error),
           retryAfterMs: publishLimit
             ? operationError.retryAfterMs || DEFAULT_PUBLISH_LIMIT_RETRY_MS
-            : undefined,
+            : operationError.retryAfterMs,
         }
       }
     }
