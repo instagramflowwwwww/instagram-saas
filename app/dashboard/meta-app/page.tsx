@@ -421,6 +421,21 @@ export default function MetaAppPage() {
     if (normalizedUsername) params.set("username", normalizedUsername)
 
     const sameTabUrl = `/api/instagram/oauth/start?${params.toString()}`
+
+    // No celular/tablet, a aba nova via window.open costuma "abrir" sem erro
+    // mas nunca carregar nada dentro — comportamento comum em navegadores e
+    // webviews mobile (Android em especial). Em vez de depender do popup
+    // (pensado pra desktop), navega direto na própria aba, que é o mesmo
+    // caminho já usado como fallback quando o popup é bloqueado.
+    const isMobile =
+      typeof navigator !== "undefined" &&
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+
+    if (isMobile) {
+      window.location.href = sameTabUrl
+      return
+    }
+
     const authTab = window.open("about:blank", "_blank")
 
     if (!authTab) {
