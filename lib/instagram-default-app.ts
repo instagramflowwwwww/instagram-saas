@@ -52,3 +52,31 @@ export async function ensureDefaultInstagramApp(userId: string) {
 
   return created.id
 }
+
+// Escolhe automaticamente qual App Meta usar quando quem está conectando não
+// especificou um — o de menos contas, pra distribuir sozinho entre vários
+// Apps Meta. Garante o App Padrão primeiro se o usuário ainda não tiver
+// nenhum app próprio configurado. Compartilhado entre o fluxo normal do
+// dashboard (/api/instagram/oauth/start) e o link de conexão rápida
+// (/api/instagram/quick-connect).
+export async function pickAppIdForUser(userId: string): Promise<string | null> {
+  let apps = await prisma.instagramApp.findMany({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, _count: { select: { accounts: true } } },
+  })
+
+  if (apps.length === 0) {
+    const defaultAppId = await ensureDefaultInstagramApp(userId)
+    if (defaultAppId) {
+      apps = await prisma.instagramApp.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, _count: { select: { accounts: true } } },
+      })
+    }
+  }
+
+  if (apps.length === 0) return null
+  return [...apps].sort((a, b) => a._count.accounts - b._count.accounts)[0].id
+}

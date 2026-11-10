@@ -443,6 +443,27 @@ function ApiTokensCard() {
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
           </div>
+
+          <div className="mt-4 pt-4 border-t border-white/5">
+            <p className="text-xs text-gray-400 mb-2">
+              Link de conexão rápida: favorita isso no celular/tablet onde você cria as contas — cada toque já gera um pedido novo e manda direto pro Instagram, sem precisar logar no InstaFlow ali.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 select-all font-mono text-xs text-gray-300 break-all">
+                {typeof window !== "undefined" ? `${window.location.origin}/api/instagram/quick-connect?token=${freshToken}` : ""}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/api/instagram/quick-connect?token=${freshToken}`)
+                  toast.success("Link copiado.")
+                }}
+                className="shrink-0 rounded-lg p-1.5 text-purple-300 hover:bg-purple-500/15"
+                aria-label="Copiar link de conexão rápida"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
