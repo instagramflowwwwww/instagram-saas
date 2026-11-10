@@ -1015,7 +1015,7 @@ export default function MetaAppPage() {
               Abra esse link no outro celular/tablet. Ele completa a conexão sozinho, sem pedir login no InstaFlow ali. Expira em 10 minutos.
             </p>
 
-            <p className="text-[11px] font-medium text-gray-500 mb-1.5">Link normal (abre no navegador)</p>
+            <p className="text-[11px] font-medium text-gray-500 mb-1.5">Link normal — use este no iPhone/iPad (Safari) ou no PC. No Safari já abre sozinho direto no app do Instagram, sem precisar de nada a mais.</p>
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 mb-3">
               <p className="flex-1 truncate text-xs text-gray-400">{connectionLink.authorizeUrl}</p>
               <button
@@ -1027,7 +1027,7 @@ export default function MetaAppPage() {
               </button>
             </div>
 
-            <p className="text-[11px] font-medium text-gray-500 mb-1.5">Link pra abrir direto no app do Instagram (Android)</p>
+            <p className="text-[11px] font-medium text-gray-500 mb-1.5">Link alternativo — use este só no Android (celular ou tablet)</p>
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 mb-3">
               <p className="flex-1 truncate text-xs text-gray-400">intent://...#Intent;package=com.instagram.android;...</p>
               <button
