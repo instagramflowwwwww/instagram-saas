@@ -1,7 +1,7 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { signIn } from "next-auth/react"
+import { signIn, useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import {
   BarChart3,
@@ -68,6 +68,7 @@ const MOCK_PERFORMANCE = [
 
 export default function LoginPage() {
   const router = useRouter()
+  const { status } = useSession()
   const [isRegister, setIsRegister] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -76,6 +77,14 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [activeMockTab, setActiveMockTab] = useState(0)
+
+  // Já tem sessão válida (às vezes o próprio navegador/histórico leva direto
+  // pra /login) — manda pro dashboard em vez de mostrar o formulário de novo.
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/dashboard")
+    }
+  }, [status, router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
