@@ -6,6 +6,7 @@ import Link from "next/link"
 import toast from "react-hot-toast"
 import { isAdminEmail } from "@/lib/account-access"
 import { AssistantWidget } from "@/components/AssistantWidget"
+import { AccountSwitcher } from "@/components/AccountSwitcher"
 import { Wordmark } from "@/components/Wordmark"
 import {
   LayoutDashboard, Instagram, Upload, Calendar,
@@ -155,17 +156,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </nav>
 
       <div className={`border-t border-theme-border ${collapsed ? "p-3" : "p-4"}`}>
-        <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : "mb-3"}`}>
-          {session?.user?.image && (
-            <img src={session.user.image} alt="" className="h-8 w-8 shrink-0 rounded-full" />
-          )}
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-theme-text">{session?.user?.name}</p>
-              <p className="truncate text-xs text-theme-text-muted">{session?.user?.email}</p>
-            </div>
-          )}
-        </div>
+        {session?.user?.id && (
+          <div className={collapsed ? "flex justify-center" : "mb-3"}>
+            <AccountSwitcher
+              collapsed={collapsed}
+              user={{
+                id: session.user.id,
+                email: session.user.email,
+                name: session.user.name,
+                image: session.user.image,
+              }}
+            />
+          </div>
+        )}
         <button
           onClick={() => {
             toast.success("Sessão encerrada.")
