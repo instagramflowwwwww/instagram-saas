@@ -513,7 +513,23 @@ export default function GroupsPage() {
 
                 {isAddingMembers ? (
                   <div className="border border-purple-500/20 bg-purple-500/5 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-3">Selecione as contas para adicionar:</p>
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <p className="text-xs text-gray-400">Selecione as contas para adicionar:</p>
+                      {availableToAdd.length > 0 && (
+                        <button
+                          onClick={() =>
+                            setSelectedToAdd((current) =>
+                              current.length === availableToAdd.length
+                                ? []
+                                : availableToAdd.map((account) => account.id)
+                            )
+                          }
+                          className="shrink-0 text-xs font-medium text-purple-400 hover:text-purple-300"
+                        >
+                          {selectedToAdd.length === availableToAdd.length ? "Desmarcar todas" : "Selecionar todas"}
+                        </button>
+                      )}
+                    </div>
                     {availableToAdd.length === 0 ? (
                       <p className="text-xs text-gray-500">Todas as contas já estão nesta pasta.</p>
                     ) : (
