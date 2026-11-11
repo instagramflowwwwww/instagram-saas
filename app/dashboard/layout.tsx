@@ -67,13 +67,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login")
-      return
     }
-    if (status === "authenticated" && !session?.user?.id) {
-      toast.error("Sua sessão é inválida. Faça login novamente.", { id: "invalid-session" })
-      void signOut({ callbackUrl: "/login" })
-    }
-  }, [session?.user?.id, status, router])
+    // Se o acesso não está mais aprovado (plano expirado, pendente, etc.) a
+    // gente NÃO desloga sozinho — só mostra a tela de bloqueio abaixo. A
+    // sessão continua válida: assim que o acesso voltar a ficar aprovado, a
+    // próxima verificação já libera tudo de novo, sem precisar logar de
+    // novo. Deslogar fica só a critério do próprio usuário, no botão "Sair".
+  }, [status, router])
 
   // Fecha menu ao trocar de página no mobile
   useEffect(() => {
@@ -89,6 +89,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   const isAdmin = isAdminEmail(session?.user?.email)
+
+  // Acesso não aprovado (plano expirado, pendente, recusado) não desloga
+  // sozinho — só bloqueia o conteúdo com a tela abaixo, mantendo a sessão.
+  const isBlocked = status === "authenticated" && !session?.user?.id
+  const blockReason = String(session?.user?.accessStatus || "expired")
 
   const groups = isAdmin
     ? [
@@ -238,11 +243,56 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             desktopExpanded ? "md:ml-60" : "md:ml-16"
           }`}
         >
-          {children}
+          {isBlocked ? <BlockedAccess reason={blockReason} email={session?.user?.email} /> : children}
         </div>
       </main>
 
       <AssistantWidget />
+    </div>
+  )
+}
+
+const BLOCK_MESSAGES: Record<string, { title: string; description: string }> = {
+  expired: {
+    title: "Seu plano expirou",
+    description:
+      "Renove pra continuar usando o InstaFlow. Assim que o pagamento for confirmado, essa tela libera sozinha — não precisa logar de novo.",
+  },
+  pending: {
+    title: "Conta aguardando aprovação",
+    description:
+      "Seu acesso ainda está sendo liberado. Assim que for aprovado, essa tela libera sozinha — não precisa logar de novo.",
+  },
+  rejected: {
+    title: "Acesso não aprovado",
+    description: "Fale com o suporte do InstaFlow pra entender o que houve com sua conta.",
+  },
+}
+
+function BlockedAccess({ reason, email }: { reason: string; email?: string | null }) {
+  const message = BLOCK_MESSAGES[reason] || BLOCK_MESSAGES.expired
+
+  return (
+    <div className="flex min-h-[70vh] items-center justify-center">
+      <div className="max-w-md rounded-2xl border border-theme-border bg-theme-surface p-8 text-center">
+        <h1 className="text-lg font-semibold text-theme-text">{message.title}</h1>
+        <p className="mt-2 text-sm text-theme-text-muted">{message.description}</p>
+        {email && <p className="mt-3 text-xs text-theme-text-muted">Conta: {email}</p>}
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+          <a
+            href="/planos"
+            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500"
+          >
+            Ver planos
+          </a>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-lg border border-theme-border px-4 py-2 text-sm font-medium text-theme-text-secondary hover:bg-theme-surface-2"
+          >
+            Já renovei, verificar de novo
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
