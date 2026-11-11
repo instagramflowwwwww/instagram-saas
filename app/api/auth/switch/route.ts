@@ -9,13 +9,14 @@ export const dynamic = "force-dynamic"
 
 const SESSION_MAX_AGE = 180 * 24 * 60 * 60
 
-// Mesmo nome de cookie que o NextAuth usa por padrão (não há bloco
-// `cookies` customizado em lib/auth.ts) — em produção (HTTPS) o prefixo
-// __Secure- é obrigatório.
-const COOKIE_NAME =
-  process.env.NODE_ENV === "production"
-    ? "__Secure-next-auth.session-token"
-    : "next-auth.session-token"
+// Mesmo nome/domínio de cookie configurados em lib/auth.ts — precisa bater
+// certinho, senão essa troca de conta cria um cookie que o NextAuth não
+// reconhece como o mesmo.
+const isProduction = process.env.NODE_ENV === "production"
+const COOKIE_NAME = isProduction
+  ? "__Secure-next-auth.session-token"
+  : "next-auth.session-token"
+const COOKIE_DOMAIN = isProduction ? ".instaflowapp.com.br" : undefined
 
 // Troca pra outra conta do InstaFlow já salva nesse navegador, sem precisar
 // de email/senha de novo — recebe o token gerado por /api/auth/switch-token
@@ -54,7 +55,8 @@ export async function POST(request: NextRequest) {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: isProduction,
+    domain: COOKIE_DOMAIN,
     maxAge: SESSION_MAX_AGE,
   })
 

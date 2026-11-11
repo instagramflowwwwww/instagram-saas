@@ -8,8 +8,30 @@ import {
 } from "@/lib/account-access"
 import { prisma } from "@/lib/prisma"
 
+// instaflowapp.com.br e www.instaflowapp.com.br respondem os dois direto,
+// sem redirecionar um pro outro — sem isso aqui, o cookie de sessão fica
+// preso no host exato onde foi feito o login (ex.: logou em www., depois
+// abriu sem o www.) e aparece como "desconectado" mesmo a sessão valendo
+// 180 dias. O domínio com ponto na frente cobre os dois hosts.
+const isProduction = process.env.NODE_ENV === "production"
+const sessionCookieName = isProduction
+  ? "__Secure-next-auth.session-token"
+  : "next-auth.session-token"
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+  cookies: {
+    sessionToken: {
+      name: sessionCookieName,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: isProduction,
+        domain: isProduction ? ".instaflowapp.com.br" : undefined,
+      },
+    },
+  },
   providers: [
     CredentialsProvider({
       name: "credentials",
