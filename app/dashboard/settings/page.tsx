@@ -464,6 +464,27 @@ function ApiTokensCard() {
               </button>
             </div>
           </div>
+
+          <div className="mt-4 pt-4 border-t border-white/5">
+            <p className="text-xs text-gray-400 mb-2">
+              Link de login rápido: favorita isso pra abrir já logado direto no seu dashboard, sem digitar email/senha — não conecta conta nenhuma do Instagram sozinho, só entra no InstaFlow.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 select-all font-mono text-xs text-gray-300 break-all">
+                {typeof window !== "undefined" ? `${window.location.origin}/api/auth/quick-login?token=${freshToken}` : ""}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/api/auth/quick-login?token=${freshToken}`)
+                  toast.success("Link copiado.")
+                }}
+                className="shrink-0 rounded-lg p-1.5 text-purple-300 hover:bg-purple-500/15"
+                aria-label="Copiar link de login rápido"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
