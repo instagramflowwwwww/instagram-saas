@@ -177,7 +177,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <button
           onClick={() => {
             toast.success("Sessão encerrada.")
-            void signOut({ callbackUrl: "/login" })
+            void fetch("/api/auth/logout", { method: "POST" })
+              .catch(() => {})
+              .then(() => signOut({ callbackUrl: "/login" }))
           }}
           title={collapsed ? "Sair" : undefined}
           className={`flex items-center gap-2 text-xs text-theme-text-muted transition-colors hover:text-theme-text-secondary ${
