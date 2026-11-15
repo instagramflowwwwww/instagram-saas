@@ -37,6 +37,7 @@ type InstagramAccount = {
   requiresReconnect: boolean
   tokenExpiresAt: string | null
   lastActiveAt: string
+  createdAt: string
   autoDeleteAt: string | null
   appId: string | null
   appConfigId: string | null
@@ -595,6 +596,10 @@ export default function AccountsPage() {
                 )}
 
                 <div className="space-y-2 text-xs mb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-gray-600">Adicionada em</span>
+                    <span className="text-gray-400">{formatDate(account.createdAt)}</span>
+                  </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-gray-600">Conexão</span>
                     <span className={account.connectionType === "official" ? "text-purple-400" : "text-yellow-400"}>
