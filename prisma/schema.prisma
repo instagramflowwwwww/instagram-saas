@@ -4,7 +4,12 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // DATABASE_URL = conexão com pool (Neon), usada pelo app em runtime.
+  // DIRECT_URL = conexão direta, usada só pelo "prisma db push" do build
+  // (operações de estrutura de tabela funcionam mal atrás de um pooler em
+  // modo transação).
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
