@@ -53,13 +53,13 @@ const MAX_ACCOUNT_ATTEMPTS = 2
 const MEDIA_PROCESSING_RETRY_MS = 3 * 60 * 1000
 // Igual ao ACCOUNT_CHUNK_SIZE da fila (lib/queue-processor.ts): processando
 // o lote inteiro numa onda só, o tempo da função deixa de ser (contas ÷
-// concorrência) × até 90s de espera da Meta por conta — como continua sendo
-// uma onda só, o teto de tempo por ciclo não muda ao subir esse número, só o
-// volume processado nele. 550 concorrente assume que o banco já está numa
-// conexão com pool (ver DIRECT_URL/DATABASE_URL em prisma/schema.prisma) —
-// sem isso, estoura limite de conexão em vez de tempo. Cobre uma automação
-// só com as 500+ contas de um usuário, sem precisar dividir em várias.
-const ACCOUNT_CONCURRENCY = 550
+// concorrência) × até 60s de espera da Meta por conta — o que estourava os
+// 120s da function em lotes de 12 contas com só 4 em paralelo. Subido pra 24
+// junto com ACCOUNT_CHUNK_SIZE pra escalar contas de automações grandes
+// (ex.: 500 contas) sem aumentar o tempo de parede de cada ciclo — como
+// continua sendo uma onda só, o teto de tempo por ciclo não muda, só o
+// volume processado nele.
+const ACCOUNT_CONCURRENCY = 24
 const DEFAULT_PUBLISH_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000
 
 type InstagramOperationError = Error & {

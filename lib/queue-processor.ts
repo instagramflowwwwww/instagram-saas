@@ -15,11 +15,8 @@ const MAX_ITEM_ATTEMPTS = 3
 const STUCK_AFTER_MS = 6 * 60 * 1000
 // Quantas contas uma automação avança por execução da fila (a cada minuto).
 // Igual ao ACCOUNT_CONCURRENCY em lib/instagram-publisher.ts — os dois sobem
-// juntos pra continuar sendo uma onda só (ver comentário lá, inclusive sobre
-// precisar de conexão com pool no banco antes de rodar com esse número).
-// Subido pra cobrir uma automação só com 500+ contas numa rodada, sem
-// precisar dividir em várias automações manualmente.
-const ACCOUNT_CHUNK_SIZE = 550
+// juntos pra continuar sendo uma onda só (ver comentário lá).
+const ACCOUNT_CHUNK_SIZE = 24
 // Quantas automações do MESMO usuário podem rodar por execução, em vez de
 // uma travar as outras em 0% até terminar. Com contas em grande volume
 // (centenas), vale a pena dividir em várias automações menores — cada uma
