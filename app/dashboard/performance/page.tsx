@@ -423,17 +423,6 @@ export default function PerformancePage() {
     likes: number
     comments: number
     views: number
-    topReel: {
-      id: string
-      username: string
-      profilePicture: string | null
-      caption: string | null
-      permalink: string | null
-      viewsCount: number | null
-      likeCount: number | null
-      commentsCount: number | null
-      publishedAt: string
-    } | null
   } | null>(null)
   const [postsSummaryLoading, setPostsSummaryLoading] = useState(true)
 
@@ -505,7 +494,6 @@ export default function PerformancePage() {
           likes: typeof data.likes === "number" ? data.likes : 0,
           comments: typeof data.comments === "number" ? data.comments : 0,
           views: typeof data.views === "number" ? data.views : 0,
-          topReel: data.topReel || null,
         })
       })
       .catch(() => {
@@ -723,64 +711,6 @@ export default function PerformancePage() {
           }
         />
       </div>
-
-      {postsSummary?.topReel && (
-        <div className="mb-8 overflow-hidden rounded-2xl border border-purple-500/20 bg-gradient-to-r from-purple-500/[0.07] to-pink-500/[0.05] p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <Play size={14} className="text-purple-400" />
-            <h2 className="text-sm font-bold text-white">Reel mais visto do período</h2>
-          </div>
-          <div className="flex w-full min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              {postsSummary.topReel.profilePicture ? (
-                <img
-                  src={postsSummary.topReel.profilePicture}
-                  alt={`Foto de @${postsSummary.topReel.username}`}
-                  className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
-                />
-              ) : (
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500">
-                  <Instagram size={16} className="text-white" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-white">
-                  @{postsSummary.topReel.username}
-                </p>
-                <p className="truncate text-xs text-gray-500">
-                  {postsSummary.topReel.caption || "Sem legenda"}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-shrink-0 items-center gap-5">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-gray-600">Views</p>
-                <p className="text-lg font-bold text-white">
-                  {numberFormatter.format(postsSummary.topReel.viewsCount ?? 0)}
-                </p>
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-[10px] uppercase tracking-wide text-gray-600">Curtidas</p>
-                <p className="text-sm text-gray-300">
-                  {numberFormatter.format(postsSummary.topReel.likeCount ?? 0)}
-                </p>
-              </div>
-              {postsSummary.topReel.permalink && (
-                <a
-                  href={postsSummary.topReel.permalink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Abrir reel no Instagram"
-                  className="text-gray-500 transition hover:text-white"
-                >
-                  <ExternalLink size={16} />
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {loading && (
         <div className="flex items-center justify-center py-20">
