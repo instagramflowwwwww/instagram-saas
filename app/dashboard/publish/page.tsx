@@ -6,10 +6,12 @@ import {
   CalendarClock,
   CheckCircle,
   Film,
+  FolderOpen,
   Image,
   Instagram,
   Loader2,
   Layers3,
+  Play,
   Send,
   Upload,
   X,
@@ -61,8 +63,14 @@ export default function PublishPage() {
   const [randomMode, setRandomMode] = useState(false)
   const [scheduleMode, setScheduleMode] = useState<"now" | "later">("now")
   const [scheduledAt, setScheduledAt] = useState("")
-  const [library, setLibrary] = useState<LibraryMedia[]>([])
+  const [libraryMedia, setLibraryMedia] = useState<LibraryMedia[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(false)
+  const [videoSource, setVideoSource] = useState<"upload" | "library">("upload")
+  const [selectedLibraryVideo, setSelectedLibraryVideo] = useState<LibraryMedia | null>(null)
+  const [coverSource, setCoverSource] = useState<"upload" | "library">("upload")
+  const [selectedLibraryCover, setSelectedLibraryCover] = useState<LibraryMedia | null>(null)
+  const libraryVideos = libraryMedia.filter((item) => item.type === "video")
+  const libraryImages = libraryMedia.filter((item) => item.type === "image")
   const videoRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
@@ -98,16 +106,16 @@ export default function PublishPage() {
   }, [coverPreview])
 
   useEffect(() => {
-    if (randomMode && library.length === 0) {
+    const needsLibrary =
+      randomMode || videoSource === "library" || coverSource === "library"
+    if (needsLibrary && libraryMedia.length === 0) {
       setLoadingLibrary(true)
       fetch("/api/library")
         .then((r) => r.json())
         .then((data) => {
-          const videos = (Array.isArray(data) ? data : []).filter(
-            (m: LibraryMedia) => m.type === "video"
-          )
-          setLibrary(videos)
-          if (videos.length === 0) {
+          const items: LibraryMedia[] = Array.isArray(data) ? data : []
+          setLibraryMedia(items)
+          if (randomMode && items.filter((item) => item.type === "video").length === 0) {
             toast.error("Nenhum vídeo encontrado na biblioteca. Adicione vídeos primeiro.")
             setRandomMode(false)
           }
@@ -115,10 +123,12 @@ export default function PublishPage() {
         .catch(() => {
           toast.error("Erro ao carregar a biblioteca")
           setRandomMode(false)
+          setVideoSource("upload")
+          setCoverSource("upload")
         })
         .finally(() => setLoadingLibrary(false))
     }
-  }, [randomMode])
+  }, [randomMode, videoSource, coverSource])
 
   const toggleAccount = (id: string) => {
     setSelectedAccounts((current) =>
@@ -150,14 +160,42 @@ export default function PublishPage() {
     setImageFile(file)
     if (file) {
       setVideoFile(null)
+      setSelectedLibraryVideo(null)
       handleCoverChange(null)
     }
+  }
+
+  const changeVideoSource = (source: "upload" | "library") => {
+    setVideoSource(source)
+    if (source === "upload") {
+      setSelectedLibraryVideo(null)
+    } else {
+      setVideoFile(null)
+    }
+  }
+
+  const selectLibraryVideo = (item: LibraryMedia) => {
+    setSelectedLibraryVideo(item)
+    setImageFile(null)
   }
 
   const handleCoverChange = (file: File | null) => {
     if (coverPreview) URL.revokeObjectURL(coverPreview)
     setCoverFile(file)
     setCoverPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  const changeCoverSource = (source: "upload" | "library") => {
+    setCoverSource(source)
+    if (source === "upload") {
+      setSelectedLibraryCover(null)
+    } else {
+      handleCoverChange(null)
+    }
+  }
+
+  const selectLibraryCover = (item: LibraryMedia) => {
+    setSelectedLibraryCover(item)
   }
 
   const uploadMedia = async (file: File) => {
@@ -170,7 +208,7 @@ export default function PublishPage() {
       toast.error("Selecione pelo menos uma conta")
       return
     }
-    if (library.length === 0) {
+    if (libraryVideos.length === 0) {
       toast.error("Nenhum vídeo na biblioteca")
       return
     }
@@ -183,7 +221,7 @@ export default function PublishPage() {
       const allResults: PublishResult[] = []
 
       for (const accountId of selectedAccounts) {
-        const randomVideo = library[Math.floor(Math.random() * library.length)]
+        const randomVideo = libraryVideos[Math.floor(Math.random() * libraryVideos.length)]
         setPublishStage(`Publicando @${accounts.find(a => a.id === accountId)?.username}...`)
 
         const response = await fetch("/api/posts/publish", {
@@ -238,7 +276,7 @@ export default function PublishPage() {
   const publish = async () => {
     if (randomMode) return publishRandom()
 
-    if (!videoFile && !imageFile) {
+    if (!videoFile && !imageFile && !selectedLibraryVideo) {
       toast.error("Adicione uma imagem ou um vídeo")
       return
     }
@@ -282,9 +320,17 @@ export default function PublishPage() {
     try {
       setPublishStage("Enviando mídia...")
       const [videoUrl, imageUrl, coverUrl] = await Promise.all([
-        videoFile ? uploadMedia(videoFile) : Promise.resolve(""),
+        selectedLibraryVideo
+          ? Promise.resolve(selectedLibraryVideo.url)
+          : videoFile
+            ? uploadMedia(videoFile)
+            : Promise.resolve(""),
         imageFile ? uploadMedia(imageFile) : Promise.resolve(""),
-        coverFile ? uploadMedia(coverFile) : Promise.resolve(""),
+        selectedLibraryCover
+          ? Promise.resolve(selectedLibraryCover.url)
+          : coverFile
+            ? uploadMedia(coverFile)
+            : Promise.resolve(""),
       ])
 
       const isScheduled = scheduleMode === "later"
@@ -388,35 +434,135 @@ export default function PublishPage() {
               <h2 className="font-semibold text-white text-sm">Conteúdo</h2>
 
               <div>
-                <label className="text-xs text-gray-400 mb-1.5 block">Vídeo (Reel)</label>
-                <input
-                  ref={videoRef}
-                  type="file"
-                  accept="video/mp4,video/quicktime"
-                  className="hidden"
-                  onChange={(event) => handleVideoChange(event.target.files?.[0] || null)}
-                />
-                {videoFile ? (
-                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
-                    <Film size={15} className="text-purple-400" />
-                    <span className="text-sm text-white flex-1 truncate">{videoFile.name}</span>
-                    <span className="text-xs text-gray-500">{formatSize(videoFile.size)}</span>
-                    <button onClick={() => handleVideoChange(null)}>
-                      <X size={14} className="text-gray-500 hover:text-white" />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs text-gray-400 block">Vídeo (Reel)</label>
+                  <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+                    <button
+                      type="button"
+                      onClick={() => changeVideoSource("upload")}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${
+                        videoSource === "upload"
+                          ? "bg-purple-600 text-white"
+                          : "text-gray-500 hover:text-white"
+                      }`}
+                    >
+                      <Upload size={11} />
+                      Novo Upload
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changeVideoSource("library")}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${
+                        videoSource === "library"
+                          ? "bg-purple-600 text-white"
+                          : "text-gray-500 hover:text-white"
+                      }`}
+                    >
+                      <FolderOpen size={11} />
+                      Biblioteca ({libraryVideos.length})
                     </button>
                   </div>
+                </div>
+
+                {videoSource === "upload" ? (
+                  <>
+                    <input
+                      ref={videoRef}
+                      type="file"
+                      accept="video/mp4,video/quicktime"
+                      className="hidden"
+                      onChange={(event) => handleVideoChange(event.target.files?.[0] || null)}
+                    />
+                    {videoFile ? (
+                      <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
+                        <Film size={15} className="text-purple-400" />
+                        <span className="text-sm text-white flex-1 truncate">{videoFile.name}</span>
+                        <span className="text-xs text-gray-500">{formatSize(videoFile.size)}</span>
+                        <button onClick={() => handleVideoChange(null)}>
+                          <X size={14} className="text-gray-500 hover:text-white" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => videoRef.current?.click()}
+                        className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-purple-500/50 transition-colors"
+                      >
+                        <Film size={15} />
+                        Clique para selecionar vídeo
+                      </button>
+                    )}
+                  </>
                 ) : (
-                  <button
-                    onClick={() => videoRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-purple-500/50 transition-colors"
-                  >
-                    <Film size={15} />
-                    Clique para selecionar vídeo
-                  </button>
+                  <div>
+                    {loadingLibrary ? (
+                      <div className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-6 text-sm text-gray-500">
+                        <Loader2 size={15} className="animate-spin" />
+                        Carregando biblioteca...
+                      </div>
+                    ) : libraryVideos.length === 0 ? (
+                      <div className="bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-6 text-center">
+                        <p className="text-sm text-gray-500">Nenhum vídeo na biblioteca ainda.</p>
+                        <Link
+                          href="/dashboard/library"
+                          className="mt-1.5 inline-block text-xs text-purple-400 hover:text-purple-300"
+                        >
+                          Adicionar vídeos à biblioteca
+                        </Link>
+                      </div>
+                    ) : (
+                      <>
+                        {selectedLibraryVideo && (
+                          <div className="flex items-center gap-3 bg-purple-500/10 border border-purple-500/30 rounded-lg px-3 py-2.5 mb-2">
+                            <Film size={15} className="text-purple-400" />
+                            <span className="text-sm text-white flex-1 truncate">
+                              {selectedLibraryVideo.fileName}
+                            </span>
+                            <button onClick={() => setSelectedLibraryVideo(null)}>
+                              <X size={14} className="text-gray-500 hover:text-white" />
+                            </button>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                          {libraryVideos.map((item) => {
+                            const isSelected = selectedLibraryVideo?.id === item.id
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => selectLibraryVideo(item)}
+                                className={`relative aspect-square overflow-hidden rounded-lg border bg-black transition-colors ${
+                                  isSelected
+                                    ? "border-purple-400 ring-2 ring-purple-500/40"
+                                    : "border-white/10 hover:border-white/30"
+                                }`}
+                              >
+                                <video
+                                  src={item.url}
+                                  className="h-full w-full object-cover"
+                                  muted
+                                  preload="metadata"
+                                />
+                                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20">
+                                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white">
+                                    <Play size={12} fill="currentColor" />
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
+                                    <CheckCircle size={13} />
+                                  </div>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {videoFile && (
+              {(videoFile || selectedLibraryVideo) && (
                 <div>
                   <label className="text-xs text-gray-400 mb-1.5 block">
                     Capa do Reel <span className="text-gray-600">(opcional)</span>
@@ -428,6 +574,7 @@ export default function PublishPage() {
                     className="hidden"
                     onChange={(event) => handleCoverChange(event.target.files?.[0] || null)}
                   />
+
                   {coverFile && coverPreview ? (
                     <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5">
                       <img src={coverPreview} alt="capa" className="w-10 h-10 rounded object-cover" />
@@ -437,14 +584,73 @@ export default function PublishPage() {
                         <X size={14} className="text-gray-500 hover:text-white" />
                       </button>
                     </div>
+                  ) : selectedLibraryCover ? (
+                    <div className="flex items-center gap-3 bg-purple-500/10 border border-purple-500/30 rounded-lg px-3 py-2.5">
+                      <img
+                        src={selectedLibraryCover.url}
+                        alt="capa"
+                        className="w-10 h-10 rounded object-cover"
+                      />
+                      <span className="text-sm text-white flex-1 truncate">
+                        {selectedLibraryCover.fileName}
+                      </span>
+                      <button onClick={() => setSelectedLibraryCover(null)}>
+                        <X size={14} className="text-gray-500 hover:text-white" />
+                      </button>
+                    </div>
                   ) : (
-                    <button
-                      onClick={() => coverRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-2 bg-white/5 border border-dashed border-yellow-500/20 rounded-lg px-3 py-4 text-sm text-gray-500 hover:text-white hover:border-yellow-500/50 transition-colors"
-                    >
-                      <Image size={15} />
-                      Clique para adicionar a capa
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => changeCoverSource("upload")}
+                        className="flex flex-col items-center justify-center gap-1.5 bg-white/5 border border-dashed border-yellow-500/20 rounded-lg px-3 py-4 text-xs text-gray-500 hover:text-white hover:border-yellow-500/50 transition-colors"
+                      >
+                        <Upload size={15} />
+                        Fazer upload da capa
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeCoverSource("library")}
+                        className="flex flex-col items-center justify-center gap-1.5 bg-white/5 border border-dashed border-yellow-500/20 rounded-lg px-3 py-4 text-xs text-gray-500 hover:text-white hover:border-yellow-500/50 transition-colors"
+                      >
+                        <FolderOpen size={15} />
+                        Escolher da biblioteca
+                      </button>
+                    </div>
+                  )}
+
+                  {coverSource === "library" && !coverFile && !selectedLibraryCover && (
+                    <div className="mt-2">
+                      {loadingLibrary ? (
+                        <div className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-6 text-sm text-gray-500">
+                          <Loader2 size={15} className="animate-spin" />
+                          Carregando biblioteca...
+                        </div>
+                      ) : libraryImages.length === 0 ? (
+                        <div className="bg-white/5 border border-dashed border-white/10 rounded-lg px-3 py-6 text-center">
+                          <p className="text-sm text-gray-500">Nenhuma imagem na biblioteca ainda.</p>
+                          <Link
+                            href="/dashboard/library"
+                            className="mt-1.5 inline-block text-xs text-purple-400 hover:text-purple-300"
+                          >
+                            Adicionar imagens à biblioteca
+                          </Link>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-4 gap-2 max-h-44 overflow-y-auto pr-1">
+                          {libraryImages.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => selectLibraryCover(item)}
+                              className="relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black hover:border-white/30 transition-colors"
+                            >
+                              <img src={item.url} alt={item.fileName} className="h-full w-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -487,8 +693,8 @@ export default function PublishPage() {
                 <h2 className="font-semibold text-white text-sm">Modo aleatório</h2>
               </div>
               <p className="text-gray-500 text-sm">
-                {library.length > 0
-                  ? `${library.length} vídeo(s) disponíveis na biblioteca. Cada conta selecionada receberá um vídeo diferente sorteado aleatoriamente.`
+                {libraryVideos.length > 0
+                  ? `${libraryVideos.length} vídeo(s) disponíveis na biblioteca. Cada conta selecionada receberá um vídeo diferente sorteado aleatoriamente.`
                   : "Carregando biblioteca..."}
               </p>
             </div>
@@ -567,7 +773,7 @@ export default function PublishPage() {
 
           <button
             onClick={publish}
-            disabled={publishing || (randomMode && library.length === 0) || (scheduleMode === "later" && !scheduledAt)}
+            disabled={publishing || (randomMode && libraryVideos.length === 0) || (scheduleMode === "later" && !scheduledAt)}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-opacity"
           >
             {publishing ? (
