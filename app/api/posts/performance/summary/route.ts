@@ -68,13 +68,21 @@ export async function GET(request: Request) {
       },
     },
     select: {
+      id: true,
       instagramAccountId: true,
       mediaId: true,
+      createdAt: true,
       performanceLikeCount: true,
       performanceCommentsCount: true,
       performanceViewsCount: true,
       performanceUpdatedAt: true,
       performanceError: true,
+      performancePermalink: true,
+      performanceMediaType: true,
+      performanceMediaProductType: true,
+      performancePublishedAt: true,
+      post: { select: { caption: true } },
+      instagramAccount: { select: { username: true, profilePicture: true } },
     },
   })
 
@@ -99,11 +107,44 @@ export async function GET(request: Request) {
     (log) => log.performanceUpdatedAt && !log.performanceError
   ).length
 
+  // Reel mais visto do período inteiro, não só do que já carregou na lista
+  // paginada — mesmo raciocínio dos totais acima. "Reel" = marcado como tal
+  // pela Meta, com fallback pro mediaType "VIDEO" pra posts antigos que a
+  // Meta não classificou com mediaProductType.
+  const topReel = uniqueLogs
+    .filter(
+      (log) =>
+        log.instagramAccount !== null &&
+        log.performanceViewsCount !== null &&
+        (log.performanceMediaProductType === "REELS" ||
+          (!log.performanceMediaProductType && log.performanceMediaType === "VIDEO"))
+    )
+    .reduce<(typeof uniqueLogs)[number] | null>(
+      (best, log) =>
+        !best || (log.performanceViewsCount || 0) > (best.performanceViewsCount || 0)
+          ? log
+          : best,
+      null
+    )
+
   return NextResponse.json(
     {
       postsCount: uniqueLogs.length,
       postsWithData,
       ...totals,
+      topReel: topReel
+        ? {
+            id: topReel.id,
+            username: topReel.instagramAccount!.username,
+            profilePicture: topReel.instagramAccount!.profilePicture,
+            caption: topReel.post.caption,
+            permalink: topReel.performancePermalink,
+            viewsCount: topReel.performanceViewsCount,
+            likeCount: topReel.performanceLikeCount,
+            commentsCount: topReel.performanceCommentsCount,
+            publishedAt: topReel.performancePublishedAt || topReel.createdAt,
+          }
+        : null,
     },
     { headers: { "Cache-Control": "private, no-store, max-age=0" } }
   )
