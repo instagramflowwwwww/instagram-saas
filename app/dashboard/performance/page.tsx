@@ -386,6 +386,19 @@ export default function PerformancePage() {
   } | null>(null)
   const [storiesLoading, setStoriesLoading] = useState(true)
 
+  // Totais de verdade (likes/comentários/views) direto do banco, cobrindo o
+  // período inteiro — independente de quantos posts já foram carregados na
+  // lista paginada abaixo. Sem isso, "Total de visualizações" só contaria o
+  // que já tinha sido carregado na tela (até clicar em "Carregar mais").
+  const [postsSummary, setPostsSummary] = useState<{
+    postsCount: number
+    postsWithData: number
+    likes: number
+    comments: number
+    views: number
+  } | null>(null)
+  const [postsSummaryLoading, setPostsSummaryLoading] = useState(true)
+
   useEffect(() => {
     let cancelled = false
     setStoriesLoading(true)
@@ -426,27 +439,51 @@ export default function PerformancePage() {
     }
   }, [selectedPeriod, selectedAccountIds, folderUsernames])
 
+  useEffect(() => {
+    let cancelled = false
+    setPostsSummaryLoading(true)
+
+    const range = getPeriodRange(selectedPeriod)
+    const params = new URLSearchParams()
+    if (range) {
+      params.set("from", range.from.toISOString())
+      params.set("to", range.to.toISOString())
+    }
+    if (selectedAccountIds) {
+      params.set("accountIds", selectedAccountIds.join(","))
+    }
+    if (folderUsernames) {
+      params.set("usernames", Array.from(folderUsernames).join(","))
+    }
+    const query = params.toString()
+
+    fetch(`/api/posts/performance/summary${query ? `?${query}` : ""}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return
+        setPostsSummary({
+          postsCount: typeof data.postsCount === "number" ? data.postsCount : 0,
+          postsWithData: typeof data.postsWithData === "number" ? data.postsWithData : 0,
+          likes: typeof data.likes === "number" ? data.likes : 0,
+          comments: typeof data.comments === "number" ? data.comments : 0,
+          views: typeof data.views === "number" ? data.views : 0,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setPostsSummary(null)
+      })
+      .finally(() => {
+        if (!cancelled) setPostsSummaryLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPeriod, selectedAccountIds, folderUsernames])
+
   const selectedPeriodOption =
     PERIOD_OPTIONS.find((option) => option.value === selectedPeriod) ||
     PERIOD_OPTIONS[0]
-
-  const totals = useMemo(
-    () =>
-      filteredPosts.reduce(
-        (summary, post) => ({
-          likes: summary.likes + (post.likeCount ?? 0),
-          comments: summary.comments + (post.commentsCount ?? 0),
-          views: summary.views + (post.viewsCount ?? 0),
-        }),
-        { likes: 0, comments: 0, views: 0 }
-      ),
-    [filteredPosts]
-  )
-
-  const hasMetrics = useMemo(
-    () => filteredPosts.some((post) => Boolean(post.performanceUpdatedAt && !post.error)),
-    [filteredPosts]
-  )
 
   const sortedPosts = useMemo(() => {
     const metricValue = (post: PerformancePost) => {
@@ -588,7 +625,11 @@ export default function PerformancePage() {
           label="Posts analisados"
           icon={TrendingUp}
           iconClassName="text-purple-400"
-          value={loading ? "..." : numberFormatter.format(posts.length)}
+          value={
+            postsSummaryLoading || !postsSummary
+              ? "..."
+              : numberFormatter.format(postsSummary.postsCount)
+          }
         />
 
         <MetricCard
@@ -596,13 +637,13 @@ export default function PerformancePage() {
           icon={Heart}
           iconClassName="text-pink-400"
           value={
-            loading || (refreshing && !hasMetrics)
+            postsSummaryLoading || !postsSummary
               ? "..."
-              : numberFormatter.format(totals.likes)
+              : numberFormatter.format(postsSummary.likes)
           }
           helper={
-            !loading && posts.length > 0
-              ? `média de ${numberFormatter.format(Math.round(totals.likes / posts.length))} por post`
+            postsSummary && postsSummary.postsCount > 0
+              ? `média de ${numberFormatter.format(Math.round(postsSummary.likes / postsSummary.postsCount))} por post`
               : null
           }
         />
@@ -612,13 +653,13 @@ export default function PerformancePage() {
           icon={MessageCircle}
           iconClassName="text-blue-400"
           value={
-            loading || (refreshing && !hasMetrics)
+            postsSummaryLoading || !postsSummary
               ? "..."
-              : numberFormatter.format(totals.comments)
+              : numberFormatter.format(postsSummary.comments)
           }
           helper={
-            !loading && posts.length > 0
-              ? `média de ${numberFormatter.format(Math.round(totals.comments / posts.length))} por post`
+            postsSummary && postsSummary.postsCount > 0
+              ? `média de ${numberFormatter.format(Math.round(postsSummary.comments / postsSummary.postsCount))} por post`
               : null
           }
         />
@@ -629,9 +670,9 @@ export default function PerformancePage() {
           iconClassName="text-purple-400"
           hero
           value={
-            loading || (refreshing && !hasMetrics)
+            postsSummaryLoading || !postsSummary
               ? "..."
-              : numberFormatter.format(totals.views)
+              : numberFormatter.format(postsSummary.views)
           }
         />
 
