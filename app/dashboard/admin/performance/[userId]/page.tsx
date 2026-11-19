@@ -57,29 +57,46 @@ export default function AdminUserPerformancePage() {
   const [user, setUser] = useState<AdminUserSummary | null>(null)
   const [posts, setPosts] = useState<AdminPost[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
+  // Totais do período inteiro, não só da página carregada — vêm prontos da
+  // API (lib/instagram-performance não é usado aqui, é consulta leve à
+  // parte), pra não precisar carregar tudo só pra saber o total de views.
+  const [postsTotal, setPostsTotal] = useState(0)
+  const [withViewsTotal, setWithViewsTotal] = useState(0)
+  const [totalViews, setTotalViews] = useState(0)
+
+  const buildQuery = (from?: string, to?: string, offset?: number) => {
+    const query = new URLSearchParams()
+    if (from) query.set("from", new Date(from).toISOString())
+    if (to) {
+      // "até" inclui o dia inteiro escolhido, não só o instante 00:00 dele.
+      const toEndOfDay = new Date(to)
+      toEndOfDay.setDate(toEndOfDay.getDate() + 1)
+      query.set("to", toEndOfDay.toISOString())
+    }
+    if (offset) query.set("offset", String(offset))
+    return query.toString()
+  }
 
   const load = async (from?: string, to?: string) => {
     setLoading(true)
     try {
-      const query = new URLSearchParams()
-      if (from) query.set("from", new Date(from).toISOString())
-      if (to) {
-        // "até" inclui o dia inteiro escolhido, não só o instante 00:00 dele.
-        const toEndOfDay = new Date(to)
-        toEndOfDay.setDate(toEndOfDay.getDate() + 1)
-        query.set("to", toEndOfDay.toISOString())
-      }
-      const suffix = query.toString() ? `?${query.toString()}` : ""
-
-      const response = await fetch(`/api/admin/users/${params.userId}/performance${suffix}`, {
-        cache: "no-store",
-      })
+      const suffix = buildQuery(from, to)
+      const response = await fetch(
+        `/api/admin/users/${params.userId}/performance${suffix ? `?${suffix}` : ""}`,
+        { cache: "no-store" }
+      )
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || "Não foi possível carregar.")
       setUser(data.user)
       setPosts(data.posts)
+      setHasMore(Boolean(data.hasMore))
+      setPostsTotal(typeof data.postsTotal === "number" ? data.postsTotal : 0)
+      setWithViewsTotal(typeof data.withViewsTotal === "number" ? data.withViewsTotal : 0)
+      setTotalViews(typeof data.totalViews === "number" ? data.totalViews : 0)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao carregar.")
     } finally {
@@ -87,21 +104,31 @@ export default function AdminUserPerformancePage() {
     }
   }
 
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
+    try {
+      const suffix = buildQuery(fromDate || undefined, toDate || undefined, posts.length)
+      const response = await fetch(
+        `/api/admin/users/${params.userId}/performance${suffix ? `?${suffix}` : ""}`,
+        { cache: "no-store" }
+      )
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Não foi possível carregar.")
+      setPosts((current) => [...current, ...data.posts])
+      setHasMore(Boolean(data.hasMore))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao carregar mais.")
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   useEffect(() => {
     void load()
   }, [params.userId])
 
-  // Menos visualizações primeiro — é o que interessa para achar o que flopou.
-  const sorted = [...posts].sort((a, b) => {
-    if (a.viewsCount === null && b.viewsCount === null) return 0
-    if (a.viewsCount === null) return 1
-    if (b.viewsCount === null) return -1
-    return a.viewsCount - b.viewsCount
-  })
-
-  const withViews = posts.filter((post) => post.viewsCount !== null)
-  const totalViews = withViews.reduce((total, post) => total + (post.viewsCount || 0), 0)
-  const averageViews = withViews.length > 0 ? Math.round(totalViews / withViews.length) : 0
+  const averageViews = withViewsTotal > 0 ? Math.round(totalViews / withViewsTotal) : 0
 
   if (loading) {
     return (
@@ -186,11 +213,11 @@ export default function AdminUserPerformancePage() {
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Posts com dado</p>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{posts.length}</p>
+          <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{postsTotal}</p>
         </div>
         <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Com visualizações</p>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{withViews.length}</p>
+          <p className="mt-1.5 text-2xl font-semibold tabular-nums text-white">{withViewsTotal}</p>
         </div>
         <div className="rounded-2xl border border-white/[0.07] bg-[#0d0d10] p-5">
           <p className="text-[10px] uppercase tracking-wide text-gray-600">Média de views</p>
@@ -202,7 +229,7 @@ export default function AdminUserPerformancePage() {
         </div>
       </div>
 
-      {sorted.length === 0 ? (
+      {posts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/10 bg-[#0d0d10] py-16 text-center">
           <p className="text-sm text-gray-500">Nenhum post com dado de performance ainda.</p>
         </div>
@@ -221,7 +248,7 @@ export default function AdminUserPerformancePage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((post) => (
+              {posts.map((post) => (
                 <tr key={post.id} className="border-b border-white/5 last:border-0">
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2.5">
@@ -276,6 +303,19 @@ export default function AdminUserPerformancePage() {
               ))}
             </tbody>
           </table>
+
+          {hasMore && (
+            <div className="flex justify-center p-3">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+              >
+                {loadingMore ? <Loader2 size={15} className="animate-spin" /> : null}
+                Carregar mais
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
