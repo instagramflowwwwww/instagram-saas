@@ -131,6 +131,10 @@ export const authOptions: NextAuthOptions = {
       token.accessExpiresAt = access.accessExpiresAt?.toISOString()
       token.name = access.name || undefined
       token.picture = access.image || undefined
+      // Sessões montadas fora do login normal (troca de conta, link de
+      // login rápido — ver lib/session-cookie.ts) não carregam o email no
+      // token; sem isso aqui ele ficava em branco pra sempre nessas contas.
+      token.email = access.email || undefined
 
       if (!isAdminEmail(access.email) && effectiveStatus !== "approved") {
         token.id = undefined
