@@ -17,8 +17,15 @@ export const maxDuration = 300
 // sempre os mais recentes primeiro (a lista já vem ordenada por data). Sem
 // esse limite, abrir "Mês" ou "Tudo" com o cache vencido tentava atualizar
 // cada post do período de uma vez, travando a tela por muito tempo. O botão
-// "Atualizar dados" (force=1) continua atualizando tudo, sem esse limite.
+// "Atualizar dados" (force=1) continua atualizando tudo dentro do que a
+// consulta já trouxe, sem esse limite.
 const MAX_AUTO_REFRESH = 40
+// Teto de posts retornados por carregamento. Sem isso, "Mês" ou "Tudo" com
+// contas em grande volume (centenas) trazia milhares de linhas numa
+// consulta só, mandava tudo pro navegador e a tela tentava renderizar cada
+// uma de uma vez — travando a aba inteira. Sempre os mais recentes
+// primeiro; "carregar mais" na tela busca o restante por trás.
+const MAX_RESULTS = 300
 
 function parseDate(value: string | null) {
   if (!value) return null
@@ -41,6 +48,8 @@ export async function GET(request: Request) {
     const to = parseDate(rawTo)
     const shouldRefresh = requestUrl.searchParams.get("refresh") === "1"
     const forceRefresh = requestUrl.searchParams.get("force") === "1"
+    const rawOffset = Number(requestUrl.searchParams.get("offset") || 0)
+    const offset = Number.isInteger(rawOffset) && rawOffset > 0 ? rawOffset : 0
 
     if ((rawFrom && !from) || (rawTo && !to)) {
       return NextResponse.json(
@@ -109,10 +118,17 @@ export async function GET(request: Request) {
         },
       },
       orderBy: { createdAt: "desc" },
+      // Busca um a mais que o teto só pra saber se tem mais página depois,
+      // sem precisar de uma segunda consulta de count.
+      take: MAX_RESULTS + 1,
+      skip: offset,
     })) as PerformanceLog[]
 
+    const hasMore = logs.length > MAX_RESULTS
+    const pageLogs = hasMore ? logs.slice(0, MAX_RESULTS) : logs
+
     const seen = new Set<string>()
-    const uniqueLogs = logs.filter((log) => {
+    const uniqueLogs = pageLogs.filter((log) => {
       const key = `${log.instagramAccountId}:${log.mediaId}`
       if (seen.has(key)) return false
       seen.add(key)
@@ -120,15 +136,15 @@ export async function GET(request: Request) {
     })
 
     const now = Date.now()
+    const paginationHeaders = {
+      "Cache-Control": "private, no-store, max-age=0",
+      "X-Has-More": hasMore ? "1" : "0",
+    }
 
     if (!shouldRefresh) {
       return NextResponse.json(
         uniqueLogs.map((log) => cachedResult(log, now)),
-        {
-          headers: {
-            "Cache-Control": "private, no-store, max-age=0",
-          },
-        }
+        { headers: paginationHeaders }
       )
     }
 
@@ -139,11 +155,7 @@ export async function GET(request: Request) {
     if (logsToRefresh.length === 0) {
       return NextResponse.json(
         uniqueLogs.map((log) => cachedResult(log, now)),
-        {
-          headers: {
-            "Cache-Control": "private, no-store, max-age=0",
-          },
-        }
+        { headers: paginationHeaders }
       )
     }
 
@@ -174,11 +186,7 @@ export async function GET(request: Request) {
       .filter((log) => activeAccountIds.has(log.instagramAccountId))
       .map((log) => refreshedById.get(log.id) || cachedResult(log, now))
 
-    return NextResponse.json(response, {
-      headers: {
-        "Cache-Control": "private, no-store, max-age=0",
-      },
-    })
+    return NextResponse.json(response, { headers: paginationHeaders })
   } catch (error) {
     console.error("Instagram performance error", error)
     return NextResponse.json(

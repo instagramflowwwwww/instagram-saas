@@ -5,6 +5,7 @@ import {
   ExternalLink,
   Heart,
   Instagram,
+  Loader2,
   MessageCircle,
   Play,
   RefreshCw,
@@ -144,7 +145,7 @@ function getPeriodRange(period: PeriodKey) {
 
 function getPerformanceUrl(
   period: PeriodKey,
-  options: { refresh?: boolean; force?: boolean } = {}
+  options: { refresh?: boolean; force?: boolean; offset?: number } = {}
 ) {
   const range = getPeriodRange(period)
   const params = new URLSearchParams()
@@ -156,6 +157,7 @@ function getPerformanceUrl(
 
   if (options.refresh) params.set("refresh", "1")
   if (options.force) params.set("force", "1")
+  if (options.offset) params.set("offset", String(options.offset))
 
   const query = params.toString()
   return query ? `/api/posts/performance?${query}` : "/api/posts/performance"
@@ -169,13 +171,15 @@ export default function PerformancePage() {
   const [sortBy, setSortBy] = useState<SortKey>("recent")
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [pageError, setPageError] = useState("")
   const requestVersionRef = useRef(0)
   const requestControllerRef = useRef<AbortController | null>(null)
 
   async function fetchPerformance(
     period: PeriodKey,
-    options: { refresh?: boolean; force?: boolean; signal: AbortSignal }
+    options: { refresh?: boolean; force?: boolean; offset?: number; signal: AbortSignal }
   ) {
     const response = await fetch(getPerformanceUrl(period, options), {
       cache: "no-store",
@@ -191,7 +195,10 @@ export default function PerformancePage() {
       throw new Error("A API retornou uma resposta inválida.")
     }
 
-    return payload as PerformancePost[]
+    return {
+      posts: payload as PerformancePost[],
+      hasMore: response.headers.get("X-Has-More") === "1",
+    }
   }
 
   async function loadPerformance(period: PeriodKey) {
@@ -207,28 +214,30 @@ export default function PerformancePage() {
     setPageError("")
 
     try {
-      const cachedPosts = await fetchPerformance(period, {
+      const cached = await fetchPerformance(period, {
         signal: controller.signal,
       })
 
       if (requestVersionRef.current !== version) return
 
-      setPosts(cachedPosts)
+      setPosts(cached.posts)
+      setHasMore(cached.hasMore)
       setLoading(false)
 
-      if (!cachedPosts.some((post) => post.stale)) return
+      if (!cached.posts.some((post) => post.stale)) return
 
       setRefreshing(true)
       toast.loading("Atualizando as métricas oficiais...", { id: "performance-refresh" })
 
       try {
-        const refreshedPosts = await fetchPerformance(period, {
+        const refreshed = await fetchPerformance(period, {
           refresh: true,
           signal: controller.signal,
         })
 
         if (requestVersionRef.current !== version) return
-        setPosts(refreshedPosts)
+        setPosts(refreshed.posts)
+        setHasMore(refreshed.hasMore)
         setPageError("")
         toast.success("Métricas atualizadas.", { id: "performance-refresh" })
       } catch (error) {
@@ -274,14 +283,15 @@ export default function PerformancePage() {
     toast.loading("Atualizando as métricas oficiais...", { id: "performance-refresh" })
 
     try {
-      const refreshedPosts = await fetchPerformance(selectedPeriod, {
+      const refreshed = await fetchPerformance(selectedPeriod, {
         refresh: true,
         force: true,
         signal: controller.signal,
       })
 
       if (requestVersionRef.current !== version) return
-      setPosts(refreshedPosts)
+      setPosts(refreshed.posts)
+      setHasMore(refreshed.hasMore)
       toast.success("Métricas atualizadas.", { id: "performance-refresh" })
     } catch (error) {
       if (controller.signal.aborted) {
@@ -298,6 +308,30 @@ export default function PerformancePage() {
       if (requestVersionRef.current === version) {
         setRefreshing(false)
       }
+    }
+  }
+
+  // Busca a próxima leva de posts mais antigos e junta com o que já estava
+  // na tela, em vez de recarregar tudo — assim não perde o scroll nem
+  // refaz o trabalho já feito.
+  async function loadMore() {
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
+    const controller = new AbortController()
+
+    try {
+      const next = await fetchPerformance(selectedPeriod, {
+        offset: posts.length,
+        signal: controller.signal,
+      })
+      setPosts((current) => [...current, ...next.posts])
+      setHasMore(next.hasMore)
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível carregar mais publicações."
+      )
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -733,6 +767,19 @@ export default function PerformancePage() {
               </div>
             ))}
           </div>
+
+          {hasMore && (
+            <div className="flex justify-center p-3">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+              >
+                {loadingMore ? <Loader2 size={15} className="animate-spin" /> : null}
+                Carregar mais
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
