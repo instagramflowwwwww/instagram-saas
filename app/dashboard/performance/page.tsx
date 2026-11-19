@@ -145,7 +145,14 @@ function getPeriodRange(period: PeriodKey) {
 
 function getPerformanceUrl(
   period: PeriodKey,
-  options: { refresh?: boolean; force?: boolean; offset?: number } = {}
+  options: {
+    refresh?: boolean
+    force?: boolean
+    offset?: number
+    sort?: SortKey
+    accountIds?: string[] | null
+    usernames?: Set<string> | null
+  } = {}
 ) {
   const range = getPeriodRange(period)
   const params = new URLSearchParams()
@@ -158,6 +165,9 @@ function getPerformanceUrl(
   if (options.refresh) params.set("refresh", "1")
   if (options.force) params.set("force", "1")
   if (options.offset) params.set("offset", String(options.offset))
+  if (options.sort && options.sort !== "recent") params.set("sort", options.sort)
+  if (options.accountIds?.length) params.set("accountIds", options.accountIds.join(","))
+  if (options.usernames?.size) params.set("usernames", Array.from(options.usernames).join(","))
 
   const query = params.toString()
   return query ? `/api/posts/performance?${query}` : "/api/posts/performance"
@@ -179,7 +189,15 @@ export default function PerformancePage() {
 
   async function fetchPerformance(
     period: PeriodKey,
-    options: { refresh?: boolean; force?: boolean; offset?: number; signal: AbortSignal }
+    options: {
+      refresh?: boolean
+      force?: boolean
+      offset?: number
+      sort?: SortKey
+      accountIds?: string[] | null
+      usernames?: Set<string> | null
+      signal: AbortSignal
+    }
   ) {
     const response = await fetch(getPerformanceUrl(period, options), {
       cache: "no-store",
@@ -215,6 +233,9 @@ export default function PerformancePage() {
 
     try {
       const cached = await fetchPerformance(period, {
+        sort: sortBy,
+        accountIds: selectedAccountIds,
+        usernames: folderUsernames,
         signal: controller.signal,
       })
 
@@ -232,6 +253,9 @@ export default function PerformancePage() {
       try {
         const refreshed = await fetchPerformance(period, {
           refresh: true,
+          sort: sortBy,
+          accountIds: selectedAccountIds,
+          usernames: folderUsernames,
           signal: controller.signal,
         })
 
@@ -286,6 +310,9 @@ export default function PerformancePage() {
       const refreshed = await fetchPerformance(selectedPeriod, {
         refresh: true,
         force: true,
+        sort: sortBy,
+        accountIds: selectedAccountIds,
+        usernames: folderUsernames,
         signal: controller.signal,
       })
 
@@ -322,6 +349,9 @@ export default function PerformancePage() {
     try {
       const next = await fetchPerformance(selectedPeriod, {
         offset: posts.length,
+        sort: sortBy,
+        accountIds: selectedAccountIds,
+        usernames: folderUsernames,
         signal: controller.signal,
       })
       setPosts((current) => [...current, ...next.posts])
@@ -334,14 +364,6 @@ export default function PerformancePage() {
       setLoadingMore(false)
     }
   }
-
-  useEffect(() => {
-    void loadPerformance(selectedPeriod)
-
-    return () => {
-      requestControllerRef.current?.abort()
-    }
-  }, [selectedPeriod])
 
   useEffect(() => {
     fetch("/api/account-groups", { cache: "no-store" })
@@ -362,13 +384,10 @@ export default function PerformancePage() {
     return usernames
   }, [groups, selectedFolderIds])
 
-  const filteredPosts = useMemo(
-    () => (folderUsernames ? posts.filter((post) => folderUsernames.has(post.username)) : posts),
-    [posts, folderUsernames]
-  )
-
-  // Mesma seleção, mas em IDs de conta — usado no resumo de Stories, que
-  // filtra no servidor em vez de por username no cliente.
+  // Mesma seleção, mas em IDs de conta — usado tanto pelo resumo de Stories
+  // quanto pela listagem de posts, que filtram no servidor em vez de por
+  // username no cliente (sem isso, filtrar por pasta só enxergaria o que já
+  // tinha sido carregado na página atual).
   const selectedAccountIds = useMemo(() => {
     if (selectedFolderIds.length === 0) return null
     const ids = new Set<string>()
@@ -378,6 +397,14 @@ export default function PerformancePage() {
     }
     return Array.from(ids)
   }, [groups, selectedFolderIds])
+
+  useEffect(() => {
+    void loadPerformance(selectedPeriod)
+
+    return () => {
+      requestControllerRef.current?.abort()
+    }
+  }, [selectedPeriod, sortBy, selectedAccountIds, folderUsernames])
 
   const [storiesSummary, setStoriesSummary] = useState<{
     totalViews: number
@@ -496,24 +523,6 @@ export default function PerformancePage() {
   const selectedPeriodOption =
     PERIOD_OPTIONS.find((option) => option.value === selectedPeriod) ||
     PERIOD_OPTIONS[0]
-
-  const sortedPosts = useMemo(() => {
-    const metricValue = (post: PerformancePost) => {
-      if (sortBy === "views") return post.viewsCount ?? -1
-      if (sortBy === "likes") return post.likeCount ?? -1
-      if (sortBy === "comments") return post.commentsCount ?? -1
-      return new Date(post.publishedAt).getTime()
-    }
-
-    return [...filteredPosts].sort((a, b) => {
-      const difference = metricValue(b) - metricValue(a)
-      if (difference !== 0) return difference
-
-      return (
-        new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-      )
-    })
-  }, [filteredPosts, sortBy])
 
   return (
     <div
@@ -799,12 +808,12 @@ export default function PerformancePage() {
           <div className="flex items-center justify-between px-3 py-3">
             <h2 className="text-sm font-bold text-white">Publicações</h2>
             <span className="text-[11px] text-gray-600">
-              {numberFormatter.format(sortedPosts.length)} resultados
+              {numberFormatter.format(posts.length)} resultados
             </span>
           </div>
 
           <div className="space-y-2 px-2 pb-2">
-            {sortedPosts.map((post) => (
+            {posts.map((post) => (
               <div
                 key={post.id}
                 className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-hidden rounded-xl border border-white/5 bg-[#111114] p-4 transition-colors hover:border-purple-400/20 hover:bg-[#15121c] lg:flex-row lg:items-center"

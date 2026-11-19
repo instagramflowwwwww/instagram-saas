@@ -33,6 +33,17 @@ function parseDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+const SORT_FIELDS = {
+  recent: { createdAt: "desc" as const },
+  views: { performanceViewsCount: { sort: "desc" as const, nulls: "last" as const } },
+  likes: { performanceLikeCount: { sort: "desc" as const, nulls: "last" as const } },
+  comments: { performanceCommentsCount: { sort: "desc" as const, nulls: "last" as const } },
+}
+
+function parseSort(value: string | null): keyof typeof SORT_FIELDS {
+  return value && value in SORT_FIELDS ? (value as keyof typeof SORT_FIELDS) : "recent"
+}
+
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions)
 
@@ -50,6 +61,17 @@ export async function GET(request: Request) {
     const forceRefresh = requestUrl.searchParams.get("force") === "1"
     const rawOffset = Number(requestUrl.searchParams.get("offset") || 0)
     const offset = Number.isInteger(rawOffset) && rawOffset > 0 ? rawOffset : 0
+    const sort = parseSort(requestUrl.searchParams.get("sort"))
+    const accountIds = requestUrl.searchParams
+      .get("accountIds")
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+    const usernames = requestUrl.searchParams
+      .get("usernames")
+      ?.split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
 
     if ((rawFrom && !from) || (rawTo && !to)) {
       return NextResponse.json(
@@ -73,11 +95,24 @@ export async function GET(request: Request) {
           }
         : undefined
 
+    // Casa por @usuário gravado no próprio log (sobrevive à conta cair e ser
+    // apagada) OU pelo id da conta — mesma lógica do resumo de pasta.
+    const folderFilter =
+      usernames?.length || accountIds?.length
+        ? {
+            OR: [
+              ...(usernames?.length ? [{ username: { in: usernames } }] : []),
+              ...(accountIds?.length ? [{ instagramAccountId: { in: accountIds } }] : []),
+            ],
+          }
+        : {}
+
     const logs = (await prisma.postLog.findMany({
       where: {
         status: "success",
         mediaId: { not: null },
         ...(createdAt ? { createdAt } : {}),
+        ...folderFilter,
         post: { userId: session.user.id, publicationType: "post" },
         instagramAccount: {
           connectionType: "official",
@@ -117,7 +152,9 @@ export async function GET(request: Request) {
           },
         },
       },
-      orderBy: { createdAt: "desc" },
+      // "id" no fim garante ordem estável entre páginas mesmo com muitos
+      // empates no campo escolhido (ex.: vários posts com 0 visualizações).
+      orderBy: [SORT_FIELDS[sort], { id: "desc" }],
       // Busca um a mais que o teto só pra saber se tem mais página depois,
       // sem precisar de uma segunda consulta de count.
       take: MAX_RESULTS + 1,
