@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
+  Activity,
   BarChart3,
   Check,
   Clock3,
@@ -27,6 +28,7 @@ import toast from "react-hot-toast"
 import { confirmToast } from "@/lib/toast"
 import { statCardBorder } from "@/lib/stat-card"
 import { type AccessPlanId } from "@/lib/account-access"
+import SystemHealthPanel from "@/components/SystemHealthPanel"
 
 type UserStatus = "pending" | "approved" | "rejected" | "expired"
 type PlanId = AccessPlanId
@@ -122,6 +124,7 @@ export default function AdminPage() {
   const [customPricePlan, setCustomPricePlan] = useState<CustomPricePlanId>("mensal")
   const [customPriceValue, setCustomPriceValue] = useState("")
   const [savingCustomPrice, setSavingCustomPrice] = useState(false)
+  const [activeTab, setActiveTab] = useState<"health" | "users">("health")
 
   const loadData = useCallback(async (notifySuccess = false) => {
     try {
@@ -380,13 +383,13 @@ export default function AdminPage() {
           "radial-gradient(900px 480px at 12% -10%, rgba(192,132,252,0.16), transparent 60%), radial-gradient(800px 420px at 92% 0%, rgba(236,72,153,0.12), transparent 55%), #08080a",
       }}
     >
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Shield size={21} className="text-purple-400" />
           <div>
-            <h1 className="text-2xl font-bold text-white">Painel Admin</h1>
+            <h1 className="text-2xl font-bold text-white">Gestão do Sistema</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Aprove cadastros, escolha planos e controle a validade das contas.
+              Acompanhe a saúde da infraestrutura e cuide dos cadastros, planos e acessos.
             </p>
           </div>
         </div>
@@ -398,6 +401,33 @@ export default function AdminPage() {
         </button>
       </div>
 
+      <div className="mb-6 flex flex-wrap gap-2">
+        <button
+          onClick={() => setActiveTab("health")}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === "health"
+              ? "bg-purple-500/15 text-purple-300 ring-1 ring-purple-500/30"
+              : "bg-white/[0.03] text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <Activity size={15} /> Saúde do Sistema
+        </button>
+        <button
+          onClick={() => setActiveTab("users")}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === "users"
+              ? "bg-purple-500/15 text-purple-300 ring-1 ring-purple-500/30"
+              : "bg-white/[0.03] text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <Users size={15} /> Usuários e Acessos ({data.totalUsers})
+        </button>
+      </div>
+
+      {activeTab === "health" && <SystemHealthPanel />}
+
+      {activeTab === "users" && (
+        <>
       <div className="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         {cards.map((card) => (
           <div key={card.label} className="rounded-2xl p-px" style={{ background: statCardBorder(card.className) }}>
@@ -697,6 +727,8 @@ export default function AdminPage() {
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {resetResult && (
         <div
