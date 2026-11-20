@@ -320,6 +320,13 @@ export default function PerformancePage() {
       setPosts(refreshed.posts)
       setHasMore(refreshed.hasMore)
       toast.success("Métricas atualizadas.", { id: "performance-refresh" })
+
+      // Sem isso, os cards do topo (totais do período) só seriam
+      // atualizados num reload — e nesse meio tempo o cron de background
+      // (app/api/cron/refresh-performance) já pode ter mudado outros
+      // posts do período, fazendo os totais pularem sozinhos depois,
+      // como se o botão "Atualizar dados" não tivesse feito nada.
+      void refreshPostsSummary()
     } catch (error) {
       if (controller.signal.aborted) {
         toast.dismiss("performance-refresh")
@@ -466,10 +473,7 @@ export default function PerformancePage() {
     }
   }, [selectedPeriod, selectedAccountIds, folderUsernames])
 
-  useEffect(() => {
-    let cancelled = false
-    setPostsSummaryLoading(true)
-
+  async function refreshPostsSummary() {
     const range = getPeriodRange(selectedPeriod)
     const params = new URLSearchParams()
     if (range) {
@@ -484,18 +488,26 @@ export default function PerformancePage() {
     }
     const query = params.toString()
 
-    fetch(`/api/posts/performance/summary${query ? `?${query}` : ""}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data) => {
-        if (cancelled) return
-        setPostsSummary({
-          postsCount: typeof data.postsCount === "number" ? data.postsCount : 0,
-          postsWithData: typeof data.postsWithData === "number" ? data.postsWithData : 0,
-          likes: typeof data.likes === "number" ? data.likes : 0,
-          comments: typeof data.comments === "number" ? data.comments : 0,
-          views: typeof data.views === "number" ? data.views : 0,
-        })
-      })
+    const response = await fetch(
+      `/api/posts/performance/summary${query ? `?${query}` : ""}`,
+      { cache: "no-store" }
+    )
+    const data = await response.json()
+
+    setPostsSummary({
+      postsCount: typeof data.postsCount === "number" ? data.postsCount : 0,
+      postsWithData: typeof data.postsWithData === "number" ? data.postsWithData : 0,
+      likes: typeof data.likes === "number" ? data.likes : 0,
+      comments: typeof data.comments === "number" ? data.comments : 0,
+      views: typeof data.views === "number" ? data.views : 0,
+    })
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    setPostsSummaryLoading(true)
+
+    refreshPostsSummary()
       .catch(() => {
         if (!cancelled) setPostsSummary(null)
       })
