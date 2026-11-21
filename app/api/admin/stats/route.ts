@@ -32,6 +32,7 @@ export async function GET() {
       rejectedAt: true,
       customPlanId: true,
       customPriceBRL: true,
+      defaultAppBlocked: true,
       igAccounts: {
         where: {
           connectionType: "official",
@@ -65,6 +66,7 @@ export async function GET() {
       rejectedAt: user.rejectedAt,
       customPlanId: user.customPlanId,
       customPriceBRL: user.customPriceBRL,
+      defaultAppBlocked: user.defaultAppBlocked,
       isAdmin: isAdminEmail(user.email),
       accountsCount: user.igAccounts.length,
       postsCount: user.posts.length,

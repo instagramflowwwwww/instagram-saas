@@ -47,6 +47,11 @@ model User {
   // de tabela (ver app/api/payments/wiinpay/create/route.ts).
   customPlanId      String?
   customPriceBRL    Int?
+  // Controle manual do admin (painel admin, aba Usuários e Acessos): quando
+  // true, essa pessoa não pode mais conectar contas novas usando o "App
+  // Padrão" compartilhado — precisa cadastrar o próprio App Meta. Não afeta
+  // contas que ela já conectou antes disso (ver lib/instagram-default-app.ts).
+  defaultAppBlocked Boolean            @default(false)
 }
 
 model Account {

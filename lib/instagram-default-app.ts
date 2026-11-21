@@ -22,6 +22,16 @@ export async function ensureDefaultInstagramApp(userId: string) {
   const credentials = getDefaultInstagramAppCredentials()
   if (!credentials) return null
 
+  // Admin bloqueou esse usuário de usar o App Padrão (painel admin, aba
+  // Usuários e Acessos) — não cria nem atualiza a linha pra ele. Contas que
+  // ele já tinha conectado com o App Padrão antes do bloqueio continuam
+  // intactas, só não dá pra conectar NOVAS contas com ele.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { defaultAppBlocked: true },
+  })
+  if (user?.defaultAppBlocked) return null
+
   const existing = await prisma.instagramApp.findFirst({
     where: { userId, name: "App Padrão" },
     select: { id: true, metaAppId: true },
@@ -79,4 +89,24 @@ export async function pickAppIdForUser(userId: string): Promise<string | null> {
 
   if (apps.length === 0) return null
   return [...apps].sort((a, b) => a._count.accounts - b._count.accounts)[0].id
+}
+
+// Usado pelo painel admin ao bloquear o App Padrão de alguém: apaga a linha
+// "App Padrão" desse usuário SÓ se nenhuma conta do Instagram estiver usando
+// ela — nunca derruba conta já conectada e publicando. Se tiver conta usando,
+// a linha fica (pra não quebrar a publicação), mas o bloqueio em si (ver
+// ensureDefaultInstagramApp) já impede qualquer conexão NOVA por ele.
+export async function removeDefaultInstagramAppIfUnused(userId: string) {
+  const app = await prisma.instagramApp.findFirst({
+    where: { userId, name: "App Padrão" },
+    select: { id: true, _count: { select: { accounts: true } } },
+  })
+
+  if (!app) return { removed: false, accountsUsingIt: 0 }
+  if (app._count.accounts > 0) {
+    return { removed: false, accountsUsingIt: app._count.accounts }
+  }
+
+  await prisma.instagramApp.delete({ where: { id: app.id } })
+  return { removed: true, accountsUsingIt: 0 }
 }

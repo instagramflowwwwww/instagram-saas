@@ -12,6 +12,8 @@ import {
   Instagram,
   KeyRound,
   Loader2,
+  Plug,
+  PlugZap,
   RefreshCw,
   Save,
   Search,
@@ -49,6 +51,7 @@ type AdminUser = {
   rejectedAt: string | null
   customPlanId: string | null
   customPriceBRL: number | null
+  defaultAppBlocked: boolean
   isAdmin: boolean
   accountsCount: number
   postsCount: number
@@ -125,6 +128,7 @@ export default function AdminPage() {
   const [customPriceValue, setCustomPriceValue] = useState("")
   const [savingCustomPrice, setSavingCustomPrice] = useState(false)
   const [activeTab, setActiveTab] = useState<"health" | "users">("health")
+  const [togglingDefaultAppId, setTogglingDefaultAppId] = useState<string | null>(null)
 
   const loadData = useCallback(async (notifySuccess = false) => {
     try {
@@ -310,6 +314,36 @@ export default function AdminPage() {
       )
     } finally {
       setSavingCustomPrice(false)
+    }
+  }
+
+  const toggleDefaultApp = async (user: AdminUser) => {
+    const nextBlocked = !user.defaultAppBlocked
+    const confirmed = await confirmToast(
+      nextBlocked
+        ? `Tirar o App Padrão de ${user.name || user.email || "este usuário"}? Ela vai precisar do próprio App Meta pra conectar contas novas. Contas que ela já conectou com o App Padrão continuam publicando normalmente.`
+        : `Liberar o App Padrão de novo para ${user.name || user.email || "este usuário"}?`,
+      { confirmLabel: nextBlocked ? "Tirar App Padrão" : "Liberar", danger: nextBlocked }
+    )
+    if (!confirmed) return
+
+    setTogglingDefaultAppId(user.id)
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/default-app`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocked: nextBlocked }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || "Não foi possível atualizar.")
+      toast.success(payload.message || "Atualizado.")
+      await loadData()
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Não foi possível atualizar."
+      )
+    } finally {
+      setTogglingDefaultAppId(null)
     }
   }
 
@@ -644,6 +678,29 @@ export default function AdminPage() {
                           >
                             <Tag size={13} />
                             Preço amigo
+                          </button>
+                          <button
+                            onClick={() => void toggleDefaultApp(user)}
+                            disabled={togglingDefaultAppId === user.id}
+                            title={
+                              user.defaultAppBlocked
+                                ? "Essa pessoa não pode conectar contas novas com o App Padrão"
+                                : "Tirar o App Padrão dessa pessoa — ela precisará do próprio App Meta pra conexões novas"
+                            }
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50 ${
+                              user.defaultAppBlocked
+                                ? "border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/15"
+                                : "border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            {togglingDefaultAppId === user.id ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : user.defaultAppBlocked ? (
+                              <Plug size={13} />
+                            ) : (
+                              <PlugZap size={13} />
+                            )}
+                            {user.defaultAppBlocked ? "App Padrão bloqueado" : "Tirar App Padrão"}
                           </button>
                         </div>
                       )}
